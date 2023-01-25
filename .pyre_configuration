@@ -1,0 +1,7 @@
+{
+  "site_package_search_strategy": "pep561",
+  "source_directories": [
+    "."
+  ],
+  "taint_models_path": "/home/rice/venvs/openape/lib/pyre_check/taint"
+}

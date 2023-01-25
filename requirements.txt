@@ -1,0 +1,4 @@
+git+https://github.com/facebookresearch/pytorch3d.git@stable
+git+https://github.com/HazyResearch/flash-attention.git
+pytest
+pyre-check
