@@ -13,11 +13,9 @@ from typing import Dict, List, Optional, Tuple
 
 import torch
 
-# pyre-fixme[21]: Could not find a module corresponding to import
 from scipy.optimize import linear_sum_assignment
 from torch import Tensor
 
-# pyre-fixme[21]: Could not find a module corresponding to import
 from torchvision.ops.boxes import box_area
 
 
