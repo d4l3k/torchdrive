@@ -1,4 +1,4 @@
-name: Python Unittests
+name: Pyre
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  unittest:
+  pyre:
     strategy:
       matrix:
         python-version: ['3.10']
@@ -15,11 +15,6 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.platform }}
     steps:
-      - name: NVIDIA Driver Install
-        run: |
-          sudo add-apt-repository -y ppa:graphics-drivers
-          sudo apt-get update -qq
-          sudo apt-get install -y nvidia-driver-440
       - name: Checkout
         uses: actions/checkout@v3
         with:
@@ -41,5 +36,5 @@ jobs:
           mim install mmcv-full
           pip install -r requirements.txt
           pip install -e .
-      - name: Run tests
-        run: pytest
+      - name: Pyre
+        run: pyre
