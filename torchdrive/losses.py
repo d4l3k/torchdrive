@@ -1,5 +1,8 @@
+from typing import Dict, Optional
+
 import torch
 from torch import nn
+
 
 def tvl1_loss(voxel: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
     """
@@ -17,14 +20,21 @@ def tvl1_loss(voxel: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
     logalpha = torch.log(eps + voxel)
 
     # pyre-fixme[6]: expected Tensor but got float
-    return torch.mean(torch.sqrt(eps +
-        # pyre-fixme[58]: ** not supported for Tensor and int
-        (logalpha[:, :-1, :-1, 1:] - logalpha[:, :-1, :-1, :-1]) ** 2 +
-        # pyre-fixme[58]: ** not supported for Tensor and int
-        (logalpha[:, :-1, 1:, :-1] - logalpha[:, :-1, :-1, :-1]) ** 2 +
-        # pyre-fixme[58]: ** not supported for Tensor and int
-        (logalpha[:, 1:, :-1, :-1] - logalpha[:, :-1, :-1, :-1]) ** 2),
-        dim=[1,2,3])
+    return torch.mean(
+        torch.sqrt(
+            eps
+            +
+            # pyre-fixme[58]: ** not supported for Tensor and int
+            (logalpha[:, :-1, :-1, 1:] - logalpha[:, :-1, :-1, :-1]) ** 2
+            +
+            # pyre-fixme[58]: ** not supported for Tensor and int
+            (logalpha[:, :-1, 1:, :-1] - logalpha[:, :-1, :-1, :-1]) ** 2
+            +
+            # pyre-fixme[58]: ** not supported for Tensor and int
+            (logalpha[:, 1:, :-1, :-1] - logalpha[:, :-1, :-1, :-1]) ** 2
+        ),
+        dim=[1, 2, 3],
+    )
 
 
 class SSIM(nn.Module):
@@ -85,3 +95,35 @@ def smooth_loss(disp: torch.Tensor, img: torch.Tensor) -> torch.Tensor:
     grad_disp_y *= torch.exp(-grad_img_y)
 
     return grad_disp_x.mean() + grad_disp_y.mean()
+
+
+def losses_backward(
+    losses: Dict[str, torch.Tensor],
+    scaler: Optional[torch.cuda.amp.GradScaler] = None,
+    weights: Optional[torch.Tensor] = None,
+) -> None:
+    """
+    Computes the backward function weighted to the weights in the batch and
+    updates the value in the provided dictionary to a non-gradient one.
+
+    Args:
+        losses: dictionary of str to tensor losses
+    """
+    weighted_losses = {}
+    for k, v in losses.items():
+        if not v.requires_grad:
+            continue
+        v = v.float()
+        if weights is not None:
+            assert v.shape == weights.shape, f"{k} {v.shape}"
+            v *= weights
+        weighted_losses[k] = v.mean()
+
+    if len(weighted_losses) == 0:
+        return
+
+    losses.update({k: v.detach() for k, v in weighted_losses.items()})
+    loss = sum(weighted_losses.values())
+    if scaler:
+        loss = scaler.scale(loss)
+    loss.backward()
