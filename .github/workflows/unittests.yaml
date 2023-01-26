@@ -15,13 +15,14 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.platform }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v2
       - name: Setup Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
           architecture: x64
-      - name: Checkout
-        uses: actions/checkout@v2
+          cache: 'pip' # caching pip dependencies
       - name: Install dependencies
         run: |
           set -eux

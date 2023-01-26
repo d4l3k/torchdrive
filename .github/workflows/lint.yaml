@@ -10,13 +10,14 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     steps:
+      - name: Checkout
+        uses: actions/checkout@v2
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: "3.10"
           architecture: x64
-      - name: Checkout
-        uses: actions/checkout@v2
+          cache: 'pip' # caching pip dependencies
       - name: Install Dependencies
         run: |
           set -eux
