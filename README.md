@@ -17,6 +17,30 @@ $ pip install -e .
 I've been documenting the process for this code. Please see my blog at
 https://fn.lc/post/3d-detr/ for more details.
 
+### 3D Object Detection
+
+3D bounding boxes and velocities for dynamic objects such as cars.
+
+![](media/det.png)
+
+### Voxel Occupancy
+
+Grids of occupancy around the vehicle trained with differential rendering.
+
+![](media/voxel-highway-cars.png)
+
+### BEV Lane Lines and Drivable Space
+
+Lane line and drivable space trained purely from image space labels.
+
+![](media/mesh-semantic.png)
+
+### Semantic Voxel
+
+Per voxel semantic labels for static objects.
+
+![](media/voxel-semantic.png)
+
 ## Data Access
 
 The training dataset for this repo has been collected from my car and thus has
