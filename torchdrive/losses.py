@@ -19,9 +19,9 @@ def tvl1_loss(voxel: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
     assert voxel.ndim == 4, voxel.shape
     logalpha = torch.log(eps + voxel)
 
-    # pyre-fixme[6]: expected Tensor but got float
     return torch.mean(
         torch.sqrt(
+            # pyre-fixme[6]: expected Tensor but got float
             eps
             +
             # pyre-fixme[58]: ** not supported for Tensor and int

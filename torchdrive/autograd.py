@@ -1,6 +1,6 @@
 import itertools
 from contextlib import contextmanager
-from typing import Generator, overload, Tuple, Union
+from typing import cast, Generator, List, overload, Tuple, Union
 
 import torch
 
@@ -25,10 +25,12 @@ def autograd_resume(*tensors: torch.Tensor) -> None:
     """
     for t in tensors:
         assert t.grad is not None, "missing grad"
+    # pyre-ignore
+    parents: List[torch.Tensor] = [t.parent for t in tensors]
+    grad_tensors: List[torch.Tensor] = [cast(torch.Tensor, t.grad) for t in tensors]
     torch.autograd.backward(
-        # pyre-ignore
-        tensors=[t.parent for t in tensors],
-        grad_tensors=[t.grad for t in tensors],
+        tensors=parents,
+        grad_tensors=grad_tensors,
     )
 
 
