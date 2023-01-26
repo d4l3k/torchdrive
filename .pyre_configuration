@@ -3,5 +3,8 @@
   "source_directories": [
     "."
   ],
+  "exclude": [
+    ".*\/third-party\/.*"
+  ],
   "strict": true
 }
