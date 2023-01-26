@@ -12,6 +12,11 @@ $ cd torchdrive
 $ pip install -e .
 ```
 
+## Background
+
+I've been documenting the process for this code. Please see my blog at
+https://fn.lc/post/3d-detr/ for more details.
+
 ## Data Access
 
 The training dataset for this repo has been collected from my car and thus has
