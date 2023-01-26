@@ -3,4 +3,6 @@ black
 pytest
 pyre-check
 scipy
+torch
 torchvision
+matplotlib
