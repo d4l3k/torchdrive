@@ -1,3 +1,4 @@
 git+https://github.com/facebookresearch/pytorch3d.git@stable
+black
 pytest
 pyre-check

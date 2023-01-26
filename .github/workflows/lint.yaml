@@ -1,0 +1,29 @@
+name: Lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.10
+          architecture: x64
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install Dependencies
+        run: |
+          set -eux
+          pip install usort==1.0.2
+          pip install black
+          pip install flake8==3.9.0
+      - name: Run Lint
+        run: |
+          git config --global url."https://${{ secrets.GITHUB_TOKEN }}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
+          scripts/lint.sh
