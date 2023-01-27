@@ -1,5 +1,5 @@
 import math
-from typing import Protocol, Tuple
+from typing import Protocol, Tuple, Type
 
 import torch
 
@@ -79,3 +79,43 @@ class RegNetEncoder(nn.Module):
         pos_enc = self.positional_encoding.expand(BS, -1, -1, -1)
         x3 = self.f3_encoder(torch.cat((f3, pos_enc), dim=1))
         return x3
+
+
+class ConvPEBlock(nn.Module):
+    """
+    regnet x anystage block with positional encoding added.
+    """
+
+    def __init__(
+        self,
+        in_ch: int,
+        out_ch: int,
+        bev_shape: Tuple[int, int],
+        norm: Type[nn.Module] = nn.BatchNorm2d,
+    ) -> None:
+        super().__init__()
+
+        self.register_buffer(
+            "positional_encoding", positional_encoding(*bev_shape), persistent=False
+        )
+        self.decode = models.regnet.AnyStage(
+            in_ch + 6,
+            out_ch,
+            stride=1,
+            depth=4,
+            block_constructor=models.regnet.ResBottleneckBlock,
+            norm_layer=norm,
+            activation_layer=nn.ReLU,
+            group_width=out_ch,  # regnet_x_3_2gf
+            bottleneck_multiplier=1.0,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.cat(
+            (
+                self.positional_encoding.expand(len(x), -1, -1, -1),
+                x,
+            ),
+            dim=1,
+        )
+        return self.decode(x)
