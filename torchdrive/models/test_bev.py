@@ -2,12 +2,12 @@ import unittest
 
 import torch
 
-from torchdrive.models.bev import CamBEVTransformer, CamBEVTransformerFlashAttn
+from torchdrive.models.bev import FlashAttnCamBEVTransformer, NaiveCamBEVTransformer
 
 
 class TestBEVTransformer(unittest.TestCase):
     def test_cam_bev_transformer(self) -> None:
-        m = CamBEVTransformer(
+        m = NaiveCamBEVTransformer(
             bev_shape=(4, 4),
             cam_shape=(4, 6),
             dim=10,
@@ -19,7 +19,7 @@ class TestBEVTransformer(unittest.TestCase):
         self.assertEqual(out.shape, (2, 10, 4, 4))
 
     def test_cam_bev_transformer_flash_attn(self) -> None:
-        m = CamBEVTransformerFlashAttn(
+        m = FlashAttnCamBEVTransformer(
             bev_shape=(4, 4),
             cam_shape=(4, 6),
             dim=16,
