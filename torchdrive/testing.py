@@ -1,3 +1,5 @@
+# pyre-ignore-all-errors[21]: missing optional imports
+
 import random
 import unittest
 from contextlib import contextmanager
