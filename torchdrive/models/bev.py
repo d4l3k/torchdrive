@@ -10,6 +10,11 @@ try:
 except ImportError as e:
     warnings.warn(f"flash_attn not available: {e}")
 
+try:
+    from xformers.ops import memory_efficient_attention
+except ImportError as e:
+    warnings.warn(f"xformers not available: {e}")
+
 
 from torchdrive.positional_encoding import positional_encoding
 
@@ -37,14 +42,6 @@ class BaseCamBEVTransformer(nn.Module, ABC):
         self.dim = dim
         self.bev_shape = bev_shape
         self.num_heads = num_heads
-
-        self.transformer = nn.MultiheadAttention(
-            embed_dim=dim,
-            num_heads=num_heads,
-            batch_first=True,
-            kdim=dim,
-            vdim=dim,
-        )
 
         self.register_buffer(
             "positional_encoding", positional_encoding(*bev_shape), persistent=False
@@ -122,8 +119,7 @@ class NaiveCamBEVTransformer(BaseCamBEVTransformer):
             embed_dim=self.dim,
             num_heads=self.num_heads,
             batch_first=True,
-            kdim=dim,
-            vdim=dim,
+            bias=False,
         )
 
     def _transform(
@@ -142,7 +138,8 @@ class NaiveCamBEVTransformer(BaseCamBEVTransformer):
 
 class FlashAttnCamBEVTransformer(BaseCamBEVTransformer):
     """
-    Implements BaseCamBEVTransformer with flash_attn.
+    Implements BaseCamBEVTransformer with flash_attn. Only supports CUDA and
+    fp16/bfloat16.
     """
 
     def _transform(
@@ -175,4 +172,22 @@ class FlashAttnCamBEVTransformer(BaseCamBEVTransformer):
             max_seqlen_q=q_seqlen,
             max_seqlen_k=k_seqlen,
             dropout_p=0.0,
+        )
+
+
+class XformersCamBEVTransformer(BaseCamBEVTransformer):
+    """
+    Implements BaseCamBEVTransformer with xformers. This should be the most
+    performant option and has better support across devices than flash_attn.
+    """
+
+    def _transform(
+        self, BS: int, query: torch.Tensor, kv: torch.Tensor
+    ) -> torch.Tensor:
+        key = kv[..., : self.dim]
+        value = kv[..., self.dim :]
+        return memory_efficient_attention(
+            query=query.contiguous(),
+            key=key.contiguous(),
+            value=value.contiguous(),
         )
