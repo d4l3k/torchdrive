@@ -17,6 +17,32 @@ except ImportError as e:
     HAS_XFORMERS = False
 
 
+def attention(
+    q: torch.Tensor, kv: torch.Tensor, dim: int, num_heads: int, dropout_p: float = 0.0
+) -> torch.Tensor:
+    """
+    attention is a dispatcher for multiheaded attention and will use the most
+    efficient option that's available in the current environment for the
+    specific dtype/device.
+
+    Backends (in order of preference):
+    * xformers (everything)
+    * flash_attn (cuda, fp16/bfloat16 only)
+    * naive pytorch (everything)
+
+    Args:
+        q: [BS, num_queries, dim]
+        kv: [BS, num_kvs, dim*2]
+    Returns:
+        [BS, num_queries, dim]
+    """
+    if HAS_XFORMERS:
+        return xformers_attention(q, kv, dim, num_heads, dropout_p)
+    if HAS_FLASH_ATTN and q.is_cuda and q.dtype in (torch.half, torch.bfloat16):
+        return flash_attention(q, kv, dim, num_heads, dropout_p)
+    return naive_attention(q, kv, dim, num_heads, dropout_p)
+
+
 def flash_attention(
     q: torch.Tensor, kv: torch.Tensor, dim: int, num_heads: int, dropout_p: float = 0.0
 ) -> torch.Tensor:
@@ -72,16 +98,6 @@ def naive_attention(
         k=key.contiguous(),
         v=value.contiguous(),
     )
-
-
-def attention(
-    q: torch.Tensor, kv: torch.Tensor, dim: int, num_heads: int, dropout_p: float = 0.0
-) -> torch.Tensor:
-    if HAS_XFORMERS:
-        return xformers_attention(q, kv, dim, num_heads, dropout_p)
-    if HAS_FLASH_ATTN and q.is_cuda and q.dtype in (torch.half, torch.bfloat16):
-        return flash_attention(q, kv, dim, num_heads, dropout_p)
-    return naive_attention(q, kv, dim, num_heads, dropout_p)
 
 
 def _ref_attention(

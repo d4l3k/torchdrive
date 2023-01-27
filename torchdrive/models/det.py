@@ -1,5 +1,3 @@
-# pyre-ignore-all-errors[21]: missing optional imports
-
 import os.path
 from typing import Dict, List, Tuple, Union
 
@@ -14,14 +12,9 @@ from torch import nn
 from torchvision import transforms
 
 from torchdrive.amp import autocast
+from torchdrive.attention import attention
 from torchdrive.positional_encoding import positional_encoding
-
 from torchdrive.transforms.img import normalize_img_cuda
-
-try:
-    from flash_attn.flash_attn_interface import flash_attn_unpadded_kvpacked_func
-except ImportError:
-    pass
 
 
 class BDD100KDet:
@@ -158,7 +151,7 @@ class DetBEVDecoder(nn.Module):
         """
         BS = len(x)
         with autocast():
-            query = self.query_embed.weight.bfloat16().expand(BS, -1, -1)
+            query = self.query_embed.weight.to(x.dtype).expand(BS, -1, -1)
             q_seqlen = self.num_queries
 
             x = torch.cat(
@@ -172,33 +165,7 @@ class DetBEVDecoder(nn.Module):
             kv = self.kv_encoder(x).permute(0, 2, 1)
             k_seqlen = kv.shape[1]
 
-            # TODO: implement xformers backend
-            bev = flash_attn_unpadded_kvpacked_func(
-                q=query.reshape(
-                    -1, self.num_heads, self.dim // self.num_heads
-                ).contiguous(),
-                kv=kv.reshape(
-                    -1, 2, self.num_heads, self.dim // self.num_heads
-                ).contiguous(),
-                cu_seqlens_q=torch.arange(
-                    0,
-                    (BS + 1) * q_seqlen,
-                    step=q_seqlen,
-                    device=query.device,
-                    dtype=torch.int32,
-                ),
-                cu_seqlens_k=torch.arange(
-                    0,
-                    (BS + 1) * k_seqlen,
-                    step=k_seqlen,
-                    device=query.device,
-                    dtype=torch.int32,
-                ),
-                max_seqlen_q=q_seqlen,
-                max_seqlen_k=k_seqlen,
-                dropout_p=0.0,
-            )
-
+            bev = attention(query, kv, dim=self.dim, num_heads=self.num_heads)
             bev = bev.reshape(BS, self.num_queries, self.dim)
             # (BS, ch, num_queries)
             bev = bev.permute(0, 2, 1)
