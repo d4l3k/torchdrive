@@ -7,7 +7,13 @@ helpful primitives needed to put together a model.
 ## Install from Source
 
 ```
-$ git clone https://github.com/d4l3k/torchdrive.git
+$ pip install git+https://github.com/d4l3k/torchdrive.git
+```
+
+or
+
+```
+$ git clone --recursive https://github.com/d4l3k/torchdrive.git
 $ cd torchdrive
 $ pip install -e .
 ```
