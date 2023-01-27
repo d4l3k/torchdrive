@@ -6,7 +6,7 @@ from torch import nn
 
 try:
     from flash_attn.flash_attn_interface import flash_attn_unpadded_kvpacked_func
-except (ModuleNotFoundError, ImportError) as e:
+except ImportError as e:
     warnings.warn(f"flash_attn not available: {e}")
 
 
@@ -14,6 +14,15 @@ from torchdrive.positional_encoding import positional_encoding
 
 
 class CamBEVTransformer(nn.Module):
+    """
+    This is a combination encoder and transformer. This takes in a stacked set
+    of camera frames and uses multiheaded attention to produce a birdseye view
+    map.
+
+    The camera frames should be using something like the RegNetEncoder provided
+    by this repo but any similar encoder should work.
+    """
+
     def __init__(
         self,
         bev_shape: Tuple[int, int],
@@ -57,6 +66,12 @@ class CamBEVTransformer(nn.Module):
         )
 
     def forward(self, camera_feats: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            camera_feats: [BS, dim*num_cameras, *cam_shape]
+        Returns:
+            bev_feats: [BS, dim, *bev_shape]
+        """
         BS = len(camera_feats)
 
         context = self.context_encoder(camera_feats)
@@ -83,6 +98,11 @@ class CamBEVTransformer(nn.Module):
 
 
 class CamBEVTransformerFlashAttn(nn.Module):
+    """
+    See CamBEVTransformer. This is the same module but uses flash_attn instead
+    of the stock PyTorch MultiHeadedAttention.
+    """
+
     def __init__(
         self,
         bev_shape: Tuple[int, int],
@@ -115,6 +135,12 @@ class CamBEVTransformerFlashAttn(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            camera_feats: [BS, dim*num_cameras, *cam_shape]
+        Returns:
+            bev_feats: [BS, dim, *bev_shape]
+        """
         BS = len(x)
 
         context = self.context_encoder(x)
