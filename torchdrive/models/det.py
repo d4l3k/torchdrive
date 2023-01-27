@@ -1,3 +1,5 @@
+# pyre-ignore-all-errors[21]: missing optional imports
+
 import os.path
 from typing import Dict, List, Tuple, Union
 
@@ -8,9 +10,18 @@ from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
 from mmcv.runner import load_checkpoint, wrap_fp16_model
 from mmdet.models import build_detector
 from mmdet.models.detectors import TwoStageDetector
+from torch import nn
 from torchvision import transforms
 
+from torchdrive.amp import autocast
+from torchdrive.positional_encoding import positional_encoding
+
 from torchdrive.transforms.img import normalize_img_cuda
+
+try:
+    from flash_attn.flash_attn_interface import flash_attn_unpadded_kvpacked_func
+except ImportError:
+    pass
 
 
 class BDD100KDet:
@@ -103,3 +114,127 @@ class BDD100KDet:
             if self.half:
                 img = img.half()
             return self.model.simple_test(img, img_metas=img_metas)
+
+
+class DetBEVDecoder(nn.Module):
+    """
+    BEV based detection decoder. Consumes a BEV grid and generates detections
+    using a detr style transformer.
+    """
+
+    def __init__(
+        self,
+        bev_shape: Tuple[int, int],
+        dim: int,
+        num_queries: int = 100,
+        num_heads: int = 12,
+    ) -> None:
+        super().__init__()
+
+        self.bev_shape = bev_shape
+        self.dim = dim
+        self.num_heads = num_heads
+
+        self.register_buffer(
+            "positional_encoding", positional_encoding(*bev_shape), persistent=False
+        )
+        self.num_queries = num_queries
+
+        self.query_embed = nn.Embedding(num_queries, dim)
+        self.kv_encoder = nn.Sequential(
+            nn.Conv1d(dim + 6, 2 * dim, 1),
+        )
+
+        self.bbox_decoder = ConvMLP(dim, 128, 9)
+        self.class_decoder = nn.Conv1d(dim, 11, 1)
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Input:
+            feats: (BS, dim, x, y)
+        Returns:
+            classes: logits (BS, num_queries, 11)
+            bboxes: 0-1 (BS, num_queries, 9)
+        """
+        BS = len(x)
+        with autocast():
+            query = self.query_embed.weight.bfloat16().expand(BS, -1, -1)
+            q_seqlen = self.num_queries
+
+            x = torch.cat(
+                (
+                    self.positional_encoding.expand(len(x), -1, -1, -1),
+                    x,
+                ),
+                dim=1,
+            )
+            x = x.reshape(*x.shape[:2], -1)
+            kv = self.kv_encoder(x).permute(0, 2, 1)
+            k_seqlen = kv.shape[1]
+
+            # TODO: implement xformers backend
+            bev = flash_attn_unpadded_kvpacked_func(
+                q=query.reshape(
+                    -1, self.num_heads, self.dim // self.num_heads
+                ).contiguous(),
+                kv=kv.reshape(
+                    -1, 2, self.num_heads, self.dim // self.num_heads
+                ).contiguous(),
+                cu_seqlens_q=torch.arange(
+                    0,
+                    (BS + 1) * q_seqlen,
+                    step=q_seqlen,
+                    device=query.device,
+                    dtype=torch.int32,
+                ),
+                cu_seqlens_k=torch.arange(
+                    0,
+                    (BS + 1) * k_seqlen,
+                    step=k_seqlen,
+                    device=query.device,
+                    dtype=torch.int32,
+                ),
+                max_seqlen_q=q_seqlen,
+                max_seqlen_k=k_seqlen,
+                dropout_p=0.0,
+            )
+
+            bev = bev.reshape(BS, self.num_queries, self.dim)
+            # (BS, ch, num_queries)
+            bev = bev.permute(0, 2, 1)
+
+            # (BS, num_queries, ch)
+            bboxes = self.bbox_decoder(bev).permute(0, 2, 1)
+            classes = self.class_decoder(bev).permute(0, 2, 1)  # logits
+        bboxes = bboxes.float().sigmoid()  # normalized 0 to 1
+
+        return classes, bboxes
+
+
+class ConvMLP(nn.Module):
+    """
+    ConvMLP is a multilayer perceptron implemented as a set of 1d filter size 1
+    convolutions so you can process many of them at once.
+    """
+
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int) -> None:
+        super().__init__()
+
+        self.decoder = nn.Sequential(
+            nn.Conv1d(input_dim, hidden_dim, 1),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Conv1d(hidden_dim, hidden_dim, 1),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Conv1d(hidden_dim, output_dim, 1),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: [BS, input_dim, queries]
+        Returns:
+            [BS, output_dim, queries]
+        """
+        return self.decoder(x)
