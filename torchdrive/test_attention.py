@@ -14,8 +14,8 @@ from torchdrive.testing import manual_seed, skipIfNoCUDA
 
 class TestAttention(unittest.TestCase):
     def test_attention(self) -> None:
-        q = torch.rand(2, 8, 16).cuda().bfloat16()
-        kv = torch.rand(2, 8, 32).cuda().bfloat16()
+        q = torch.rand(2, 8, 16)
+        kv = torch.rand(2, 8, 32)
 
         out = attention(q, kv, dim=16, num_heads=1)
         self.assertEqual(out.shape, (2, 8, 16))
