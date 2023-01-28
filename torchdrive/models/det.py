@@ -50,6 +50,10 @@ class BDD100KDet:
             config,
         )
 
+        if device == torch.device("cpu"):
+            # half not supported on CPU
+            half = False
+
         self.half = half
 
         cfg = mmcv.Config.fromfile(cfg_file)

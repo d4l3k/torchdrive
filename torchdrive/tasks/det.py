@@ -307,7 +307,7 @@ class DetTask(BEVTask):
             )
 
         if len(unmatched_classes) > 0:
-            losses["lossdet/labels/unmatched"] = (
+            losses["unmatched"] = (
                 F.cross_entropy(unmatched_classes, target_classes) * 32
             )
 

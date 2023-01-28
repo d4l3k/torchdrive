@@ -25,17 +25,20 @@ class Batch:
 
 
 def dummy_batch() -> Batch:
+    N = 2
+    BS = 2
     color = {}
-    for cam in ["left", "right"]:
-        for i in range(2):
-            color[cam, i] = torch.rand(2, 3, 48, 64)
+    cams = ["left", "right"]
+    for cam in cams:
+        for i in range(N):
+            color[cam, i] = torch.rand(BS, 3, 48, 64)
     return Batch(
         weight=torch.rand(0),
-        distances=torch.rand(5),
-        cam_T=torch.rand(5, 4, 4),
-        frame_T=torch.rand(5, 4, 4),
-        K={},
-        T={},
+        distances=torch.rand(BS, N),
+        cam_T=torch.rand(BS, N, 4, 4),
+        frame_T=torch.rand(BS, N, 4, 4),
+        K={cam: torch.rand(BS, 4, 4) for cam in cams},
+        T={cam: torch.rand(BS, 4, 4) for cam in cams},
         color=color,
-        mask={},
+        mask={cam: torch.rand(BS, 48, 64) for cam in cams},
     )
