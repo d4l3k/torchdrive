@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -9,6 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from torchdrive.autograd import autograd_context
 from torchdrive.data import Batch
+from torchdrive.losses import losses_backward
 from torchdrive.models.bev import BEVMerger, CamBEVEncoder
 
 
@@ -21,11 +22,28 @@ class Context:
     writer: Optional[SummaryWriter]
     start_frame: int
 
+    def add_scalars(self, name: str, scalars: Dict[str, torch.Tensor]) -> None:
+        if self.writer:
+            assert self.log_text
+            self.writer.add_scalars(name, scalars, global_step=self.global_step)
+
+    def add_scalar(
+        self, name: str, scalar: Union[int, float, bool, torch.Tensor]
+    ) -> None:
+        if self.writer:
+            assert self.log_text
+            self.writer.add_scalar(name, scalar, global_step=self.global_step)
+
+    def add_image(self, name: str, img: torch.Tensor) -> None:
+        if self.writer:
+            assert self.log_img
+            self.writer.add_image(name, img, global_step=self.global_step)
+
 
 class BEVTask(torch.nn.Module, ABC):
     @abstractmethod
     def forward(
-        self, context: Context, batch: Batch, bev: torch.Tensor
+        self, ctx: Context, batch: Batch, bev: torch.Tensor
     ) -> Dict[str, torch.Tensor]:
         raise NotImplementedError("must implement Task forward")
 
@@ -100,6 +118,7 @@ class BEVTaskVan(torch.nn.Module):
 
             for name, task in self.tasks.items():
                 task_losses = task(ctx, batch, bev)
+                losses_backward(task_losses, scaler)
                 for k, v in task_losses.items():
                     losses[name + "/" + k] = v
 

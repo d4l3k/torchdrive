@@ -92,7 +92,7 @@ class BDD100KDet:
         img_metas = [{"img_shape": shape, "ori_shape": shape, "scale_factor": 1}] * bs
         return img, img_metas
 
-    def __call__(self, img: torch.Tensor) -> List[object]:
+    def __call__(self, img: torch.Tensor) -> List[List[torch.Tensor]]:
         """
         Normalizes the image and then executes it.
 
@@ -121,12 +121,14 @@ class DetBEVDecoder(nn.Module):
         dim: int,
         num_queries: int = 100,
         num_heads: int = 12,
+        num_classes: int = 10,
     ) -> None:
         super().__init__()
 
         self.bev_shape = bev_shape
         self.dim = dim
         self.num_heads = num_heads
+        self.num_classes = num_classes
 
         self.register_buffer(
             "positional_encoding", positional_encoding(*bev_shape), persistent=False
@@ -139,7 +141,7 @@ class DetBEVDecoder(nn.Module):
         )
 
         self.bbox_decoder = ConvMLP(dim, 128, 9)
-        self.class_decoder = nn.Conv1d(dim, 11, 1)
+        self.class_decoder = nn.Conv1d(dim, num_classes + 1, 1)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """

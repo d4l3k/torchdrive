@@ -10,7 +10,7 @@ from torchdrive.tasks.bev import BEVTask, BEVTaskVan, Context
 
 class DummyBEVTask(BEVTask):
     def forward(
-        self, context: Context, batch: Batch, bev: torch.Tensor
+        self, ctx: Context, batch: Batch, bev: torch.Tensor
     ) -> Dict[str, torch.Tensor]:
         bev.mean().backward()
         return {
