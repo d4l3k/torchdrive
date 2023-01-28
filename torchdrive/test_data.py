@@ -1,19 +1,8 @@
 import unittest
 
-import torch
-
-from torchdrive.data import Batch
+from torchdrive.data import Batch, dummy_batch
 
 
 class TesetData(unittest.TestCase):
-    def test_batch(self) -> None:
-        b = Batch(
-            weight=torch.rand(0),
-            distances=torch.rand(5),
-            cam_T=torch.rand(5, 4, 4),
-            frame_T=torch.rand(5, 4, 4),
-            K={},
-            T={},
-            color={},
-            mask={},
-        )
+    def test_dummy_batch(self) -> None:
+        self.assertIsInstance(dummy_batch(), Batch)

@@ -22,3 +22,20 @@ class Batch:
     color: Dict[Tuple[str, int], torch.Tensor]
     # per camera mask
     mask: Dict[str, torch.Tensor]
+
+
+def dummy_batch() -> Batch:
+    color = {}
+    for cam in ["left", "right"]:
+        for i in range(2):
+            color[cam, i] = torch.rand(2, 3, 48, 64)
+    return Batch(
+        weight=torch.rand(0),
+        distances=torch.rand(5),
+        cam_T=torch.rand(5, 4, 4),
+        frame_T=torch.rand(5, 4, 4),
+        K={},
+        T={},
+        color=color,
+        mask={},
+    )
