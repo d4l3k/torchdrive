@@ -11,6 +11,7 @@ from typing import Callable, cast, Dict, List, Optional, Tuple, Union
 import av
 import cv2
 import numpy as np
+import numpy.typing
 import orjson
 import pytorch3d.transforms
 import torch
@@ -88,7 +89,7 @@ def normalize01(tensor: Tensor) -> Tensor:
     )
 
 
-def link_nodes(*nodes: Optional[av.filter.FilterContext]) -> None:
+def link_nodes(*nodes: Optional["av.filter.FilterContext"]) -> None:
     # pyre-fixme[9]: Unable to unpack List[FilterContext]
     nodes = [node for node in nodes if node is not None]
     for c, n in zip(nodes, nodes[1:]):
@@ -111,23 +112,17 @@ class MultiCamDataset(Dataset):
         index_file: str,
         mask_dir: str,
         cameras: List[str],
+        cam_shape: Tuple[int, int],
         transform: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
-        full: bool = False,
-        voxel: bool = False,
         dynamic: bool = False,
         localization: bool = False,
         nframes_per_point: int = 2,
         limit_size: Optional[int] = None,
     ) -> None:
-        self.scales = [0, 1, 2, 3]
         self.frames: List[Tuple[str, int]] = []
-        self.full = full
-        self.voxel = voxel
         self.dynamic = dynamic
-        self.dim = (1280, 960) if full else (640, 480)
+        self.dim: Tuple[int, int] = tuple(reversed(cam_shape))
         self.nframes_per_point = nframes_per_point
-        # self.offsets = (-1, 0, 1)
-        # self.dists = torch.tensor((0, 5, 10))
 
         self.cameras = cameras
 
@@ -202,7 +197,7 @@ class MultiCamDataset(Dataset):
             graph.add_buffer(
                 height=1280, width=960, format="yuv420p10le", time_base=1 / 1000
             ),
-            graph.add("scale", "640:480") if not full else None,
+            graph.add("scale", f"{self.dim[0]}:{self.dim[1]}"),
             graph.add("swapuv"),
             graph.add("buffersink"),
         )
@@ -234,7 +229,6 @@ class MultiCamDataset(Dataset):
         intrinsics = data["intrinsics"]
         x_focal_length = intrinsics[0]
         y_focal_length = intrinsics[1]
-        h, w = self.dim
         K = torch.tensor(
             [
                 [x_focal_length / 640, 0, 0.5, 0],

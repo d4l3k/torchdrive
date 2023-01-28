@@ -26,6 +26,7 @@ class TestDet(unittest.TestCase):
             start_frame=1,
             scaler=None,
             name="det",
+            output="/invalid",
         )
         bev = torch.rand(2, 5, 4, 4)
         batch = dummy_batch()

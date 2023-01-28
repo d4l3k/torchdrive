@@ -7,6 +7,7 @@ from torch import nn
 from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
 
+from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context
 from torchdrive.data import Batch
 from torchdrive.losses import losses_backward
@@ -21,6 +22,7 @@ class Context:
     scaler: Optional[amp.GradScaler]
     writer: Optional[SummaryWriter]
     start_frame: int
+    output: str
     name: str = "<unknown>"
 
     def add_scalars(self, name: str, scalars: Dict[str, torch.Tensor]) -> None:
@@ -64,11 +66,13 @@ class BEVTaskVan(torch.nn.Module):
         cameras: List[str],
         dim: int,
         writer: Optional[SummaryWriter] = None,
+        output: str = "out",
         encode_frames: int = 3,
     ) -> None:
         super().__init__()
 
         self.writer = writer
+        self.output = output
 
         self.cameras = cameras
         self.encode_frames = encode_frames
@@ -103,13 +107,14 @@ class BEVTaskVan(torch.nn.Module):
         self, batch: Batch, global_step: int, scaler: Optional[amp.GradScaler] = None
     ) -> Dict[str, torch.Tensor]:
         log_img, log_text = self.should_log(global_step)
-
         BS = len(batch.distances)
-        bev_frames = []
-        for frame in range(self.encode_frames):
-            cams = {cam: batch.color[cam, frame] for cam in self.cameras}
-            bev_frames.append(self.frame_encoder(cams))
-        bev = self.frame_merger(bev_frames)
+
+        with autocast():
+            bev_frames = []
+            for frame in range(self.encode_frames):
+                cams = {cam: batch.color[cam, frame] for cam in self.cameras}
+                bev_frames.append(self.frame_encoder(cams))
+            bev = self.frame_merger(bev_frames)
 
         with autograd_context(bev) as bev:
             losses = {}
@@ -120,6 +125,7 @@ class BEVTaskVan(torch.nn.Module):
                 global_step=global_step,
                 scaler=scaler,
                 writer=self.writer,
+                output=self.output,
                 start_frame=self.encode_frames - 1,
             )
 

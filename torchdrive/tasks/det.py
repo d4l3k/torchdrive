@@ -6,9 +6,10 @@ import torch
 import torch.nn.functional as F
 from torchvision.utils import draw_bounding_boxes
 
+from torchdrive.amp import autocast
+
 from torchdrive.data import Batch
 from torchdrive.losses import generalized_box_iou
-
 from torchdrive.matcher import HungarianMatcher
 from torchdrive.models.det import BDD100KDet, DetBEVDecoder
 from torchdrive.tasks.bev import BEVTask, Context
@@ -71,10 +72,11 @@ class DetTask(BEVTask):
         classes_logits, bboxes3d = self.decoder(bev)
         classes_softmax = F.softmax(classes_logits.float(), dim=-1)
 
-        xyz, vel, sizes = decode_bboxes3d(bboxes3d)
+        with autocast():
+            xyz, vel, sizes = decode_bboxes3d(bboxes3d)
 
         if ctx.log_img:
-            json_path = os.path.join(self.output, f"det_{ctx.global_step}.json")
+            json_path = os.path.join(ctx.output, f"det_{ctx.global_step}.json")
             with open(json_path, "w") as f:
                 json.dump(
                     {
