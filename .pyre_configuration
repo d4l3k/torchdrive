@@ -6,5 +6,11 @@
   "exclude": [
     ".*\/third-party\/.*"
   ],
+  "search_path": [
+    "stubs"
+  ],
+  "ignore_all_errors": [
+    "./stubs/"
+  ],
   "strict": true
 }

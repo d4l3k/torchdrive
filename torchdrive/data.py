@@ -10,8 +10,6 @@ class Batch:
     weight: torch.Tensor
     # per frame distance traveled in meters
     distances: torch.Tensor
-    # per frame relative times in seconds
-    times: torch.Tensor
     # per frame world to car translation matrix
     cam_T: torch.Tensor
     # per frame car relative translation matrix
