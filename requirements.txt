@@ -10,3 +10,4 @@ mmcv-full
 mmsegmentation
 mmdet
 orjson
+tensorboard
