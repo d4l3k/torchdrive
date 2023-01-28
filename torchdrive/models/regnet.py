@@ -38,7 +38,10 @@ class RegNetEncoder(nn.Module):
     """
 
     def __init__(
-        self, x: int, y: int, dim: int, trunk: RegNetConstructor = models.regnet_x_800mf
+        self,
+        cam_shape: Tuple[int, int],
+        dim: int,
+        trunk: RegNetConstructor = models.regnet_x_800mf,
     ) -> None:
         super().__init__()
 
@@ -55,6 +58,8 @@ class RegNetEncoder(nn.Module):
         else:
             raise ValueError(f"unknown trunk type {trunk}")
 
+        self.output_shape: Tuple[int, int] = (cam_shape[0] // 16, cam_shape[1] // 16)
+
         self.f3_encoder = nn.Sequential(
             nn.Conv2d(self.num_ch_enc[3] + 6, dim, 3, padding=1),
             nn.ReLU(inplace=True),
@@ -62,7 +67,7 @@ class RegNetEncoder(nn.Module):
         resnet_init(self.f3_encoder)
         self.register_buffer(
             "positional_encoding",
-            positional_encoding(y // 16, x // 16),
+            positional_encoding(*self.output_shape),
             persistent=False,
         )
 
