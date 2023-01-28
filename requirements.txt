@@ -9,3 +9,4 @@ pytorch3d
 mmcv-full
 mmsegmentation
 mmdet
+orjson
