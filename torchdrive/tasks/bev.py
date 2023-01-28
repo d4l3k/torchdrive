@@ -21,23 +21,30 @@ class Context:
     scaler: Optional[amp.GradScaler]
     writer: Optional[SummaryWriter]
     start_frame: int
+    name: str = "<unknown>"
 
     def add_scalars(self, name: str, scalars: Dict[str, torch.Tensor]) -> None:
         if self.writer:
             assert self.log_text
-            self.writer.add_scalars(name, scalars, global_step=self.global_step)
+            self.writer.add_scalars(
+                f"{self.name}/{name}", scalars, global_step=self.global_step
+            )
 
     def add_scalar(
         self, name: str, scalar: Union[int, float, bool, torch.Tensor]
     ) -> None:
         if self.writer:
             assert self.log_text
-            self.writer.add_scalar(name, scalar, global_step=self.global_step)
+            self.writer.add_scalar(
+                f"{self.name}/{name}", scalar, global_step=self.global_step
+            )
 
     def add_image(self, name: str, img: torch.Tensor) -> None:
         if self.writer:
             assert self.log_img
-            self.writer.add_image(name, img, global_step=self.global_step)
+            self.writer.add_image(
+                f"{self.name}/{name}", img, global_step=self.global_step
+            )
 
 
 class BEVTask(torch.nn.Module, ABC):
@@ -117,6 +124,8 @@ class BEVTaskVan(torch.nn.Module):
             )
 
             for name, task in self.tasks.items():
+                ctx.name = name
+
                 task_losses = task(ctx, batch, bev)
                 losses_backward(task_losses, scaler)
                 for k, v in task_losses.items():
