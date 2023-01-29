@@ -11,3 +11,4 @@ mmsegmentation
 mmdet
 orjson
 tensorboard
+GitPython
