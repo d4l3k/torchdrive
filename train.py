@@ -202,7 +202,7 @@ if args.load:
     state_dict = remap_state_dict(state_dict, model)
 
     try:
-        model.load_state_dict(state_dict, strict=False)  # pyre-fixme[6]: OrderedDict
+        model.load_state_dict(state_dict, strict=False)
     except RuntimeError as e:
         print(f"failed to load state_dict, err: {e}")
 
