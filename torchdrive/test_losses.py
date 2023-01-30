@@ -1,15 +1,35 @@
 import unittest
 
 import torch
+from torch.testing import assert_close
 
-from torchdrive.losses import losses_backward, smooth_loss, SSIM, tvl1_loss
+from torchdrive.losses import (
+    losses_backward,
+    projection_loss,
+    smooth_loss,
+    SSIM,
+    ssim_loss,
+    tvl1_loss,
+)
 
 
 class TestLosses(unittest.TestCase):
     def test_ssim(self) -> None:
         ssim = SSIM()
-        out = ssim(torch.rand(2, 3, 9, 16), torch.rand(2, 3, 9, 16))
+        x = torch.rand(2, 3, 9, 16)
+        y = torch.rand(2, 3, 9, 16)
+        out = ssim(x, y)
         self.assertEqual(out.shape, (2, 3, 9, 16))
+
+        out2 = ssim_loss(x, y)
+        assert_close(out, out2)
+
+    def test_projection_loss(self) -> None:
+        x = torch.rand(2, 3, 9, 16)
+        y = torch.rand(2, 3, 9, 16)
+        mask = torch.rand(2, 1, 9, 16)
+        out = projection_loss(x, y, mask)
+        self.assertEqual(out.shape, (2, 1, 9, 16))
 
     def test_smooth(self) -> None:
         out = smooth_loss(torch.rand(2, 3, 9, 16), torch.rand(2, 3, 9, 16))

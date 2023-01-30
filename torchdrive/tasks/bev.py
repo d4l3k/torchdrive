@@ -29,7 +29,7 @@ class Context:
         if self.writer:
             assert self.log_text
             self.writer.add_scalars(
-                f"{self.name}/{name}", scalars, global_step=self.global_step
+                f"{self.name}-{name}", scalars, global_step=self.global_step
             )
 
     def add_scalar(
@@ -38,7 +38,7 @@ class Context:
         if self.writer:
             assert self.log_text
             self.writer.add_scalar(
-                f"{self.name}/{name}", scalar, global_step=self.global_step
+                f"{self.name}-{name}", scalar, global_step=self.global_step
             )
 
     def add_image(self, name: str, img: torch.Tensor) -> None:
@@ -135,6 +135,6 @@ class BEVTaskVan(torch.nn.Module):
                 task_losses = task(ctx, batch, bev)
                 losses_backward(task_losses, scaler)
                 for k, v in task_losses.items():
-                    losses[name + "/" + k] = v
+                    losses[name + "-" + k] = v
 
         return losses

@@ -75,7 +75,9 @@ else:
 
 if rank == 0:
     writer: Optional[SummaryWriter] = SummaryWriter(
-        log_dir=os.path.join(args.output, "tb")
+        log_dir=os.path.join(args.output, "tb"),
+        max_queue=500,
+        flush_secs=60,
     )
     writer.add_text("args", json.dumps(vars(args), indent=4))
 

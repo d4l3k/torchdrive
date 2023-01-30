@@ -49,7 +49,7 @@ def dummy_batch() -> Batch:
         K={cam: torch.rand(BS, 4, 4) for cam in cams},
         T={cam: torch.rand(BS, 4, 4) for cam in cams},
         color=color,
-        mask={cam: torch.rand(BS, 48, 64) for cam in cams},
+        mask={cam: torch.rand(BS, 1, 48, 64) for cam in cams},
     )
 
 

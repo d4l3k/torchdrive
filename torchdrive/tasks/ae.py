@@ -6,11 +6,11 @@ from torch import nn
 
 from torchdrive.amp import autocast
 from torchdrive.data import Batch
-from torchdrive.losses import SSIM
+from torchdrive.losses import projection_loss
 from torchdrive.models.bev import GridTransformer
 from torchdrive.models.regnet import UpsamplePEBlock
 from torchdrive.tasks.bev import BEVTask, Context
-from torchdrive.transforms.img import normalize_img
+from torchdrive.transforms.img import normalize_img, render_color
 
 
 class AETask(BEVTask):
@@ -52,8 +52,6 @@ class AETask(BEVTask):
             }
         )
 
-        self.ssim = SSIM()
-
     def forward(
         self, ctx: Context, batch: Batch, bev: torch.Tensor
     ) -> Dict[str, torch.Tensor]:
@@ -64,14 +62,23 @@ class AETask(BEVTask):
         for cam in self.cameras:
             target = batch.color[cam, ctx.start_frame]
             with autocast():
-                target = F.interpolate(target, size=self.out_shape)
+                target = F.interpolate(
+                    target, size=self.out_shape, mode="bilinear", align_corners=False
+                )
+                mask = F.interpolate(
+                    batch.mask[cam],
+                    size=self.out_shape,
+                    mode="bilinear",
+                    align_corners=False,
+                )
                 out = self.decoders[cam]([bev])
 
-            losses[cam] = self.ssim(out, target).mean(1, True) * 5
+            loss = projection_loss(out, target, mask) * 20
+            losses[f"ssim/{cam}"] = loss
 
             if ctx.log_img:
                 ctx.add_image(
-                    cam,
+                    f"render/{cam}",
                     normalize_img(
                         torch.cat(
                             (
@@ -81,5 +88,9 @@ class AETask(BEVTask):
                             dim=2,
                         )
                     ),
+                )
+                ctx.add_image(
+                    f"proj_loss/{cam}",
+                    render_color(loss[0][0]),
                 )
         return losses

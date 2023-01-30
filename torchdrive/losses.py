@@ -1,6 +1,7 @@
 from typing import Dict, Optional, Tuple
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torchvision.ops.boxes import box_area
 
@@ -73,6 +74,47 @@ class SSIM(nn.Module):
         SSIM_d = (mu_x**2 + mu_y**2 + self.C1) * (sigma_x + sigma_y + self.C2)
 
         return torch.clamp((1 - SSIM_n / SSIM_d) / 2, 0, 1)
+
+
+def ssim_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """
+    Structual similarity loss. Functional equivalent of the SSIM class.
+    """
+    C1 = 0.01**2
+    C2 = 0.03**2
+
+    x = F.pad(x, (1, 1, 1, 1), mode="reflect")
+    y = F.pad(y, (1, 1, 1, 1), mode="reflect")
+
+    mu_x = F.avg_pool2d(x, 3, 1)
+    mu_y = F.avg_pool2d(y, 3, 1)
+
+    # pyre-fixme[58]: `**` is not supported for operand types `torch._tensor.Tensor` and `int`.
+    sigma_x = F.avg_pool2d(x**2, 3, 1) - mu_x**2
+    # pyre-fixme[58]: `**` is not supported for operand types `torch._tensor.Tensor` and `int`.
+    sigma_y = F.avg_pool2d(y**2, 3, 1) - mu_y**2
+    sigma_xy = F.avg_pool2d(x * y, 3, 1) - mu_x * mu_y
+
+    SSIM_n = (2 * mu_x * mu_y + C1) * (2 * sigma_xy + C2)
+    SSIM_d = (mu_x**2 + mu_y**2 + C1) * (sigma_x + sigma_y + C2)
+
+    return torch.clamp((1 - SSIM_n / SSIM_d) / 2, 0, 1)
+
+
+def projection_loss(
+    a: torch.Tensor, b: torch.Tensor, mask: Optional[torch.Tensor] = None
+) -> torch.Tensor:
+    """
+    projection_loss is a combination of ssim and l1 loss used for projections.
+    """
+    abs_diff = torch.abs(a - b)
+    l1_loss = abs_diff.mean(1, True)
+
+    ssim = ssim_loss(a, b).mean(1, keepdim=True)
+    loss = 0.85 * ssim + 0.15 * l1_loss
+    if mask is not None:
+        loss *= mask
+    return loss
 
 
 def smooth_loss(disp: torch.Tensor, img: torch.Tensor) -> torch.Tensor:

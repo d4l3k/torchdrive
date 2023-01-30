@@ -18,7 +18,7 @@ class TestAE(unittest.TestCase):
             dim=5,
         )
         ctx = Context(
-            log_img=False,
+            log_img=True,
             log_text=True,
             global_step=0,
             writer=MagicMock(),
@@ -30,4 +30,4 @@ class TestAE(unittest.TestCase):
         bev = torch.rand(2, 5, 4, 4)
         batch = dummy_batch()
         losses = m(ctx, batch, bev)
-        self.assertCountEqual(losses.keys(), ["left", "right"])
+        self.assertCountEqual(losses.keys(), ["ssim/left", "ssim/right"])
