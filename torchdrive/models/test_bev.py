@@ -2,17 +2,17 @@ import unittest
 
 import torch
 
-from torchdrive.models.bev import BEVMerger, CamBEVEncoder, CamBEVTransformer
+from torchdrive.models.bev import BEVMerger, CamBEVEncoder, GridTransformer
 from torchdrive.testing import skipIfNoCUDA
 
 
 class TestBEVTransformer(unittest.TestCase):
     def test_cpu(self) -> None:
-        m = CamBEVTransformer(
-            bev_shape=(4, 4),
-            cam_shape=(4, 6),
+        m = GridTransformer(
+            output_shape=(4, 4),
+            input_shape=(4, 6),
             dim=10,
-            num_cameras=3,
+            num_inputs=3,
             num_heads=2,
         )
         cam_feats = [torch.rand(2, 10, 4, 6)] * 3
@@ -22,11 +22,11 @@ class TestBEVTransformer(unittest.TestCase):
     @skipIfNoCUDA()
     def test_cuda(self) -> None:
         m = (
-            CamBEVTransformer(
-                bev_shape=(4, 4),
-                cam_shape=(4, 6),
+            GridTransformer(
+                output_shape=(4, 4),
+                input_shape=(4, 6),
                 dim=16,
-                num_cameras=3,
+                num_inputs=3,
                 num_heads=2,
             )
             .cuda()
