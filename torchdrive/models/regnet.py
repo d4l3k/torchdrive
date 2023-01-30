@@ -95,13 +95,13 @@ class ConvPEBlock(nn.Module):
         self,
         in_ch: int,
         out_ch: int,
-        bev_shape: Tuple[int, int],
+        input_shape: Tuple[int, int],
         norm: Type[nn.Module] = nn.BatchNorm2d,
     ) -> None:
         super().__init__()
 
         self.register_buffer(
-            "positional_encoding", positional_encoding(*bev_shape), persistent=False
+            "positional_encoding", positional_encoding(*input_shape), persistent=False
         )
         self.decode = models.regnet.AnyStage(
             in_ch + 6,
@@ -123,4 +123,34 @@ class ConvPEBlock(nn.Module):
             ),
             dim=1,
         )
+        return self.decode(x)
+
+
+class UpsamplePEBlock(nn.Module):
+    """
+    ConvPEBlock with upsampling added.
+    """
+
+    def __init__(
+        self,
+        in_ch: int,
+        out_ch: int,
+        input_shape: Tuple[int, int],
+        norm: Type[torch.nn.modules.batchnorm.BatchNorm2d] = nn.BatchNorm2d,
+    ) -> None:
+        super().__init__()
+
+        self.upsample = nn.Upsample(scale_factor=(2, 2))
+        self.decode = ConvPEBlock(
+            in_ch=in_ch,
+            out_ch=out_ch,
+            input_shape=(
+                input_shape[0] * 2,
+                input_shape[1] * 2,
+            ),
+            norm=norm,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.upsample(x.float())  # upsample doesn't support bfloat16
         return self.decode(x)

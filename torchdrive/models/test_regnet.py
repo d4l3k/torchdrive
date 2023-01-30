@@ -3,7 +3,7 @@ import unittest
 import torch
 from torchvision import models
 
-from torchdrive.models.regnet import ConvPEBlock, RegNetEncoder
+from torchdrive.models.regnet import ConvPEBlock, RegNetEncoder, UpsamplePEBlock
 
 
 class TestRegNet(unittest.TestCase):
@@ -16,3 +16,8 @@ class TestRegNet(unittest.TestCase):
         m = ConvPEBlock(4, 5, (4, 4))
         out = m(torch.rand(2, 4, 4, 4))
         self.assertEqual(out.shape, (2, 5, 4, 4))
+
+    def test_upsample_pe_block(self) -> None:
+        m = UpsamplePEBlock(4, 5, (4, 4))
+        out = m(torch.rand(2, 4, 4, 4))
+        self.assertEqual(out.shape, (2, 5, 8, 8))

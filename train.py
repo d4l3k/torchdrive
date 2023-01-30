@@ -19,6 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, nonstrict_collate, transfer
 from torchdrive.datasets.rice import MultiCamDataset
+from torchdrive.tasks.ae import AETask
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 from torchdrive.tasks.det import DetTask
 from tqdm import tqdm
@@ -52,10 +53,13 @@ parser.add_argument("--dim", type=int, required=True)
 parser.add_argument("--bev_shape", type=tuple_int, required=True)
 parser.add_argument("--cam_shape", type=tuple_int, required=True)
 parser.add_argument("--skip_load_optim", default=False, action="store_true")
-parser.add_argument("--det", default=False, action="store_true")
 parser.add_argument("--anomaly-detection", default=False, action="store_true")
 parser.add_argument("--limit_size", type=int)
 parser.add_argument("--grad_clip", type=float, default=35)
+
+# tasks
+parser.add_argument("--det", default=False, action="store_true")
+parser.add_argument("--ae", default=False, action="store_true")
 
 args: argparse.Namespace = parser.parse_args()
 
@@ -138,6 +142,13 @@ if args.det:
         bev_shape=args.bev_shape,
         dim=args.dim,
         device=device,
+    )
+if args.ae:
+    tasks["ae"] = AETask(
+        cameras=args.cameras,
+        cam_shape=args.cam_shape,
+        bev_shape=args.bev_shape,
+        dim=args.dim,
     )
 
 assert len(tasks) > 0, "no tasks specified"
@@ -278,7 +289,7 @@ for epoch in range(NUM_EPOCHS):
             for k, v in losses.items():
                 meaned_losses[k] += v
                 # compute roll up metrics
-                rollupk = k.partition("/")[0]
+                rollupk = "loss/" + k.partition("/")[0]
                 if rollupk != k:
                     meaned_losses[rollupk] += v
             meaned_losses["loss"] += loss

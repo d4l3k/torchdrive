@@ -106,7 +106,7 @@ class CamBEVEncoder(nn.Module):
         self.conv: nn.Module = conv(
             dim,
             dim,
-            bev_shape=bev_shape,
+            input_shape=bev_shape,
         )
 
     def forward(self, camera_frames: Mapping[str, torch.Tensor]) -> torch.Tensor:

@@ -45,7 +45,7 @@ class Context:
         if self.writer:
             assert self.log_img
             self.writer.add_image(
-                f"{self.name}/{name}", img, global_step=self.global_step
+                f"{self.name}-{name}", img, global_step=self.global_step
             )
 
 
