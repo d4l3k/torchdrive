@@ -1,6 +1,7 @@
+import typing
+from collections import OrderedDict
 from difflib import SequenceMatcher
 from typing import Dict
-from collections import OrderedDict
 
 import torch
 from torch import nn
@@ -15,13 +16,13 @@ def similarity(a: str, b: str) -> float:
 
 def remap_state_dict(
     state_dict: Dict[str, torch.Tensor], m: nn.Module
-) -> OrderedDict[str, torch.Tensor]:
+) -> typing.OrderedDict[str, torch.Tensor]:
     """
     remap_state_dict maps the parameters from provided state_dict to best match
     any new/renamed parameters in the new module. It uses shape information and
     similarity search to find the best candidate in the new model.
     """
-    to_load = OrderedDict[str, torch.Tensor](state_dict)
+    to_load = OrderedDict(state_dict)
 
     for k, v in m.state_dict().items():
         if "frozen" in k:

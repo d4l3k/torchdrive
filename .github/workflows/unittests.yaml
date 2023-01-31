@@ -10,8 +10,12 @@ jobs:
   unittest:
     strategy:
       matrix:
-        python-version: [3.8, '3.10']
         platform: [ubuntu-22.04]
+        include:
+          - python-version: 3.8
+            short-py: py38
+          - python-version: '3.10'
+            short-py: py310
       fail-fast: false
     runs-on: ${{ matrix.platform }}
     steps:
@@ -36,7 +40,7 @@ jobs:
 
           pip install --upgrade wheel pip
           pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
-          pip install -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu116_pyt1131/download.html pytorch3d
+          pip install -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/${{ matrix.short-py }}_cu116_pyt1131/download.html pytorch3d
           pip install -U openmim
           mim install mmcv-full
           pip install -r requirements.txt

@@ -32,10 +32,10 @@ class TestBEV(unittest.TestCase):
             writer=MagicMock(),
         )
         losses = m(dummy_batch(), global_step=500)
-        self.assertIn("dummy/foo", losses)
+        self.assertIn("dummy-foo", losses)
         writer = m.writer
         self.assertIsNotNone(writer)
         self.assertEqual(writer.add_scalar.call_count, 1)
         self.assertEqual(
-            writer.add_scalar.mock_calls, [call("dummy/test", 1.5, global_step=500)]
+            writer.add_scalar.mock_calls, [call("dummy-test", 1.5, global_step=500)]
         )
