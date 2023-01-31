@@ -12,3 +12,4 @@ mmdet
 orjson
 tensorboard
 GitPython
+IPython
