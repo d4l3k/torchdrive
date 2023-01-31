@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import default_collate
 
 
-@dataclass(slots=True, frozen=True, kw_only=True)
+@dataclass(frozen=True)
 class Batch:
     # example weight
     weight: torch.Tensor
