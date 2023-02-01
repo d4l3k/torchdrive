@@ -1,8 +1,10 @@
 from typing import Optional, Tuple
 
 import torch
+from pytorch3d.renderer import PerspectiveCameras
 
 from pytorch3d.renderer.implicit.utils import RayBundle
+from pytorch3d.transforms import RotateAxisAngle, Transform3d
 
 
 class DepthEmissionRaymarcher(torch.nn.Module):
@@ -79,3 +81,46 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         features = (probs.unsqueeze(-1) * rays_features).sum(dim=3)
 
         return depth, features
+
+
+class CustomPerspectiveCameras(PerspectiveCameras):
+    def __init__(
+        self,
+        T: torch.Tensor,
+        K: torch.Tensor,
+        image_size: torch.Tensor,
+        **kwargs: object,
+    ) -> None:
+        """
+        dim is (BS, h, w)
+        K (in normalized K matrix by size)
+        """
+        BS = len(T)
+
+        assert BS == len(image_size), f"{BS} {image_size.shape}"
+        assert BS == len(K), f"{BS} {K.shape}"
+
+        # print(K.shape, image_size)
+
+        K = K.clone()
+        K[:, 0] *= image_size[0, 1]
+        K[:, 1] *= image_size[0, 0]
+        K[:, 2, 2] = 0
+        K[:, 3, 3] = 0
+        K[:, 2, 3] = 1
+        K[:, 3, 2] = 1
+        super().__init__(
+            R=torch.eye(3).expand(BS, 3, 3),
+            K=K,
+            image_size=image_size,
+            in_ndc=False,
+            # pyre-fixme[6]: got object
+            **kwargs,
+        )
+        self.T: torch.Tensor = T.pinverse()
+
+    def get_world_to_view_transform(self, **kwargs: object) -> Transform3d:
+        r = RotateAxisAngle(180, axis="Z", device=self.T.device)
+        return Transform3d(matrix=self.T.transpose(1, 2), device=self.T.device).compose(
+            r
+        )

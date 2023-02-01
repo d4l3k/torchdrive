@@ -3,7 +3,7 @@ import unittest
 import torch
 from pytorch3d.renderer.implicit.utils import RayBundle
 
-from torchdrive.raymarcher import DepthEmissionRaymarcher
+from torchdrive.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarcher
 
 
 class TestRaymarcher(unittest.TestCase):
@@ -28,3 +28,12 @@ class TestRaymarcher(unittest.TestCase):
         )
         self.assertEqual(depth.shape, (BS, X, Y))
         self.assertEqual(features.shape, (BS, X, Y, FEATS))
+
+    def test_cameras(self) -> None:
+        cameras = CustomPerspectiveCameras(
+            T=torch.rand(2, 4, 4),
+            K=torch.rand(2, 4, 4),
+            image_size=torch.tensor([[4, 6]], dtype=torch.float).expand(2, -1),
+            device=torch.device("cpu"),
+        )
+        self.assertIsNotNone(cameras.get_world_to_view_transform())

@@ -4,7 +4,12 @@ import torch
 from torch import nn
 
 from torchdrive.attention import attention
-from torchdrive.models.regnet import ConvPEBlock, RegNetEncoder, UpsamplePEBlock
+from torchdrive.models.regnet import (
+    ConvPEBlock,
+    RegNetEncoder,
+    resnet_init,
+    UpsamplePEBlock,
+)
 
 from torchdrive.positional_encoding import positional_encoding
 
@@ -103,11 +108,13 @@ class CamBEVEncoder(nn.Module):
             dim=dim,
             num_inputs=len(self.cameras),
         )
+        resnet_init(self.transformer)
         self.conv: nn.Module = conv(
             dim,
             dim,
             input_shape=bev_shape,
         )
+        resnet_init(self.conv)
 
     def forward(self, camera_frames: Mapping[str, torch.Tensor]) -> torch.Tensor:
         ordered_frames = [
@@ -130,6 +137,7 @@ class BEVMerger(nn.Module):
             dim,
             bev_shape,
         )
+        resnet_init(self.merge)
 
     def forward(self, bevs: List[torch.Tensor]) -> torch.Tensor:
         x = torch.cat(bevs, dim=1)
@@ -172,6 +180,7 @@ class BEVUpsampler(nn.Module):
             cur_shape = (cur_shape[0] * 2, cur_shape[1] * 2)
 
         self.upsample = nn.Sequential(*blocks)
+        resnet_init(self.upsample)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.upsample(x)

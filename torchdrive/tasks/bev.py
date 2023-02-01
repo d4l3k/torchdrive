@@ -95,6 +95,7 @@ class BEVTaskVan(torch.nn.Module):
         self.cam_shape = cam_shape
         self.tasks = nn.ModuleDict(tasks)
 
+        assert (len(tasks) + len(hr_tasks)) > 0, "no tasks specified"
         self.hr_tasks = nn.ModuleDict(hr_tasks)
         if len(hr_tasks) > 0:
             self.upsample: BEVUpsampler = BEVUpsampler(
