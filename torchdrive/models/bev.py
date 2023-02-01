@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from torchdrive.attention import attention
-from torchdrive.models.regnet import ConvPEBlock, RegNetEncoder
+from torchdrive.models.regnet import ConvPEBlock, RegNetEncoder, UpsamplePEBlock
 
 from torchdrive.positional_encoding import positional_encoding
 
@@ -134,3 +134,44 @@ class BEVMerger(nn.Module):
     def forward(self, bevs: List[torch.Tensor]) -> torch.Tensor:
         x = torch.cat(bevs, dim=1)
         return self.merge(x)
+
+
+class BEVUpsampler(nn.Module):
+    """
+    Upsamples the BEV grid into a larger resolution but lower channel count.
+    Each block halves the input dimension.
+    """
+
+    def __init__(
+        self, num_upsamples: int, bev_shape: Tuple[int, int], dim: int, output_dim: int
+    ) -> None:
+        """
+        Args:
+            num_upsamples: number of UpsamplePEBlocks to use
+            bev_shape: initial input shape
+            dim: input dim
+            output_dim: minimum dimension and output dimension
+        """
+        super().__init__()
+
+        blocks: List[nn.Module] = []
+        cur_dim = dim
+        cur_shape = bev_shape
+        for i in range(num_upsamples):
+            next_dim = max(cur_dim // 2, output_dim)
+            if i == (num_upsamples - 1):
+                next_dim = output_dim
+            blocks.append(
+                UpsamplePEBlock(
+                    in_ch=cur_dim,
+                    out_ch=next_dim,
+                    input_shape=cur_shape,
+                )
+            )
+            cur_dim = next_dim
+            cur_shape = (cur_shape[0] * 2, cur_shape[1] * 2)
+
+        self.upsample = nn.Sequential(*blocks)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.upsample(x)

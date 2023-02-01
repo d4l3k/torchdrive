@@ -11,7 +11,7 @@ from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context
 from torchdrive.data import Batch
 from torchdrive.losses import losses_backward
-from torchdrive.models.bev import BEVMerger, CamBEVEncoder
+from torchdrive.models.bev import BEVMerger, BEVUpsampler, CamBEVEncoder
 
 
 @dataclass
@@ -61,14 +61,23 @@ class BEVTaskVan(torch.nn.Module):
     def __init__(
         self,
         tasks: Dict[str, BEVTask],
+        hr_tasks: Dict[str, BEVTask],
         cam_shape: Tuple[int, int],
         bev_shape: Tuple[int, int],
         cameras: List[str],
         dim: int,
+        hr_dim: int,
         writer: Optional[SummaryWriter] = None,
         output: str = "out",
         encode_frames: int = 3,
+        num_upsamples: int = 4,
     ) -> None:
+        """
+        Args:
+            tasks: tasks that consume the coarse BEV grid
+            hr_tasks: tasks that consume the fine BEV grid
+        """
+
         super().__init__()
 
         self.writer = writer
@@ -85,6 +94,15 @@ class BEVTaskVan(torch.nn.Module):
 
         self.cam_shape = cam_shape
         self.tasks = nn.ModuleDict(tasks)
+
+        self.hr_tasks = nn.ModuleDict(hr_tasks)
+        if len(hr_tasks) > 0:
+            self.upsample: BEVUpsampler = BEVUpsampler(
+                num_upsamples=num_upsamples,
+                bev_shape=bev_shape,
+                dim=dim,
+                output_dim=hr_dim,
+            )
 
     def should_log(self, global_step: int) -> Tuple[bool, bool]:
         if self.writer is None:
@@ -117,9 +135,9 @@ class BEVTaskVan(torch.nn.Module):
             bev = self.frame_merger(bev_frames)
 
         with autograd_context(bev) as bev:
-            losses = {}
+            losses: Dict[str, torch.Tensor] = {}
 
-            ctx = Context(
+            ctx: Context = Context(
                 log_img=log_img,
                 log_text=log_text,
                 global_step=global_step,
@@ -129,12 +147,21 @@ class BEVTaskVan(torch.nn.Module):
                 start_frame=self.encode_frames - 1,
             )
 
-            for name, task in self.tasks.items():
-                ctx.name = name
+            def _run_tasks(tasks: nn.ModuleDict, task_bev: torch.Tensor) -> None:
+                for name, task in tasks.items():
+                    ctx.name = name
 
-                task_losses = task(ctx, batch, bev)
-                losses_backward(task_losses, scaler)
-                for k, v in task_losses.items():
-                    losses[name + "-" + k] = v
+                    task_losses = task(ctx, batch, task_bev)
+                    losses_backward(task_losses, scaler)
+                    for k, v in task_losses.items():
+                        losses[name + "-" + k] = v
+
+            _run_tasks(self.tasks, bev)
+
+            if len(self.hr_tasks) > 0:
+                with autocast():
+                    hr_bev = self.upsample(bev)
+                    with autograd_context(hr_bev) as hr_bev:
+                        _run_tasks(self.hr_tasks, hr_bev)
 
         return losses

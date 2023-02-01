@@ -2,7 +2,12 @@ import unittest
 
 import torch
 
-from torchdrive.models.bev import BEVMerger, CamBEVEncoder, GridTransformer
+from torchdrive.models.bev import (
+    BEVMerger,
+    BEVUpsampler,
+    CamBEVEncoder,
+    GridTransformer,
+)
 from torchdrive.testing import skipIfNoCUDA
 
 
@@ -52,3 +57,8 @@ class TestBEVTransformer(unittest.TestCase):
         m = BEVMerger(num_frames=3, bev_shape=(4, 4), dim=5)
         out = m([torch.rand(2, 5, 4, 4)] * 3)
         self.assertEqual(out.shape, (2, 5, 4, 4))
+
+    def test_bev_upsampler(self) -> None:
+        m = BEVUpsampler(num_upsamples=2, bev_shape=(4, 4), dim=5, output_dim=3)
+        out = m(torch.rand(2, 5, 4, 4))
+        self.assertEqual(out.shape, (2, 3, 16, 16))

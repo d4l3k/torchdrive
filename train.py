@@ -50,6 +50,7 @@ parser.add_argument(
     type=tuple_str,
 )
 parser.add_argument("--dim", type=int, required=True)
+parser.add_argument("--hr_dim", type=int)
 parser.add_argument("--bev_shape", type=tuple_int, required=True)
 parser.add_argument("--cam_shape", type=tuple_int, required=True)
 parser.add_argument("--skip_load_optim", default=False, action="store_true")
@@ -137,6 +138,7 @@ if args.anomaly_detection:
     torch.set_anomaly_enabled(True)
 
 tasks: Dict[str, BEVTask] = {}
+hr_tasks: Dict[str, BEVTask] = {}
 if args.det:
     tasks["det"] = DetTask(
         cameras=args.cameras,
@@ -156,10 +158,12 @@ if args.ae:
 assert len(tasks) > 0, "no tasks specified"
 model = BEVTaskVan(
     tasks=tasks,
+    hr_tasks=hr_tasks,
     bev_shape=args.bev_shape,
     cam_shape=args.cam_shape,
     cameras=args.cameras,
     dim=args.dim,
+    hr_dim=args.hr_dim,
     writer=writer,
     output=args.output,
 )
