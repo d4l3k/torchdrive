@@ -186,7 +186,7 @@ class VoxelTask(BEVTask):
             losses = {}
 
             # total variation loss to encourage sharp edges
-            losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 0.01
+            losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 0.01 * 40
 
             h, w = self.cam_shape
 
@@ -299,8 +299,8 @@ class VoxelTask(BEVTask):
                                 f"{cam}/{offset}/{scale}/proj_mask",
                                 render_color(projmask[0][0]),
                             )
-                        losses[f"lossproj/{cam}/o{offset}/s{scale}"] = proj_loss.mean(
-                            dim=(1, 2, 3)
+                        losses[f"lossproj/{cam}/o{offset}/s{scale}"] = (
+                            proj_loss.mean(dim=(1, 2, 3)) * 40
                         )
 
                     losses_backward(losses, ctx.scaler)

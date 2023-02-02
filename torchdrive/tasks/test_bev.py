@@ -31,7 +31,8 @@ class TestBEV(unittest.TestCase):
             dim=5,
             hr_dim=1,
             num_upsamples=1,
-            encode_frames=2,
+            num_encode_frames=2,
+            num_backprop_frames=1,
             writer=MagicMock(),
         )
         losses = m(dummy_batch(), global_step=500)

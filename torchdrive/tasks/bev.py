@@ -79,13 +79,16 @@ class BEVTaskVan(torch.nn.Module):
         hr_dim: int,
         writer: Optional[SummaryWriter] = None,
         output: str = "out",
-        encode_frames: int = 3,
+        num_encode_frames: int = 3,
         num_upsamples: int = 4,
+        num_backprop_frames: int = 2,
     ) -> None:
         """
         Args:
             tasks: tasks that consume the coarse BEV grid
             hr_tasks: tasks that consume the fine BEV grid
+            num_encode_frames: number of frames to merge for the encoders
+            num_backprop_frames: number of frames to run backprop for
         """
 
         super().__init__()
@@ -94,12 +97,13 @@ class BEVTaskVan(torch.nn.Module):
         self.output = output
 
         self.cameras = cameras
-        self.encode_frames = encode_frames
+        self.num_encode_frames = num_encode_frames
+        self.num_backprop_frames = num_backprop_frames
         self.frame_encoder = CamBEVEncoder(
             cameras, cam_shape=cam_shape, bev_shape=bev_shape, dim=dim
         )
         self.frame_merger = BEVMerger(
-            num_frames=self.encode_frames, bev_shape=bev_shape, dim=dim
+            num_frames=self.num_encode_frames, bev_shape=bev_shape, dim=dim
         )
 
         self.cam_shape = cam_shape
@@ -141,7 +145,14 @@ class BEVTaskVan(torch.nn.Module):
 
         with autocast():
             bev_frames = []
-            for frame in range(self.encode_frames):
+            first_backprop_frame = max(
+                self.num_encode_frames - self.num_backprop_frames, 0
+            )
+            with torch.no_grad():
+                for frame in range(0, first_backprop_frame):
+                    cams = {cam: batch.color[cam, frame] for cam in self.cameras}
+                    bev_frames.append(self.frame_encoder(cams))
+            for frame in range(first_backprop_frame, self.num_encode_frames):
                 cams = {cam: batch.color[cam, frame] for cam in self.cameras}
                 bev_frames.append(self.frame_encoder(cams))
             bev = self.frame_merger(bev_frames)
@@ -156,7 +167,7 @@ class BEVTaskVan(torch.nn.Module):
                 scaler=scaler,
                 writer=self.writer,
                 output=self.output,
-                start_frame=self.encode_frames - 1,
+                start_frame=self.num_encode_frames - 1,
             )
 
             def _run_tasks(tasks: nn.ModuleDict, task_bev: torch.Tensor) -> None:
