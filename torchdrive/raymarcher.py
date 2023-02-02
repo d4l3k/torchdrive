@@ -14,10 +14,12 @@ class DepthEmissionRaymarcher(torch.nn.Module):
     label rendering for semantic purposes.
     """
 
-    def __init__(self, background: Optional[torch.Tensor] = None) -> None:
+    def __init__(
+        self, background: Optional[torch.Tensor] = None, floor: float = 0
+    ) -> None:
         super().__init__()
 
-        self.floor: float = 0
+        self.floor = floor
         self.background = background
 
     def forward(
@@ -99,8 +101,6 @@ class CustomPerspectiveCameras(PerspectiveCameras):
 
         assert BS == len(image_size), f"{BS} {image_size.shape}"
         assert BS == len(K), f"{BS} {K.shape}"
-
-        # print(K.shape, image_size)
 
         K = K.clone()
         K[:, 0] *= image_size[0, 1]

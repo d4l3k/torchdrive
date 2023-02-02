@@ -20,6 +20,45 @@ from torchdrive.transforms.depth import BackprojectDepth, Project3D
 from torchdrive.transforms.img import normalize_img, render_color
 
 
+def axis_grid(grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Creates a colored box occupancy grid and color grid.
+
+    Returns:
+        grid: [BS, 1, X, Y, Z]
+        color_grid: [BS, 3, X, Y, Z]
+    """
+    device: torch.device = grid.device
+
+    w, d, h = grid.shape[2:]
+
+    grid = torch.zeros_like(grid)
+    grid[:, :, 0, :, :] = 1
+    grid[:, :, -1, :, :] = 1
+    grid[:, :, :, 0, :] = 1
+    grid[:, :, :, -1, :] = 1
+    grid[:, :, :, :, 0] = 1
+    grid[:, :, :, :, -1] = 1
+
+    def color(r: float, g: float, b: float, x: int, y: int) -> torch.Tensor:
+        return (
+            torch.tensor([r, g, b], device=device, dtype=torch.float)
+            .unsqueeze(1)
+            .unsqueeze(2)
+            .expand(3, x, y)
+        )
+
+    color_grid = torch.zeros_like(grid).repeat(1, 3, 1, 1, 1)
+    color_grid[:, :, 0, :, :] = color(1, 0, 0, d, h)
+    color_grid[:, :, -1, :, :] = color(1, 0, 1, d, h)
+    color_grid[:, :, :, 0, :] = color(0, 1, 0, w, h)
+    color_grid[:, :, :, -1, :] = color(0, 1, 1, w, h)
+    color_grid[:, :, :, :, 0] = color(0, 0, 1, w, d)
+    color_grid[:, :, :, :, -1] = color(1, 1, 1, w, d)
+
+    return grid, color_grid
+
+
 class VoxelTask(BEVTask):
     """
     Voxel occupancy grid task. This takes in the high resolution BEV map and
@@ -41,6 +80,7 @@ class VoxelTask(BEVTask):
         self.cam_shape = cam_shape
         self.cameras = cameras
         self.scale = scale
+        self.height = height
 
         # generate voxel grid
         self.decoder = nn.Conv2d(dim, height, kernel_size=1)
@@ -58,7 +98,9 @@ class VoxelTask(BEVTask):
             min_depth=0.1,
             max_depth=216 / scale,
         )
-        raymarcher = DepthEmissionRaymarcher()
+        raymarcher = DepthEmissionRaymarcher(
+            floor=0,
+        )
         self.renderer = VolumeRenderer(
             raysampler=raysampler,
             raymarcher=raymarcher,
@@ -71,13 +113,16 @@ class VoxelTask(BEVTask):
         frames = batch.distances.shape[1]
         start_frame = ctx.start_frame
         start_T = batch.cam_T[:, ctx.start_frame]
-        cam_T = start_T.pinverse().matmul(batch.cam_T)
+        cam_T = start_T.unsqueeze(1).pinverse().matmul(batch.cam_T)
         device = bev.device
+
+        bev_shape = bev.shape[2:]
 
         with autocast():
             grid = self.decoder(bev).unsqueeze(1).sigmoid_()
 
         grid = grid.permute(0, 1, 4, 3, 2)
+        # grid, color_grid = axis_grid(grid)
 
         losses = {}
         with autograd_context(grid) as grid:
@@ -98,13 +143,19 @@ class VoxelTask(BEVTask):
 
                 gz = render_color(grid[0, 0].sum(dim=2))
 
+                voxel_center = torch.tensor(
+                    (bev_shape[0] / 2, bev_shape[1] / 2, 0),
+                    device=device,
+                    dtype=torch.float32,
+                )
+
                 zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
                 zero_coord[:, -1] = 1
-                for frame in range(start_frame, frames):
+                for frame in range(0, frames):
                     T = cam_T[:, frame]
                     cam_coords = torch.matmul(T, zero_coord.T)
                     coord = cam_coords[0, :3, 0]
-                    x, y, z = (coord * self.scale).int()
+                    x, y, z = (coord * self.scale + voxel_center).int()
                     _, d, w = gz.shape
                     if x >= d or y >= w or x < 0 or y < 0:
                         continue
@@ -119,14 +170,17 @@ class VoxelTask(BEVTask):
                     # save a npz file
                     np.save(
                         os.path.join(ctx.output, f"grid_{ctx.global_step}.npy"),
-                        grid[0].cpu().detach().numpy(),
+                        grid[0].detach().float().cpu().numpy(),
                         allow_pickle=False,
                     )
 
             volumes = Volumes(
-                densities=grid,
+                densities=grid.permute(0, 1, 4, 3, 2).float(),
+                # features=color_grid.permute(0, 1, 4, 3, 2).float(),
                 voxel_size=1 / self.scale,
-                volume_translation=(0, 0, 0),  # TODO support noncentered voxel grids
+                # TODO support non-centered voxel grids
+                # volume_translation=(-self.height / 2 / self.scale, 0, 0),
+                volume_translation=(0, 0, -self.height / 2 / self.scale),
             )
 
             losses = {}
@@ -136,13 +190,7 @@ class VoxelTask(BEVTask):
 
             h, w = self.cam_shape
 
-            frame_projects = {
-                0: self.cameras,
-                2: self.cameras,
-                4: self.cameras,
-            }
-
-            for frame in range(0, frames, 2):
+            for frame in range(0, frames - 1, 2):
                 for cam in self.cameras:
                     K = batch.K[cam]
                     T = torch.matmul(cam_T[:, frame], batch.T[cam])
@@ -160,6 +208,7 @@ class VoxelTask(BEVTask):
                         volumes=volumes,
                         eps=1e-8,
                     )
+                    # semantic_img = semantic_img.permute(0, 3, 1, 2)
 
                     depth = F.interpolate(
                         depth.unsqueeze(1),
@@ -185,6 +234,10 @@ class VoxelTask(BEVTask):
                             # pyre-fixme[6]: float / tensor
                             render_color(1 / (depth[0][0] + 1e-7)),
                         )
+                        # ctx.add_image(
+                        #    f"color/{cam}/{frame}",
+                        #    semantic_img[0],
+                        # )
 
                     offset = frame + 1
                     T = batch.frame_T[:, offset]

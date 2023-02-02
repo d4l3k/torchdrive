@@ -100,19 +100,14 @@ torch.cuda.set_device(device)
 BS: int = args.batch_size
 NUM_EPOCHS: int = args.epochs
 
-if args.det:
-    # 3 encode frames, 3 decode frames, overlap last frame
-    nframes_per_point = 5
-else:
-    nframes_per_point = 2
-
 dataset = MultiCamDataset(
     index_file=args.dataset,
     mask_dir=args.masks,
     cameras=args.cameras,
-    dynamic=args.det,
+    dynamic=True,
     cam_shape=args.cam_shape,
-    nframes_per_point=nframes_per_point,
+    # 3 encode frames, 3 decode frames, overlap last frame
+    nframes_per_point=5,
     limit_size=args.limit_size,
 )
 if rank == 0:

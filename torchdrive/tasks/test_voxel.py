@@ -6,7 +6,7 @@ import torch
 from torchdrive.data import dummy_batch
 
 from torchdrive.tasks.bev import Context
-from torchdrive.tasks.voxel import VoxelTask
+from torchdrive.tasks.voxel import axis_grid, VoxelTask
 
 
 class TestVoxel(unittest.TestCase):
@@ -42,3 +42,8 @@ class TestVoxel(unittest.TestCase):
                 "lossproj/left/o1/s2",
             ],
         )
+
+    def test_axis_grid(self) -> None:
+        grid, color = axis_grid(torch.rand(2, 1, 3, 4, 5))
+        self.assertEqual(grid.shape, (2, 1, 3, 4, 5))
+        self.assertEqual(color.shape, (2, 3, 3, 4, 5))

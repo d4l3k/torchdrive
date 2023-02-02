@@ -50,7 +50,7 @@ def render_color(
     Returns:
         output tensor [3, H, W], float, cpu
     """
-    img = img.detach()
+    img = img.detach().float()
     cmap = cm.get_cmap(palette)
     N = 1000
     colors = torch.tensor([cmap(i / N)[:3] for i in range(N)], device=img.device)

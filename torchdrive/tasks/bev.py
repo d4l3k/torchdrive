@@ -14,6 +14,14 @@ from torchdrive.losses import losses_backward
 from torchdrive.models.bev import BEVMerger, BEVUpsampler, CamBEVEncoder
 
 
+def _cpu_float(
+    v: Union[torch.Tensor, int, float, bool]
+) -> Union[torch.Tensor, int, float, bool]:
+    if isinstance(v, torch.Tensor):
+        return v.detach().float().cpu()
+    return v
+
+
 @dataclass
 class Context:
     log_img: bool
@@ -29,7 +37,9 @@ class Context:
         if self.writer:
             assert self.log_text
             self.writer.add_scalars(
-                f"{self.name}-{name}", scalars, global_step=self.global_step
+                f"{self.name}-{name}",
+                {k: _cpu_float(v) for k, v in scalars.items()},
+                global_step=self.global_step,
             )
 
     def add_scalar(
@@ -38,7 +48,7 @@ class Context:
         if self.writer:
             assert self.log_text
             self.writer.add_scalar(
-                f"{self.name}-{name}", scalar, global_step=self.global_step
+                f"{self.name}-{name}", _cpu_float(scalar), global_step=self.global_step
             )
 
     def add_image(self, name: str, img: torch.Tensor) -> None:
@@ -98,6 +108,7 @@ class BEVTaskVan(torch.nn.Module):
         assert (len(tasks) + len(hr_tasks)) > 0, "no tasks specified"
         self.hr_tasks = nn.ModuleDict(hr_tasks)
         if len(hr_tasks) > 0:
+            assert hr_dim is not None, "must specify hr_dim for hr_tasks"
             self.upsample: BEVUpsampler = BEVUpsampler(
                 num_upsamples=num_upsamples,
                 bev_shape=bev_shape,
@@ -162,7 +173,7 @@ class BEVTaskVan(torch.nn.Module):
             if len(self.hr_tasks) > 0:
                 with autocast():
                     hr_bev = self.upsample(bev)
-                    with autograd_context(hr_bev) as hr_bev:
-                        _run_tasks(self.hr_tasks, hr_bev)
+                with autograd_context(hr_bev) as hr_bev:
+                    _run_tasks(self.hr_tasks, hr_bev)
 
         return losses
