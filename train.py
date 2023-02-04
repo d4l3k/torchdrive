@@ -22,6 +22,7 @@ from torchdrive.datasets.rice import MultiCamDataset
 from torchdrive.tasks.ae import AETask
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 from torchdrive.tasks.det import DetTask
+from torchdrive.tasks.path import PathTask
 from torchdrive.tasks.voxel import VoxelTask
 from tqdm import tqdm
 
@@ -63,6 +64,7 @@ parser.add_argument("--grad_clip", type=float, default=35)
 parser.add_argument("--det", default=False, action="store_true")
 parser.add_argument("--ae", default=False, action="store_true")
 parser.add_argument("--voxel", default=False, action="store_true")
+parser.add_argument("--path", default=False, action="store_true")
 
 args: argparse.Namespace = parser.parse_args()
 
@@ -150,6 +152,11 @@ if args.ae:
         cam_shape=args.cam_shape,
         bev_shape=args.bev_shape,
         dim=args.dim,
+    )
+if args.path:
+    tasks["path"] = PathTask(
+        bev_shape=args.bev_shape,
+        bev_dim=args.dim,
     )
 if args.voxel:
     hr_tasks["voxel"] = VoxelTask(
