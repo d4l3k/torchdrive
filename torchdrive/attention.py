@@ -1,8 +1,9 @@
 # pyre-ignore-all-errors[21]: missing optional imports
 
-from typing import Optional
+from typing import Optional, Protocol
 
 import torch
+import torch.nn.functional as F
 
 try:
     from flash_attn.flash_attn_interface import flash_attn_unpadded_kvpacked_func
@@ -17,6 +18,19 @@ try:
     HAS_XFORMERS = True
 except ImportError as e:
     HAS_XFORMERS = False
+
+
+class AttentionType(Protocol):
+    def __call__(
+        self,
+        q: torch.Tensor,
+        kv: torch.Tensor,
+        dim: int,
+        num_heads: int,
+        dropout_p: float = 0.0,
+        attn_bias: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        ...
 
 
 def attention(
@@ -43,8 +57,8 @@ def attention(
     Returns:
         [BS, num_queries, dim]
     """
-    # if HAS_XFORMERS:
-    #    return xformers_attention(q, kv, dim, num_heads, dropout_p, attn_bias)
+    if HAS_XFORMERS and not (dropout_p != 0.0 and not q.is_cuda):
+        return xformers_attention(q, kv, dim, num_heads, dropout_p, attn_bias)
     # if HAS_FLASH_ATTN and q.is_cuda and q.dtype in (torch.half, torch.bfloat16):
     #    return flash_attention(q, kv, dim, num_heads, dropout_p)
     return naive_attention(q, kv, dim, num_heads, dropout_p, attn_bias)
@@ -83,7 +97,7 @@ def flash_attention(
         ),
         max_seqlen_q=q_seqlen,
         max_seqlen_k=k_seqlen,
-        dropout_p=0.0,
+        dropout_p=dropout_p,
     )
     return out.reshape(BS, -1, dim)
 
@@ -115,28 +129,16 @@ def naive_attention(
     dropout_p: float = 0.0,
     attn_bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    key = kv[..., :dim]
-    value = kv[..., dim:]
-    assert dropout_p == 0.0, "naive doesn't support dropout"
-    return _ref_attention(
-        q=q.contiguous(),
-        k=key.contiguous(),
-        v=value.contiguous(),
-        attn_bias=attn_bias,
-    )
-
-
-def _ref_attention(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    attn_bias: Optional[torch.Tensor],
-) -> torch.Tensor:
     """
     From https://github.com/facebookresearch/xformers/blob/main/tests/test_mem_eff_attention.py#L188
     Copyright (c) Facebook, Inc. and its affiliates
     BSD 3-Clause License
     """
+
+    q = q.contiguous()
+    k = kv[..., :dim].contiguous()
+    v = kv[..., dim:].contiguous()
+
     scale = 1 / q.shape[-1] ** 0.5
     q = q * scale
 
@@ -144,4 +146,5 @@ def _ref_attention(
     if attn_bias is not None:
         attn += attn_bias
     attn = attn.softmax(-1)
+    attn = F.dropout(attn, p=dropout_p)
     return attn @ v

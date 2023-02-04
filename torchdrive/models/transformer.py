@@ -16,11 +16,12 @@ def causal_mask(seq_len: int, device: torch.device, dtype: torch.dtype) -> torch
 
 
 class SelfAttention(nn.Module):
-    def __init__(self, dim: int, num_heads: int = 8) -> None:
+    def __init__(self, dim: int, num_heads: int = 8, dropout_p: float = 0.1) -> None:
         super().__init__()
 
         self.num_heads = num_heads
         self.dim = dim
+        self.dropout_p = dropout_p
 
         self.query_encoder = nn.Sequential(
             nn.Conv1d(dim, dim, 1),
@@ -44,15 +45,17 @@ class SelfAttention(nn.Module):
             dim=self.dim,
             num_heads=self.num_heads,
             attn_bias=mask,
+            dropout_p=self.dropout_p if self.training else 0.0,
         )
 
 
 class CrossAttention(nn.Module):
-    def __init__(self, dim: int, num_heads: int = 8) -> None:
+    def __init__(self, dim: int, num_heads: int = 8, dropout_p: float = 0.1) -> None:
         super().__init__()
 
         self.num_heads = num_heads
         self.dim = dim
+        self.dropout_p = dropout_p
 
         self.query_encoder = nn.Sequential(
             nn.Conv1d(dim, dim, 1),
@@ -72,20 +75,25 @@ class CrossAttention(nn.Module):
             kv,
             dim=self.dim,
             num_heads=self.num_heads,
+            dropout_p=self.dropout_p if self.training else 0.0,
         )
 
 
 class TransformerDecoderBlock(nn.Module):
-    def __init__(self, dim: int, num_heads: int) -> None:
+    def __init__(self, dim: int, num_heads: int, dropout_p: float = 0.1) -> None:
         super().__init__()
 
         self.dim = dim
         hidden_dim = 2 * dim
 
-        self.self_attn = SelfAttention(dim=dim, num_heads=num_heads)
+        self.self_attn = SelfAttention(
+            dim=dim, num_heads=num_heads, dropout_p=dropout_p
+        )
         self.ln1 = nn.LayerNorm(dim)
 
-        self.cross_attn = CrossAttention(dim=dim, num_heads=num_heads)
+        self.cross_attn = CrossAttention(
+            dim=dim, num_heads=num_heads, dropout_p=dropout_p
+        )
         self.ln2 = nn.LayerNorm(dim)
 
         self.ffn = nn.Sequential(
