@@ -31,7 +31,11 @@ class Context:
     writer: Optional[SummaryWriter]
     start_frame: int
     output: str
+    weights: torch.Tensor
     name: str = "<unknown>"
+
+    def backward(self, losses: Dict[str, torch.Tensor]) -> None:
+        losses_backward(losses, scaler=self.scaler, weights=self.weights)
 
     def add_scalars(self, name: str, scalars: Dict[str, torch.Tensor]) -> None:
         if self.writer:
@@ -175,6 +179,7 @@ class BEVTaskVan(torch.nn.Module):
                 writer=self.writer,
                 output=self.output,
                 start_frame=self.num_encode_frames - 1,
+                weights=batch.weight,
             )
 
             def _run_tasks(tasks: nn.ModuleDict, task_bev: torch.Tensor) -> None:
@@ -182,7 +187,7 @@ class BEVTaskVan(torch.nn.Module):
                     ctx.name = name
 
                     task_losses = task(ctx, batch, task_bev)
-                    losses_backward(task_losses, scaler)
+                    ctx.backward(task_losses)
                     for k, v in task_losses.items():
                         losses[name + "-" + k] = v
 

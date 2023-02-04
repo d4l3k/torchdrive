@@ -1,8 +1,9 @@
 from typing import Dict, Tuple
 
+import matplotlib.pyplot as plt
+
 import torch
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
 
 from torchdrive.amp import autocast
 from torchdrive.data import Batch
@@ -60,6 +61,9 @@ class PathTask(BEVTask):
             plt.plot(*target[0, 0:2].detach().cpu(), label="target")
             plt.plot(*predicted[0, 0:2].detach().cpu(), label="predicted")
             fig.legend()
-            plt.gca().set_aspect('equal')
+            plt.gca().set_aspect("equal")
             ctx.add_figure("paths", fig)
-        return {"position": F.mse_loss(predicted, target) * 5}
+        position_loss = (
+            F.mse_loss(predicted, target, reduction="none").mean(dim=(1, 2)) * 5
+        )
+        return {"position": position_loss}

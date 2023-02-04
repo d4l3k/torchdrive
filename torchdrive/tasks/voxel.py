@@ -12,7 +12,7 @@ from torch import nn
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context
 from torchdrive.data import Batch
-from torchdrive.losses import losses_backward, projection_loss, tvl1_loss
+from torchdrive.losses import projection_loss, tvl1_loss
 from torchdrive.models.regnet import resnet_init
 from torchdrive.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarcher
 from torchdrive.tasks.bev import BEVTask, Context
@@ -303,7 +303,7 @@ class VoxelTask(BEVTask):
                             proj_loss.mean(dim=(1, 2, 3)) * 40
                         )
 
-                    losses_backward(losses, ctx.scaler)
+                    ctx.backward(losses)
 
         return losses
 

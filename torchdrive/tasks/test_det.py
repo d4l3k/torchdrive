@@ -18,6 +18,7 @@ class TestDet(unittest.TestCase):
             dim=5,
             device=torch.device("cpu"),
         )
+        batch = dummy_batch()
         ctx = Context(
             log_img=False,
             log_text=True,
@@ -27,8 +28,8 @@ class TestDet(unittest.TestCase):
             scaler=None,
             name="det",
             output="/invalid",
+            weights=batch.weight,
         )
         bev = torch.rand(2, 5, 4, 4)
-        batch = dummy_batch()
         losses = m(ctx, batch, bev)
         self.assertIn("unmatched", losses)

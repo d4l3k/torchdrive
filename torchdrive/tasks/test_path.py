@@ -18,6 +18,7 @@ class TestPath(unittest.TestCase):
             num_heads=2,
             num_layers=1,
         )
+        batch = dummy_batch()
         ctx = Context(
             log_img=True,
             log_text=True,
@@ -27,8 +28,9 @@ class TestPath(unittest.TestCase):
             scaler=None,
             name="det",
             output="/invalid",
+            weights=batch.weight,
         )
         bev = torch.rand(2, 5, 4, 4)
-        batch = dummy_batch()
         losses = m(ctx, batch, bev)
         self.assertCountEqual(losses.keys(), ["position"])
+        self.assertEqual(losses["position"].shape, (2,))

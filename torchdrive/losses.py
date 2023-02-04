@@ -157,7 +157,7 @@ def losses_backward(
         if not v.requires_grad:
             continue
         v = v.float()
-        if weights is not None:
+        if weights is not None and v.numel() != 1:
             assert v.shape == weights.shape, f"{k} {v.shape}"
             v *= weights
         weighted_losses[k] = v.mean()

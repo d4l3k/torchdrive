@@ -17,6 +17,7 @@ class TestAE(unittest.TestCase):
             bev_shape=(4, 4),
             dim=5,
         )
+        batch = dummy_batch()
         ctx = Context(
             log_img=True,
             log_text=True,
@@ -26,8 +27,8 @@ class TestAE(unittest.TestCase):
             scaler=None,
             name="det",
             output="/invalid",
+            weights=batch.weight,
         )
         bev = torch.rand(2, 5, 4, 4)
-        batch = dummy_batch()
         losses = m(ctx, batch, bev)
         self.assertCountEqual(losses.keys(), ["ssim/left", "ssim/right"])
