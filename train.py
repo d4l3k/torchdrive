@@ -59,6 +59,7 @@ parser.add_argument("--skip_load_optim", default=False, action="store_true")
 parser.add_argument("--anomaly-detection", default=False, action="store_true")
 parser.add_argument("--limit_size", type=int)
 parser.add_argument("--grad_clip", type=float, default=35)
+parser.add_argument("--checkpoint_every", type=int, default=500)
 
 # tasks
 parser.add_argument("--det", default=False, action="store_true")
@@ -321,7 +322,7 @@ for epoch in range(NUM_EPOCHS):
                     print(f"- {k}: {v.item()}")
                 print(f"= {loss.item()}")
 
-            if global_step > 0 and (global_step % 1000) == 0:
+            if global_step > 0 and (global_step % args.checkpoint_every) == 0:
                 save(epoch)
 
             batch_idx += 1
