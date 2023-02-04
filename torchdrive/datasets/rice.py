@@ -546,6 +546,7 @@ class MultiCamDataset(Dataset):
             color=colors,
             mask=masks,
             cam_T=cam_T,
+            long_cam_T=cam_Ts,
             distances=dists,
             frame_T=frame_T,
         )

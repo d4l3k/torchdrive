@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 
 import torch
 
@@ -11,6 +12,15 @@ class TesetData(unittest.TestCase):
 
     def test_collate(self) -> None:
         batch = collate([dummy_batch(), dummy_batch(), None])
+
+    def test_collate_long_cam_T(self) -> None:
+        a = dummy_batch()
+        b = dummy_batch()
+        a = replace(a, long_cam_T=torch.rand(3, 4, 4))
+        b = replace(b, long_cam_T=torch.rand(5, 4, 4))
+        batch = collate([a, b])
+        self.assertIsNotNone(batch)
+        self.assertEqual(batch.long_cam_T.shape, (2, 3, 4, 4))
 
     def test_nonstrict_colate(self) -> None:
         self.assertIsNone(nonstrict_collate([None]))

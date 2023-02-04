@@ -23,6 +23,9 @@ class Batch:
     color: Dict[Tuple[str, int], torch.Tensor]
     # per camera mask
     mask: Dict[str, torch.Tensor]
+    # sequential cam_T only aligned with the start frames extending into the
+    # future
+    long_cam_T: torch.Tensor
 
     def to(self, device: torch.device) -> "Batch":
         return Batch(
@@ -45,12 +48,23 @@ def dummy_batch() -> Batch:
         weight=torch.rand(BS),
         distances=torch.rand(BS, N),
         cam_T=torch.rand(BS, N, 4, 4),
+        long_cam_T=torch.rand(BS, 2 * N, 4, 4),
         frame_T=torch.rand(BS, N, 4, 4),
         K={cam: torch.rand(BS, 4, 4) for cam in cams},
         T={cam: torch.rand(BS, 4, 4) for cam in cams},
         color=color,
         mask={cam: torch.rand(BS, 1, 48, 64) for cam in cams},
     )
+
+
+def _collate_long_cam_T(tensors: List[torch.Tensor]) -> torch.Tensor:
+    seq_len = min(t.size(0) for t in tensors)
+    return default_collate([t[:seq_len] for t in tensors])
+
+
+_COLLATE_FIELDS = {
+    "long_cam_T": _collate_long_cam_T,
+}
 
 
 def collate(batch: List[Optional[Batch]], strict: bool = True) -> Optional[Batch]:
@@ -67,7 +81,9 @@ def collate(batch: List[Optional[Batch]], strict: bool = True) -> Optional[Batch
 
     return Batch(
         **{
-            field.name: default_collate([getattr(b, field.name) for b in batch])
+            field.name: _COLLATE_FIELDS.get(field.name, default_collate)(
+                [getattr(b, field.name) for b in batch]
+            )
             for field in fields(Batch)
         }
     )
