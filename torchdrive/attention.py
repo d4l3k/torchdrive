@@ -1,5 +1,7 @@
 # pyre-ignore-all-errors[21]: missing optional imports
 
+from typing import Optional
+
 import torch
 
 try:
@@ -18,7 +20,12 @@ except ImportError as e:
 
 
 def attention(
-    q: torch.Tensor, kv: torch.Tensor, dim: int, num_heads: int, dropout_p: float = 0.0
+    q: torch.Tensor,
+    kv: torch.Tensor,
+    dim: int,
+    num_heads: int,
+    dropout_p: float = 0.0,
+    attn_bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """
     attention is a dispatcher for multiheaded attention and will use the most
@@ -36,16 +43,23 @@ def attention(
     Returns:
         [BS, num_queries, dim]
     """
-    if HAS_XFORMERS:
-        return xformers_attention(q, kv, dim, num_heads, dropout_p)
-    if HAS_FLASH_ATTN and q.is_cuda and q.dtype in (torch.half, torch.bfloat16):
-        return flash_attention(q, kv, dim, num_heads, dropout_p)
-    return naive_attention(q, kv, dim, num_heads, dropout_p)
+    # if HAS_XFORMERS:
+    #    return xformers_attention(q, kv, dim, num_heads, dropout_p, attn_bias)
+    # if HAS_FLASH_ATTN and q.is_cuda and q.dtype in (torch.half, torch.bfloat16):
+    #    return flash_attention(q, kv, dim, num_heads, dropout_p)
+    return naive_attention(q, kv, dim, num_heads, dropout_p, attn_bias)
 
 
 def flash_attention(
-    q: torch.Tensor, kv: torch.Tensor, dim: int, num_heads: int, dropout_p: float = 0.0
+    q: torch.Tensor,
+    kv: torch.Tensor,
+    dim: int,
+    num_heads: int,
+    dropout_p: float = 0.0,
+    attn_bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
+    assert attn_bias is None, "flash_attention doesn't support attn_bias"
+
     BS = q.shape[0]
     q_seqlen = q.shape[1]
     k_seqlen = kv.shape[1]
@@ -75,7 +89,12 @@ def flash_attention(
 
 
 def xformers_attention(
-    q: torch.Tensor, kv: torch.Tensor, dim: int, num_heads: int, dropout_p: float = 0.0
+    q: torch.Tensor,
+    kv: torch.Tensor,
+    dim: int,
+    num_heads: int,
+    dropout_p: float = 0.0,
+    attn_bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     key = kv[..., :dim]
     value = kv[..., dim:]
@@ -84,11 +103,17 @@ def xformers_attention(
         key=key.contiguous(),
         value=value.contiguous(),
         p=dropout_p,
+        attn_bias=attn_bias,
     )
 
 
 def naive_attention(
-    q: torch.Tensor, kv: torch.Tensor, dim: int, num_heads: int, dropout_p: float = 0.0
+    q: torch.Tensor,
+    kv: torch.Tensor,
+    dim: int,
+    num_heads: int,
+    dropout_p: float = 0.0,
+    attn_bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     key = kv[..., :dim]
     value = kv[..., dim:]
@@ -97,6 +122,7 @@ def naive_attention(
         q=q.contiguous(),
         k=key.contiguous(),
         v=value.contiguous(),
+        attn_bias=attn_bias,
     )
 
 
@@ -104,19 +130,18 @@ def _ref_attention(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
+    attn_bias: Optional[torch.Tensor],
 ) -> torch.Tensor:
     """
     From https://github.com/facebookresearch/xformers/blob/main/tests/test_mem_eff_attention.py#L188
     Copyright (c) Facebook, Inc. and its affiliates
     BSD 3-Clause License
     """
-    q = q
-    k = k
-    v = v
-
     scale = 1 / q.shape[-1] ** 0.5
     q = q * scale
 
     attn = q @ k.transpose(-2, -1)
+    if attn_bias is not None:
+        attn += attn_bias
     attn = attn.softmax(-1)
     return attn @ v

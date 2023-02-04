@@ -169,7 +169,6 @@ class DetBEVDecoder(nn.Module):
             )
             x = x.reshape(*x.shape[:2], -1)
             kv = self.kv_encoder(x).permute(0, 2, 1)
-            k_seqlen = kv.shape[1]
 
             bev = attention(query, kv, dim=self.dim, num_heads=self.num_heads)
             bev = bev.reshape(BS, self.num_queries, self.dim)
