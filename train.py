@@ -138,6 +138,11 @@ if args.anomaly_detection:
 
 tasks: Dict[str, BEVTask] = {}
 hr_tasks: Dict[str, BEVTask] = {}
+if args.path:
+    tasks["path"] = PathTask(
+        bev_shape=args.bev_shape,
+        bev_dim=args.dim,
+    )
 if args.det:
     tasks["det"] = DetTask(
         cameras=args.cameras,
@@ -152,11 +157,6 @@ if args.ae:
         cam_shape=args.cam_shape,
         bev_shape=args.bev_shape,
         dim=args.dim,
-    )
-if args.path:
-    tasks["path"] = PathTask(
-        bev_shape=args.bev_shape,
-        bev_dim=args.dim,
     )
 if args.voxel:
     hr_tasks["voxel"] = VoxelTask(

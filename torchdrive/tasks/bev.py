@@ -58,6 +58,13 @@ class Context:
                 f"{self.name}-{name}", img, global_step=self.global_step
             )
 
+    def add_figure(self, name: str, figure: object) -> None:
+        if self.writer:
+            assert self.log_img
+            self.writer.add_figure(
+                f"{self.name}-{name}", figure, global_step=self.global_step
+            )
+
 
 class BEVTask(torch.nn.Module, ABC):
     @abstractmethod

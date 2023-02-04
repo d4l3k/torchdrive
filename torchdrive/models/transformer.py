@@ -9,10 +9,10 @@ from torchdrive.positional_encoding import sequence_encoding
 def causal_mask(seq_len: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     return torch.triu(
         torch.full(
-            (seq_len, seq_len), device=device, dtype=dtype, fill_value=-torch.inf
+            (seq_len, seq_len), device=device, dtype=torch.float, fill_value=-torch.inf
         ),
         diagonal=1,
-    )
+    ).to(dtype)
 
 
 class SelfAttention(nn.Module):

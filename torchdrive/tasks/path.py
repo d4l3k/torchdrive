@@ -2,6 +2,7 @@ from typing import Dict, Tuple
 
 import torch
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 from torchdrive.amp import autocast
 from torchdrive.data import Batch
@@ -41,11 +42,24 @@ class PathTask(BEVTask):
         zero_coord[:, -1] = 1
 
         positions = torch.matmul(cam_T, zero_coord.T)[..., :3, 0].permute(0, 2, 1)
+        # downsample to 1/3 the frame rate
+        positions = positions[..., ::3]
 
         # TODO: try adding noise to positions to help recover
         prev = positions[..., :-1]
         target = positions[..., 1:]
 
         with autocast():
-            predicted = self.transformer(bev, prev)
-        return {"position": F.mse_loss(predicted, target)}
+            predicted = self.transformer(bev, prev).float()
+
+        if ctx.log_text:
+            ctx.add_scalar("paths/seq_len", positions.size(-1))
+
+        if ctx.log_img:
+            fig = plt.figure()
+            plt.plot(*target[0, 0:2].detach().cpu(), label="target")
+            plt.plot(*predicted[0, 0:2].detach().cpu(), label="predicted")
+            fig.legend()
+            plt.gca().set_aspect('equal')
+            ctx.add_figure("paths", fig)
+        return {"position": F.mse_loss(predicted, target) * 5}
