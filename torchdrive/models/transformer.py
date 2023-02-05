@@ -6,13 +6,16 @@ from torchdrive.models.regnet import resnet_init
 from torchdrive.positional_encoding import sequence_encoding
 
 
-class SelfAttention(nn.Module):
-    def __init__(self, dim: int, num_heads: int = 8, dropout_p: float = 0.1) -> None:
+class MultiHeadAttention(nn.Module):
+    def __init__(
+        self, dim: int, num_heads: int = 8, dropout_p: float = 0.1, causal: bool = False
+    ) -> None:
         super().__init__()
 
         self.num_heads = num_heads
         self.dim = dim
         self.dropout_p = dropout_p
+        self.causal = causal
 
         self.query_encoder = nn.Sequential(
             nn.Conv1d(dim, dim, 1),
@@ -20,53 +23,28 @@ class SelfAttention(nn.Module):
         self.kv_encoder = nn.Sequential(
             nn.Conv1d(dim, 2 * dim, 1),
         )
-        resnet_init(self.query_encoder)
-        resnet_init(self.kv_encoder)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        BS, seq_len, dim = x.shape
-        x = x.permute(0, 2, 1)
-        kv = self.kv_encoder(x).permute(0, 2, 1)
-        q = self.query_encoder(x).permute(0, 2, 1)
-
-        return attention(
-            q,
-            kv,
-            dim=self.dim,
-            num_heads=self.num_heads,
-            dropout_p=self.dropout_p if self.training else 0.0,
-            causal=True,
-        )
-
-
-class CrossAttention(nn.Module):
-    def __init__(self, dim: int, num_heads: int = 8, dropout_p: float = 0.1) -> None:
-        super().__init__()
-
-        self.num_heads = num_heads
-        self.dim = dim
-        self.dropout_p = dropout_p
-
-        self.query_encoder = nn.Sequential(
+        self.out_proj = nn.Sequential(
             nn.Conv1d(dim, dim, 1),
-        )
-        self.kv_encoder = nn.Sequential(
-            nn.Conv1d(dim, 2 * dim, 1),
+            nn.Dropout(dropout_p),
         )
         resnet_init(self.query_encoder)
         resnet_init(self.kv_encoder)
+        resnet_init(self.out_proj)
 
     def forward(self, q: torch.Tensor, kv: torch.Tensor) -> torch.Tensor:
-        kv = self.kv_encoder(kv.permute(0, 2, 1)).permute(0, 2, 1)
+        BS, seq_len, dim = q.shape
         q = self.query_encoder(q.permute(0, 2, 1)).permute(0, 2, 1)
+        kv = self.kv_encoder(kv.permute(0, 2, 1)).permute(0, 2, 1)
 
-        return attention(
+        x = attention(
             q,
             kv,
             dim=self.dim,
             num_heads=self.num_heads,
             dropout_p=self.dropout_p if self.training else 0.0,
+            causal=self.causal,
         )
+        return self.out_proj(x.permute(0, 2, 1)).permute(0, 2, 1)
 
 
 class TransformerDecoderBlock(nn.Module):
@@ -76,13 +54,19 @@ class TransformerDecoderBlock(nn.Module):
         self.dim = dim
         hidden_dim = 2 * dim
 
-        self.self_attn = SelfAttention(
-            dim=dim, num_heads=num_heads, dropout_p=dropout_p
+        self.self_attn = MultiHeadAttention(
+            dim=dim,
+            num_heads=num_heads,
+            dropout_p=dropout_p,
+            causal=True,
         )
         self.ln1 = nn.LayerNorm(dim)
 
-        self.cross_attn = CrossAttention(
-            dim=dim, num_heads=num_heads, dropout_p=dropout_p
+        self.cross_attn = MultiHeadAttention(
+            dim=dim,
+            num_heads=num_heads,
+            dropout_p=dropout_p,
+            causal=False,
         )
         self.ln2 = nn.LayerNorm(dim)
 
@@ -97,7 +81,7 @@ class TransformerDecoderBlock(nn.Module):
         resnet_init(self.ffn)
 
     def forward(self, x: torch.Tensor, cross: torch.Tensor) -> torch.Tensor:
-        x = self.ln1(x + self.self_attn(x))
+        x = self.ln1(x + self.self_attn(x, x))
         x = self.ln2(x + self.cross_attn(x, cross))
         x = self.ln3(x + self.ffn(x.permute(0, 2, 1)).permute(0, 2, 1))
         return x
