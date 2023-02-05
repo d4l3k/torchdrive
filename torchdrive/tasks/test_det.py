@@ -15,7 +15,7 @@ class TestDet(unittest.TestCase):
             cameras=["left", "right"],
             cam_shape=(4, 6),
             bev_shape=(4, 4),
-            dim=5,
+            dim=8,
             device=torch.device("cpu"),
         )
         batch = dummy_batch()
@@ -30,6 +30,6 @@ class TestDet(unittest.TestCase):
             output="/invalid",
             weights=batch.weight,
         )
-        bev = torch.rand(2, 5, 4, 4)
+        bev = torch.rand(2, 8, 4, 4)
         losses = m(ctx, batch, bev)
         self.assertIn("unmatched", losses)

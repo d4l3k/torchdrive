@@ -1,6 +1,6 @@
 # pyre-ignore-all-errors[21]: missing optional imports
 
-from typing import Optional, Protocol
+from typing import Protocol
 
 import torch
 import torch.nn.functional as F
@@ -13,7 +13,7 @@ except ImportError:
     HAS_FLASH_ATTN = False
 
 try:
-    from xformers.ops import memory_efficient_attention
+    from xformers.ops import LowerTriangularMask, memory_efficient_attention
 
     HAS_XFORMERS = True
 except ImportError as e:
@@ -28,7 +28,7 @@ class AttentionType(Protocol):
         dim: int,
         num_heads: int,
         dropout_p: float = 0.0,
-        attn_bias: Optional[torch.Tensor] = None,
+        causal: bool = False,
     ) -> torch.Tensor:
         ...
 
@@ -39,7 +39,7 @@ def attention(
     dim: int,
     num_heads: int,
     dropout_p: float = 0.0,
-    attn_bias: Optional[torch.Tensor] = None,
+    causal: bool = False,
 ) -> torch.Tensor:
     """
     attention is a dispatcher for multiheaded attention and will use the most
@@ -57,11 +57,14 @@ def attention(
     Returns:
         [BS, num_queries, dim]
     """
+    assert q.size(-1) % 8 == 0, q.shape
+    assert (kv.size(-1) // 2) % 8 == 0, q.shape
+
+    if HAS_FLASH_ATTN and q.is_cuda and q.dtype in (torch.half, torch.bfloat16):
+        return flash_attention(q, kv, dim, num_heads, dropout_p, causal)
     if HAS_XFORMERS and not (dropout_p != 0.0 and not q.is_cuda):
-        return xformers_attention(q, kv, dim, num_heads, dropout_p, attn_bias)
-    # if HAS_FLASH_ATTN and q.is_cuda and q.dtype in (torch.half, torch.bfloat16):
-    #    return flash_attention(q, kv, dim, num_heads, dropout_p)
-    return naive_attention(q, kv, dim, num_heads, dropout_p, attn_bias)
+        return xformers_attention(q, kv, dim, num_heads, dropout_p, causal)
+    return naive_attention(q, kv, dim, num_heads, dropout_p, causal)
 
 
 def flash_attention(
@@ -70,10 +73,8 @@ def flash_attention(
     dim: int,
     num_heads: int,
     dropout_p: float = 0.0,
-    attn_bias: Optional[torch.Tensor] = None,
+    causal: bool = False,
 ) -> torch.Tensor:
-    assert attn_bias is None, "flash_attention doesn't support attn_bias"
-
     BS = q.shape[0]
     q_seqlen = q.shape[1]
     k_seqlen = kv.shape[1]
@@ -98,6 +99,7 @@ def flash_attention(
         max_seqlen_q=q_seqlen,
         max_seqlen_k=k_seqlen,
         dropout_p=dropout_p,
+        causal=causal,
     )
     return out.reshape(BS, -1, dim)
 
@@ -108,7 +110,7 @@ def xformers_attention(
     dim: int,
     num_heads: int,
     dropout_p: float = 0.0,
-    attn_bias: Optional[torch.Tensor] = None,
+    causal: bool = False,
 ) -> torch.Tensor:
     key = kv[..., :dim]
     value = kv[..., dim:]
@@ -117,7 +119,7 @@ def xformers_attention(
         key=key.contiguous(),
         value=value.contiguous(),
         p=dropout_p,
-        attn_bias=attn_bias,
+        attn_bias=LowerTriangularMask() if causal else None,
     )
 
 
@@ -127,7 +129,7 @@ def naive_attention(
     dim: int,
     num_heads: int,
     dropout_p: float = 0.0,
-    attn_bias: Optional[torch.Tensor] = None,
+    causal: bool = False,
 ) -> torch.Tensor:
     """
     From https://github.com/facebookresearch/xformers/blob/main/tests/test_mem_eff_attention.py#L188
@@ -143,8 +145,17 @@ def naive_attention(
     q = q * scale
 
     attn = q @ k.transpose(-2, -1)
-    if attn_bias is not None:
-        attn += attn_bias
+    if causal:
+        attn += causal_mask(q.size(1), device=q.device, dtype=q.dtype)
     attn = attn.softmax(-1)
     attn = F.dropout(attn, p=dropout_p)
     return attn @ v
+
+
+def causal_mask(seq_len: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    return torch.triu(
+        torch.full(
+            (seq_len, seq_len), device=device, dtype=torch.float, fill_value=-torch.inf
+        ),
+        diagonal=1,
+    ).to(dtype)

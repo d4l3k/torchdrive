@@ -45,6 +45,11 @@ class PathTask(BEVTask):
         positions = torch.matmul(cam_T, zero_coord.T)[..., :3, 0].permute(0, 2, 1)
         # downsample to 1/3 the frame rate
         positions = positions[..., ::3]
+        pos_len = positions.size(-1)
+        pos_len = pos_len - (pos_len % 8) + 1
+        positions = positions[..., :pos_len]
+
+        assert pos_len > 1, "pos length too short"
 
         # TODO: try adding noise to positions to help recover
         prev = positions[..., :-1]
@@ -54,7 +59,7 @@ class PathTask(BEVTask):
             predicted = self.transformer(bev, prev).float()
 
         if ctx.log_text:
-            ctx.add_scalar("paths/seq_len", positions.size(-1))
+            ctx.add_scalar("paths/seq_len", pos_len)
 
         if ctx.log_img:
             fig = plt.figure()

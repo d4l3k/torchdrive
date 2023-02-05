@@ -14,7 +14,7 @@ class TestPath(unittest.TestCase):
         m = PathTask(
             bev_shape=(4, 4),
             bev_dim=5,
-            dim=6,
+            dim=8,
             num_heads=2,
             num_layers=1,
         )

@@ -16,13 +16,13 @@ class TestBEVTransformer(unittest.TestCase):
         m = GridTransformer(
             output_shape=(4, 4),
             input_shape=(4, 6),
-            dim=10,
+            dim=8,
             num_inputs=3,
             num_heads=2,
         )
-        cam_feats = [torch.rand(2, 10, 4, 6)] * 3
+        cam_feats = [torch.rand(2, 8, 4, 6)] * 3
         out = m(cam_feats)
-        self.assertEqual(out.shape, (2, 10, 4, 4))
+        self.assertEqual(out.shape, (2, 8, 4, 4))
 
     @skipIfNoCUDA()
     def test_cuda(self) -> None:
@@ -43,7 +43,7 @@ class TestBEVTransformer(unittest.TestCase):
 
     def test_cam_bev_encoder(self) -> None:
         m = CamBEVEncoder(
-            cameras=["left", "right"], bev_shape=(4, 4), cam_shape=(48, 64), dim=3
+            cameras=["left", "right"], bev_shape=(4, 4), cam_shape=(48, 64), dim=8
         )
         img = torch.rand(2, 3, 48, 64)
         camera_frames = {
@@ -51,7 +51,7 @@ class TestBEVTransformer(unittest.TestCase):
             "right": img,
         }
         out = m(camera_frames)
-        self.assertEqual(out.shape, (2, 3, 4, 4))
+        self.assertEqual(out.shape, (2, 8, 4, 4))
 
     def test_bev_merger(self) -> None:
         m = BEVMerger(num_frames=3, bev_shape=(4, 4), dim=5)

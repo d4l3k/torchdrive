@@ -48,7 +48,7 @@ def dummy_batch() -> Batch:
         weight=torch.rand(BS),
         distances=torch.rand(BS, N),
         cam_T=torch.rand(BS, N, 4, 4),
-        long_cam_T=torch.rand(BS, 5, 4, 4),
+        long_cam_T=torch.rand(BS, 9 * 3, 4, 4),
         frame_T=torch.rand(BS, N, 4, 4),
         K={cam: torch.rand(BS, 4, 4) for cam in cams},
         T={cam: torch.rand(BS, 4, 4) for cam in cams},

@@ -15,7 +15,7 @@ class TestAE(unittest.TestCase):
             cameras=["left", "right"],
             cam_shape=(320, 240),
             bev_shape=(4, 4),
-            dim=5,
+            dim=8,
         )
         batch = dummy_batch()
         ctx = Context(
@@ -29,6 +29,6 @@ class TestAE(unittest.TestCase):
             output="/invalid",
             weights=batch.weight,
         )
-        bev = torch.rand(2, 5, 4, 4)
+        bev = torch.rand(2, 8, 4, 4)
         losses = m(ctx, batch, bev)
         self.assertCountEqual(losses.keys(), ["ssim/left", "ssim/right"])

@@ -10,7 +10,7 @@ from torchdrive.models.transformer import TransformerDecoder
 class TransformerTest(unittest.TestCase):
     def test_decoder(self) -> None:
         BS = 2
-        dim = 6
+        dim = 8
         seq_len = 5
         seq2_len = 7
         m = TransformerDecoder(dim=dim, layers=2, num_heads=2)

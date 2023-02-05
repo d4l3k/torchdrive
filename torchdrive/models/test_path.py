@@ -8,7 +8,7 @@ from torchdrive.models.path import PathTransformer
 class PathTest(unittest.TestCase):
     def test_path_transformer(self) -> None:
         bev_dim = 7
-        dim = 6
+        dim = 8
         num_points = 10
         m = PathTransformer(
             bev_shape=(4, 4),

@@ -28,7 +28,7 @@ class TestBEV(unittest.TestCase):
             cam_shape=(48, 64),
             bev_shape=(4, 4),
             cameras=["left", "right"],
-            dim=5,
+            dim=8,
             hr_dim=1,
             num_upsamples=1,
             num_encode_frames=2,

@@ -6,15 +6,6 @@ from torchdrive.models.regnet import resnet_init
 from torchdrive.positional_encoding import sequence_encoding
 
 
-def causal_mask(seq_len: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-    return torch.triu(
-        torch.full(
-            (seq_len, seq_len), device=device, dtype=torch.float, fill_value=-torch.inf
-        ),
-        diagonal=1,
-    ).to(dtype)
-
-
 class SelfAttention(nn.Module):
     def __init__(self, dim: int, num_heads: int = 8, dropout_p: float = 0.1) -> None:
         super().__init__()
@@ -38,14 +29,13 @@ class SelfAttention(nn.Module):
         kv = self.kv_encoder(x).permute(0, 2, 1)
         q = self.query_encoder(x).permute(0, 2, 1)
 
-        mask = causal_mask(seq_len, x.device, x.dtype).expand(BS, -1, -1)
         return attention(
             q,
             kv,
             dim=self.dim,
             num_heads=self.num_heads,
-            attn_bias=mask,
             dropout_p=self.dropout_p if self.training else 0.0,
+            causal=True,
         )
 
 
