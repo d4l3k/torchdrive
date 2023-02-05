@@ -61,7 +61,8 @@ class DetTask(BEVTask):
         # not a module -- not saved
         self.det = BDD100KDet(
             device=device,
-            config="faster_rcnn_convnext-t_fpn_fp16_3x_det_bdd100k.py",
+            # config="faster_rcnn_convnext-t_fpn_fp16_3x_det_bdd100k.py",
+            config="fcos_r50_fpn_3x_det_bdd100k.py",
         )
         self.matcher = HungarianMatcher()
 

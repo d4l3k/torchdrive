@@ -7,7 +7,7 @@ import torch
 from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
 from mmcv.runner import load_checkpoint, wrap_fp16_model
 from mmdet.models import build_detector
-from mmdet.models.detectors import TwoStageDetector
+from mmdet.models.detectors import BaseDetector, TwoStageDetector
 from torch import nn
 from torchvision import transforms
 
@@ -72,13 +72,15 @@ class BDD100KDet:
         if half:
             model = model.half()
 
+        model = model.to(device)
         # pyre-fixme[8]
-        self.model: TwoStageDetector = model.to(device)
+        self.model: BaseDetector = model
 
-        # anchors are stupidly on CPU device -- force them over early
-        anchors = self.model.rpn_head.anchor_generator.base_anchors
-        for i, a in enumerate(anchors):
-            anchors[i] = a.to(device)
+        if isinstance(model, TwoStageDetector):
+            # anchors are stupidly on CPU device -- force them over early
+            anchors = model.rpn_head.anchor_generator.base_anchors
+            for i, a in enumerate(anchors):
+                anchors[i] = a.to(device)
 
         self._transform = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]

@@ -69,6 +69,6 @@ class PathTask(BEVTask):
             plt.gca().set_aspect("equal")
             ctx.add_figure("paths", fig)
         position_loss = (
-            F.mse_loss(predicted, target, reduction="none").mean(dim=(1, 2)) * 5
+            F.mse_loss(predicted, target, reduction="none").mean(dim=(1, 2)) * 50
         )
         return {"position": position_loss}

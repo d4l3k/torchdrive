@@ -60,10 +60,10 @@ def attention(
     assert q.size(-1) % 8 == 0, q.shape
     assert (kv.size(-1) // 2) % 8 == 0, q.shape
 
+    if HAS_XFORMERS and (dropout_p == 0.0 or q.is_cuda):
+        return xformers_attention(q, kv, dim, num_heads, dropout_p, causal)
     if HAS_FLASH_ATTN and q.is_cuda and q.dtype in (torch.half, torch.bfloat16):
         return flash_attention(q, kv, dim, num_heads, dropout_p, causal)
-    if HAS_XFORMERS and not (dropout_p != 0.0 and not q.is_cuda):
-        return xformers_attention(q, kv, dim, num_heads, dropout_p, causal)
     return naive_attention(q, kv, dim, num_heads, dropout_p, causal)
 
 
