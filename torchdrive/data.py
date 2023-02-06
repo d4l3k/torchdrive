@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields
-from typing import Dict, List, Optional, Tuple, TypeVar
+from typing import Dict, List, Optional, Tuple, TypeVar, Union
 
 import torch
 from torch.utils.data import default_collate
@@ -25,7 +25,7 @@ class Batch:
     mask: Dict[str, torch.Tensor]
     # sequential cam_T only aligned with the start frames extending into the
     # future
-    long_cam_T: torch.Tensor
+    long_cam_T: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
 
     def to(self, device: torch.device) -> "Batch":
         return Batch(
@@ -36,30 +36,45 @@ class Batch:
         )
 
 
-def dummy_batch() -> Batch:
+def dummy_item() -> Batch:
     N = 2
-    BS = 2
     color = {}
     cams = ["left", "right"]
     for cam in cams:
         for i in range(N):
-            color[cam, i] = torch.rand(BS, 3, 48, 64)
+            color[cam, i] = torch.rand(3, 48, 64)
     return Batch(
-        weight=torch.rand(BS),
-        distances=torch.rand(BS, N),
-        cam_T=torch.rand(BS, N, 4, 4),
-        long_cam_T=torch.rand(BS, 9 * 3, 4, 4),
-        frame_T=torch.rand(BS, N, 4, 4),
-        K={cam: torch.rand(BS, 4, 4) for cam in cams},
-        T={cam: torch.rand(BS, 4, 4) for cam in cams},
+        weight=torch.rand(1)[0],
+        distances=torch.rand(N),
+        cam_T=torch.rand(N, 4, 4),
+        long_cam_T=torch.rand(9 * 3, 4, 4),
+        frame_T=torch.rand(N, 4, 4),
+        K={cam: torch.rand(4, 4) for cam in cams},
+        T={cam: torch.rand(4, 4) for cam in cams},
         color=color,
-        mask={cam: torch.rand(BS, 1, 48, 64) for cam in cams},
+        mask={cam: torch.rand(1, 48, 64) for cam in cams},
     )
 
 
-def _collate_long_cam_T(tensors: List[torch.Tensor]) -> torch.Tensor:
-    seq_len = min(t.size(0) for t in tensors)
-    return default_collate([t[:seq_len] for t in tensors])
+def dummy_batch() -> Batch:
+    BS = 2
+    out = collate([dummy_item()] * BS)
+    assert out is not None
+    return out
+
+
+def _collate_long_cam_T(
+    tensors: List[torch.Tensor],
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    lens = torch.tensor([t.size(0) for t in tensors])
+    # pyre-fixme[9]: int
+    max_len: int = lens.amax().item()
+    orig_max_len = max_len
+    out = torch.nn.utils.rnn.pad_sequence(tensors, batch_first=True)
+    mask = torch.arange(max_len).expand(len(lens), max_len) < lens.unsqueeze(1)
+    assert out.shape[:2] == mask.shape, (out.shape, mask.shape)
+
+    return (out, mask, lens)
 
 
 _COLLATE_FIELDS = {
@@ -67,7 +82,9 @@ _COLLATE_FIELDS = {
 }
 
 
-def collate(batch: List[Optional[Batch]], strict: bool = True) -> Optional[Batch]:
+def collate(
+    batch: Union[List[Optional[Batch]], List[Batch]], strict: bool = True
+) -> Optional[Batch]:
     """
     collate merges a provided set of single example batches and allows some
     examples to be discarded if there's corrupted data.
@@ -105,6 +122,8 @@ def transfer(k: str, x: T, device: torch.device) -> T:
         return x.to(device, non_blocking=True)
     if isinstance(x, list):
         return [transfer(k, i, device=device) for i in x]
+    if isinstance(x, tuple):
+        return tuple(transfer(k, i, device=device) for i in x)
     if isinstance(x, dict):
         return {key: transfer(k, value, device=device) for key, value in x.items()}
     return x

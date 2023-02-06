@@ -37,7 +37,8 @@ class PathTask(BEVTask):
         device = bev.device
 
         start_T = batch.cam_T[:, ctx.start_frame]
-        cam_T = start_T.unsqueeze(1).pinverse().matmul(batch.long_cam_T)
+        long_cam_T, mask, lengths = batch.long_cam_T
+        cam_T = start_T.unsqueeze(1).pinverse().matmul(long_cam_T)
 
         zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
         zero_coord[:, -1] = 1
@@ -45,9 +46,13 @@ class PathTask(BEVTask):
         positions = torch.matmul(cam_T, zero_coord.T)[..., :3, 0].permute(0, 2, 1)
         # downsample to 1/3 the frame rate
         positions = positions[..., ::3]
+        mask = mask[..., ::3]
+        lengths //= 3
+
         pos_len = positions.size(-1)
         pos_len = pos_len - (pos_len % 8) + 1
         positions = positions[..., :pos_len]
+        mask = mask[..., 1:pos_len]
 
         assert pos_len > 1, "pos length too short"
 
@@ -63,12 +68,14 @@ class PathTask(BEVTask):
 
         if ctx.log_img:
             fig = plt.figure()
-            plt.plot(*target[0, 0:2].detach().cpu(), label="target")
-            plt.plot(*predicted[0, 0:2].detach().cpu(), label="predicted")
+            length = lengths[0] - 1
+            plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
+            plt.plot(*predicted[0, 0:2, :length].detach().cpu(), label="predicted")
             fig.legend()
             plt.gca().set_aspect("equal")
             ctx.add_figure("paths", fig)
-        position_loss = (
-            F.mse_loss(predicted, target, reduction="none").mean(dim=(1, 2)) * 50
-        )
+
+        per_token_loss = F.mse_loss(predicted, target, reduction="none")
+        per_token_loss *= mask.unsqueeze(1).float()
+        position_loss = per_token_loss.mean(dim=(1, 2)) * 50
         return {"position": position_loss}
