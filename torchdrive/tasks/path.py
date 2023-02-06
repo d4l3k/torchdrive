@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from torchdrive.amp import autocast
 from torchdrive.data import Batch
-from torchdrive.models.path import PathTransformer
+from torchdrive.models.path import PathTransformer, rel_dists
 from torchdrive.tasks.bev import BEVTask, Context
 
 
@@ -19,8 +19,11 @@ class PathTask(BEVTask):
         dim: int = 128,
         num_heads: int = 8,
         num_layers: int = 3,
+        max_seq_len: int = 40,
     ) -> None:
         super().__init__()
+
+        self.max_seq_len = max_seq_len
 
         self.transformer = PathTransformer(
             bev_shape=bev_shape,
@@ -51,6 +54,7 @@ class PathTask(BEVTask):
 
         pos_len = positions.size(-1)
         pos_len = pos_len - (pos_len % 8) + 1
+        pos_len = min(pos_len, self.max_seq_len+1)
         positions = positions[..., :pos_len]
         mask = mask[..., 1:pos_len]
 
@@ -77,5 +81,16 @@ class PathTask(BEVTask):
 
         per_token_loss = F.mse_loss(predicted, target, reduction="none")
         per_token_loss *= mask.unsqueeze(1).float()
-        position_loss = per_token_loss.mean(dim=(1, 2)) * 50
-        return {"position": position_loss}
+        position_loss = per_token_loss.mean(dim=(1, 2)) * 20
+
+        target_rel = rel_dists(target)
+        predicted_rel = rel_dists(predicted)
+
+        per_token_rel_loss = F.mse_loss(predicted_rel, target_rel, reduction="none")
+        per_token_rel_loss *= mask.float()
+        rel_loss = per_token_rel_loss.mean(dim=(1)) * 10
+
+        return {
+            "position": position_loss,
+            "rel": rel_loss,
+        }

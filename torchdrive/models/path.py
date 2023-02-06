@@ -1,10 +1,21 @@
 from typing import Tuple
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from torchdrive.models.transformer import TransformerDecoder
 from torchdrive.positional_encoding import positional_encoding
+
+
+def rel_dists(series: torch.Tensor) -> torch.Tensor:
+    """
+    rel_dists returns the distances between each point in the series.
+    """
+    a = series[..., 1:]
+    b = series[..., :-1]
+    dists = torch.linalg.vector_norm(a - b, dim=1)
+    return F.pad(dists, (1, 0))
 
 
 class PathTransformer(nn.Module):

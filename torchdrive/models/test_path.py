@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchdrive.models.path import PathTransformer
+from torchdrive.models.path import PathTransformer, rel_dists
 
 
 class PathTest(unittest.TestCase):
@@ -21,3 +21,8 @@ class PathTest(unittest.TestCase):
             positions=torch.rand(2, 3, num_points),
         )
         self.assertEqual(out.shape, (2, 3, num_points))
+
+    def test_rel_dists(self) -> None:
+        out = rel_dists(torch.rand(2, 3, 6))
+        self.assertEqual(out.shape, (2, 6))
+        self.assertEqual(out[0, 0], 0)
