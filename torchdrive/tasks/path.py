@@ -54,7 +54,7 @@ class PathTask(BEVTask):
 
         pos_len = positions.size(-1)
         pos_len = pos_len - (pos_len % 8) + 1
-        pos_len = min(pos_len, self.max_seq_len+1)
+        pos_len = min(pos_len, self.max_seq_len + 1)
         positions = positions[..., :pos_len]
         mask = mask[..., 1:pos_len]
 
@@ -66,6 +66,9 @@ class PathTask(BEVTask):
 
         with autocast():
             predicted = self.transformer(bev, prev).float()
+
+        predicted = predicted.sigmoid()
+        predicted = (predicted * 600) - 300
 
         if ctx.log_text:
             ctx.add_scalar("paths/seq_len", pos_len)
@@ -79,14 +82,14 @@ class PathTask(BEVTask):
             plt.gca().set_aspect("equal")
             ctx.add_figure("paths", fig)
 
-        per_token_loss = F.mse_loss(predicted, target, reduction="none")
+        per_token_loss = F.huber_loss(predicted, target, reduction="none")
         per_token_loss *= mask.unsqueeze(1).float()
         position_loss = per_token_loss.mean(dim=(1, 2)) * 20
 
         target_rel = rel_dists(target)
         predicted_rel = rel_dists(predicted)
 
-        per_token_rel_loss = F.mse_loss(predicted_rel, target_rel, reduction="none")
+        per_token_rel_loss = F.huber_loss(predicted_rel, target_rel, reduction="none")
         per_token_rel_loss *= mask.float()
         rel_loss = per_token_rel_loss.mean(dim=(1)) * 10
 

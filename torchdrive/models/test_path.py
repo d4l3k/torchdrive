@@ -26,3 +26,6 @@ class PathTest(unittest.TestCase):
         out = rel_dists(torch.rand(2, 3, 6))
         self.assertEqual(out.shape, (2, 6))
         self.assertEqual(out[0, 0], 0)
+
+        out = rel_dists(torch.arange(10).float().unsqueeze(0).unsqueeze(0))
+        self.assertEqual(out.sum(), 9)
