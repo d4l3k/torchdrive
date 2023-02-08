@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchdrive.models.path import PathTransformer, rel_dists
+from torchdrive.models.path import PathTransformer, pos_to_bucket, rel_dists
 
 
 class PathTest(unittest.TestCase):
@@ -19,6 +19,7 @@ class PathTest(unittest.TestCase):
         out = m(
             bev=torch.rand(2, bev_dim, 4, 4),
             positions=torch.rand(2, 3, num_points),
+            final_pos=torch.rand(2, 3),
         )
         self.assertEqual(out.shape, (2, 3, num_points))
 
@@ -29,3 +30,19 @@ class PathTest(unittest.TestCase):
 
         out = rel_dists(torch.arange(10).float().unsqueeze(0).unsqueeze(0))
         self.assertEqual(out.sum(), 9)
+
+    def test_pos_to_bucket(self) -> None:
+        pos = torch.tensor(
+            (
+                (10, -1),
+                (10, 1),
+                (1, 1),
+                (1, -1),
+                (0, 1),
+                (0, -1),
+            )
+        ).float()
+        self.assertEqual(
+            pos_to_bucket(pos, buckets=14).tolist(),
+            [10, 10, 8, 12, 7, 0],
+        )

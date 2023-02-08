@@ -32,6 +32,5 @@ class TestPath(unittest.TestCase):
         )
         bev = torch.rand(2, 5, 4, 4)
         losses = m(ctx, batch, bev)
-        self.assertCountEqual(losses.keys(), ["position", "rel"])
+        self.assertCountEqual(losses.keys(), ["position"])
         self.assertEqual(losses["position"].shape, (2,))
-        self.assertEqual(losses["rel"].shape, (2,))

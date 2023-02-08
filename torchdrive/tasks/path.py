@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from torchdrive.amp import autocast
 from torchdrive.data import Batch
-from torchdrive.models.path import PathTransformer, rel_dists
+from torchdrive.models.path import PathTransformer
 from torchdrive.tasks.bev import BEVTask, Context
 
 
@@ -47,6 +47,10 @@ class PathTask(BEVTask):
         zero_coord[:, -1] = 1
 
         positions = torch.matmul(cam_T, zero_coord.T)[..., :3, 0].permute(0, 2, 1)
+
+        # used for direction bucket
+        final_pos = positions[torch.arange(BS), :, lengths - 1]
+
         # downsample to 1/3 the frame rate
         positions = positions[..., ::3]
         mask = mask[..., ::3]
@@ -65,10 +69,10 @@ class PathTask(BEVTask):
         target = positions[..., 1:]
 
         with autocast():
-            predicted = self.transformer(bev, prev).float()
+            predicted = self.transformer(bev, prev, final_pos).float()
 
         predicted = predicted.sigmoid()
-        predicted = (predicted * 600) - 300
+        predicted = (predicted * 200) - 100
 
         if ctx.log_text:
             ctx.add_scalar("paths/seq_len", pos_len)
@@ -84,16 +88,8 @@ class PathTask(BEVTask):
 
         per_token_loss = F.huber_loss(predicted, target, reduction="none")
         per_token_loss *= mask.unsqueeze(1).float()
-        position_loss = per_token_loss.mean(dim=(1, 2)) * 20
-
-        target_rel = rel_dists(target)
-        predicted_rel = rel_dists(predicted)
-
-        per_token_rel_loss = F.huber_loss(predicted_rel, target_rel, reduction="none")
-        per_token_rel_loss *= mask.float()
-        rel_loss = per_token_rel_loss.mean(dim=(1)) * 10
+        position_loss = per_token_loss.mean(dim=(1, 2)) * 200
 
         return {
             "position": position_loss,
-            "rel": rel_loss,
         }
