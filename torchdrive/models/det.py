@@ -16,6 +16,7 @@ from torchdrive.attention import attention
 from torchdrive.models.mlp import ConvMLP
 from torchdrive.positional_encoding import positional_encoding
 from torchdrive.transforms.img import normalize_img_cuda
+from torchdrive.models.regnet import ConvPEBlock
 
 
 class BDD100KDet:
@@ -142,6 +143,8 @@ class DetBEVDecoder(nn.Module):
         )
         self.num_queries = num_queries
 
+        self.bev_project = ConvPEBlock(dim, dim, bev_shape, depth=1)
+
         self.query_embed = nn.Embedding(num_queries, dim)
         self.kv_encoder = nn.Sequential(
             nn.Conv1d(dim + 6, 2 * dim, 1),
@@ -160,6 +163,8 @@ class DetBEVDecoder(nn.Module):
         """
         BS = len(x)
         with autocast():
+            x = self.bev_project(x)
+
             query = self.query_embed.weight.to(x.dtype).expand(BS, -1, -1)
             q_seqlen = self.num_queries
 

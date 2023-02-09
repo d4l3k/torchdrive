@@ -97,6 +97,7 @@ class ConvPEBlock(nn.Module):
         out_ch: int,
         input_shape: Tuple[int, int],
         norm: Type[nn.Module] = nn.BatchNorm2d,
+        depth: int = 4,
     ) -> None:
         super().__init__()
 
@@ -107,7 +108,7 @@ class ConvPEBlock(nn.Module):
             in_ch + 6,
             out_ch,
             stride=1,
-            depth=4,
+            depth=depth,
             block_constructor=models.regnet.ResBottleneckBlock,
             norm_layer=norm,
             activation_layer=nn.ReLU,

@@ -9,6 +9,7 @@ from torchdrive.models.mlp import ConvMLP
 
 from torchdrive.models.transformer import TransformerDecoder
 from torchdrive.positional_encoding import positional_encoding
+from torchdrive.models.regnet import ConvPEBlock
 
 
 def rel_dists(series: torch.Tensor) -> torch.Tensor:
@@ -49,6 +50,8 @@ class PathTransformer(nn.Module):
         )
         self.bev_encoder = nn.Conv2d(bev_dim + 6, dim, 1)
 
+        self.bev_project = ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1)
+
         self.pos_encoder = nn.Conv1d(pos_dim, dim, 1)
         self.pos_decoder = nn.Conv1d(dim, pos_dim, 1)
 
@@ -76,6 +79,7 @@ class PathTransformer(nn.Module):
         static = self.static_encoder(speed.unsqueeze(-1)).permute(0, 2, 1)
 
         # bev features
+        bev = self.bev_project(bev)
         bev = torch.cat(
             (
                 self.positional_encoding.expand(BS, -1, -1, -1),
