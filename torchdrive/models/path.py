@@ -5,11 +5,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from torchdrive.amp import autocast
 from torchdrive.models.mlp import ConvMLP
-
+from torchdrive.models.regnet import ConvPEBlock
 from torchdrive.models.transformer import TransformerDecoder
 from torchdrive.positional_encoding import positional_encoding
-from torchdrive.models.regnet import ConvPEBlock
 
 
 def rel_dists(series: torch.Tensor) -> torch.Tensor:
@@ -70,29 +70,31 @@ class PathTransformer(nn.Module):
         device = bev.device
         dtype = bev.dtype
 
-        # direction buckets
-        direction_bucket = pos_to_bucket(final_pos, buckets=self.direction_buckets)
-        direction_feats = self.direction_embedding(direction_bucket).unsqueeze(1)
+        with autocast():
+            # direction buckets
+            direction_bucket = pos_to_bucket(final_pos, buckets=self.direction_buckets)
+            direction_feats = self.direction_embedding(direction_bucket).unsqueeze(1)
 
-        # static features (speed)
-        speed = positions[:, :, 1] - positions[:, :, 0]
-        static = self.static_encoder(speed.unsqueeze(-1)).permute(0, 2, 1)
+            # static features (speed)
+            speed = positions[:, :, 1] - positions[:, :, 0]
+            static = self.static_encoder(speed.unsqueeze(-1)).permute(0, 2, 1)
 
-        # bev features
-        bev = self.bev_project(bev)
-        bev = torch.cat(
-            (
-                self.positional_encoding.expand(BS, -1, -1, -1),
-                bev,
-            ),
-            dim=1,
-        )
-        bev = self.bev_encoder(bev).reshape(BS, self.dim, -1).permute(0, 2, 1)
+            # bev features
+            bev = self.bev_project(bev)
+            bev = torch.cat(
+                (
+                    self.positional_encoding.expand(BS, -1, -1, -1),
+                    bev,
+                ),
+                dim=1,
+            )
+            bev = self.bev_encoder(bev).reshape(BS, self.dim, -1).permute(0, 2, 1)
 
-        # cross attention features to decode
-        cross_feats = torch.cat((bev, static, direction_feats), dim=1)
+            # cross attention features to decode
+            cross_feats = torch.cat((bev, static, direction_feats), dim=1)
 
-        positions = self.pos_encoder(positions).permute(0, 2, 1)
+            positions = self.pos_encoder(positions).permute(0, 2, 1)
 
-        out_positions = self.transformer(positions, cross_feats).permute(0, 2, 1)
-        return self.pos_decoder(out_positions)
+            out_positions = self.transformer(positions, cross_feats).permute(0, 2, 1)
+
+        return self.pos_decoder(out_positions.float())

@@ -143,6 +143,7 @@ if args.path:
     tasks["path"] = PathTask(
         bev_shape=args.bev_shape,
         bev_dim=args.dim,
+        dim=args.dim,
     )
 if args.det:
     tasks["det"] = DetTask(

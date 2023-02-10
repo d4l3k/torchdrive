@@ -18,13 +18,13 @@ class MultiHeadAttention(nn.Module):
         self.causal = causal
 
         self.query_encoder = nn.Sequential(
-            nn.Conv1d(dim, dim, 1),
+            nn.Linear(dim, dim),
         )
         self.kv_encoder = nn.Sequential(
-            nn.Conv1d(dim, 2 * dim, 1),
+            nn.Linear(dim, 2 * dim),
         )
         self.out_proj = nn.Sequential(
-            nn.Conv1d(dim, dim, 1),
+            nn.Linear(dim, dim),
             nn.Dropout(dropout_p),
         )
         resnet_init(self.query_encoder)
@@ -33,8 +33,8 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, q: torch.Tensor, kv: torch.Tensor) -> torch.Tensor:
         BS, seq_len, dim = q.shape
-        q = self.query_encoder(q.permute(0, 2, 1)).permute(0, 2, 1)
-        kv = self.kv_encoder(kv.permute(0, 2, 1)).permute(0, 2, 1)
+        q = self.query_encoder(q)
+        kv = self.kv_encoder(kv)
 
         x = attention(
             q,
@@ -44,7 +44,7 @@ class MultiHeadAttention(nn.Module):
             dropout_p=self.dropout_p if self.training else 0.0,
             causal=self.causal,
         )
-        return self.out_proj(x.permute(0, 2, 1)).permute(0, 2, 1)
+        return self.out_proj(x)
 
 
 class TransformerDecoderBlock(nn.Module):
@@ -52,7 +52,7 @@ class TransformerDecoderBlock(nn.Module):
         super().__init__()
 
         self.dim = dim
-        hidden_dim = 2 * dim
+        hidden_dim = 4 * dim
 
         self.self_attn = MultiHeadAttention(
             dim=dim,
@@ -71,10 +71,11 @@ class TransformerDecoderBlock(nn.Module):
         self.ln2 = nn.LayerNorm(dim)
 
         self.ffn = nn.Sequential(
-            nn.Conv1d(dim, hidden_dim, 1),
-            nn.BatchNorm1d(hidden_dim),
+            nn.Linear(dim, hidden_dim),
             nn.ReLU(),
-            nn.Conv1d(hidden_dim, dim, 1),
+            nn.Dropout(dropout_p),
+            nn.Linear(hidden_dim, dim),
+            nn.Dropout(dropout_p),
         )
         self.ln3 = nn.LayerNorm(dim)
 
@@ -83,7 +84,7 @@ class TransformerDecoderBlock(nn.Module):
     def forward(self, x: torch.Tensor, cross: torch.Tensor) -> torch.Tensor:
         x = self.ln1(x + self.self_attn(x, x))
         x = self.ln2(x + self.cross_attn(x, cross))
-        x = self.ln3(x + self.ffn(x.permute(0, 2, 1)).permute(0, 2, 1))
+        x = self.ln3(x + self.ffn(x))
         return x
 
 

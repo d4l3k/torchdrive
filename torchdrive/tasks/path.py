@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 
-from torchdrive.amp import autocast
 from torchdrive.data import Batch
 from torchdrive.models.path import PathTransformer
 from torchdrive.tasks.bev import BEVTask, Context
@@ -68,8 +67,7 @@ class PathTask(BEVTask):
         prev = positions[..., :-1]
         target = positions[..., 1:]
 
-        with autocast():
-            predicted = self.transformer(bev, prev, final_pos).float()
+        predicted = self.transformer(bev, prev, final_pos)
 
         predicted = predicted.sigmoid()
         predicted = (predicted * 200) - 100
