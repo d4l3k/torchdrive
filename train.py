@@ -58,7 +58,7 @@ parser.add_argument("--cam_shape", type=tuple_int, required=True)
 parser.add_argument("--skip_load_optim", default=False, action="store_true")
 parser.add_argument("--anomaly-detection", default=False, action="store_true")
 parser.add_argument("--limit_size", type=int)
-parser.add_argument("--grad_clip", type=float, default=35)
+parser.add_argument("--grad_clip", type=float, default=1.0)
 parser.add_argument("--checkpoint_every", type=int, default=500)
 
 # tasks
@@ -295,6 +295,14 @@ for epoch in range(NUM_EPOCHS):
         assert not loss.requires_grad
 
         scaler.unscale_(optimizer)
+        if log_text and writer:
+            with torch.no_grad():
+                max_grad = max(
+                    p.grad.abs().amax()
+                    for p in model.parameters()
+                    if p.grad is not None
+                )
+                writer.add_scalar("grad/max", max_grad, global_step)
         if args.grad_clip > 0:
             # clip gradients to avoid loss explosion
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
