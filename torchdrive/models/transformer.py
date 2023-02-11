@@ -2,7 +2,6 @@ import torch
 from torch import nn
 
 from torchdrive.attention import attention
-from torchdrive.models.regnet import resnet_init
 from torchdrive.positional_encoding import sequence_encoding
 
 
@@ -27,9 +26,6 @@ class MultiHeadAttention(nn.Module):
             nn.Linear(dim, dim),
             nn.Dropout(dropout_p),
         )
-        resnet_init(self.query_encoder)
-        resnet_init(self.kv_encoder)
-        resnet_init(self.out_proj)
 
     def forward(self, q: torch.Tensor, kv: torch.Tensor) -> torch.Tensor:
         BS, seq_len, dim = q.shape
@@ -72,14 +68,13 @@ class TransformerDecoderBlock(nn.Module):
 
         self.ffn = nn.Sequential(
             nn.Linear(dim, hidden_dim),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Dropout(dropout_p),
             nn.Linear(hidden_dim, dim),
             nn.Dropout(dropout_p),
         )
         self.ln3 = nn.LayerNorm(dim)
 
-        resnet_init(self.ffn)
 
     def forward(self, x: torch.Tensor, cross: torch.Tensor) -> torch.Tensor:
         x = self.ln1(x + self.self_attn(x, x))
@@ -102,3 +97,8 @@ class TransformerDecoder(nn.Module):
         for block in self.blocks:
             x = block(x, cross)
         return x
+
+def transformer_init(m: nn.Module) -> None:
+    for p in m.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)

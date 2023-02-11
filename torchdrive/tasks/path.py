@@ -59,9 +59,13 @@ class PathTask(BEVTask):
         pos_len = pos_len - (pos_len % 8) + 1
         pos_len = min(pos_len, self.max_seq_len + 1)
         positions = positions[..., :pos_len]
-        mask = mask[..., 1:pos_len]
+        mask = mask[..., 1:pos_len].float()
+        num_elements = mask.sum()
 
         assert pos_len > 1, "pos length too short"
+
+        posmax = positions.abs().amax()
+        assert posmax < 1000
 
         # TODO: try adding noise to positions to help recover
         prev = positions[..., :-1]
@@ -69,11 +73,9 @@ class PathTask(BEVTask):
 
         predicted = self.transformer(bev, prev, final_pos)
 
-        predicted = predicted.sigmoid()
-        predicted = (predicted * 200) - 100
-
         if ctx.log_text:
             ctx.add_scalar("paths/seq_len", pos_len)
+            ctx.add_scalar("paths/num_elements", num_elements)
 
         if ctx.log_img:
             fig = plt.figure()
@@ -85,8 +87,10 @@ class PathTask(BEVTask):
             ctx.add_figure("paths", fig)
 
         per_token_loss = F.huber_loss(predicted, target, reduction="none")
-        per_token_loss *= mask.unsqueeze(1).float()
-        position_loss = per_token_loss.mean(dim=(1, 2)) * 200
+        per_token_loss *= mask.unsqueeze(1)
+
+        # normalize by number of elements in sequence
+        position_loss = per_token_loss.sum(dim=(1, 2)) * 200 / (num_elements + 1)
 
         return {
             "position": position_loss,

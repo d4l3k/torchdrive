@@ -229,6 +229,7 @@ if args.load:
 
     # remap state_dict
     state_dict = remap_state_dict(state_dict, model)
+    state_dict = {k:v for k,v in state_dict.items() if "path" not in k}
 
     try:
         model.load_state_dict(state_dict, strict=False)
@@ -297,12 +298,18 @@ for epoch in range(NUM_EPOCHS):
         scaler.unscale_(optimizer)
         if log_text and writer:
             with torch.no_grad():
-                max_grad = max(
-                    p.grad.abs().amax()
-                    for p in model.parameters()
-                    if p.grad is not None
-                )
+                max_grad = 0
+                max_param = "n/a"
+                for name, p in model.named_parameters():
+                    if p.grad is None:
+                        continue
+
+                    grad_abs = p.grad.abs().amax()
+                    if grad_abs > max_grad:
+                        max_grad = grad_abs
+                        max_param = name
                 writer.add_scalar("grad/max", max_grad, global_step)
+                writer.add_text("grad/max_name", max_param, global_step)
         if args.grad_clip > 0:
             # clip gradients to avoid loss explosion
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)

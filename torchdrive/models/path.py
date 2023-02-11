@@ -8,7 +8,7 @@ from torch import nn
 from torchdrive.amp import autocast
 from torchdrive.models.mlp import ConvMLP
 from torchdrive.models.regnet import ConvPEBlock
-from torchdrive.models.transformer import TransformerDecoder
+from torchdrive.models.transformer import TransformerDecoder, transformer_init
 from torchdrive.positional_encoding import positional_encoding
 
 
@@ -52,8 +52,8 @@ class PathTransformer(nn.Module):
 
         self.bev_project = ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1)
 
-        self.pos_encoder = nn.Conv1d(pos_dim, dim, 1)
-        self.pos_decoder = nn.Conv1d(dim, pos_dim, 1)
+        self.pos_encoder = nn.Linear(pos_dim, dim)
+        self.pos_decoder = nn.Linear(dim, pos_dim)
 
         static_features = 3
         self.static_encoder = ConvMLP(static_features, dim, dim)
@@ -62,6 +62,8 @@ class PathTransformer(nn.Module):
         self.transformer = TransformerDecoder(
             dim=dim, layers=num_layers, num_heads=num_heads
         )
+
+        transformer_init(self)
 
     def forward(
         self, bev: torch.Tensor, positions: torch.Tensor, final_pos: torch.Tensor
@@ -88,13 +90,13 @@ class PathTransformer(nn.Module):
                 ),
                 dim=1,
             )
-            bev = self.bev_encoder(bev).reshape(BS, self.dim, -1).permute(0, 2, 1)
+            bev = self.bev_encoder(bev).flatten(-2, -1).permute(0, 2, 1)
 
             # cross attention features to decode
             cross_feats = torch.cat((bev, static, direction_feats), dim=1)
 
-            positions = self.pos_encoder(positions).permute(0, 2, 1)
+            positions = self.pos_encoder(positions.permute(0, 2, 1))
 
-            out_positions = self.transformer(positions, cross_feats).permute(0, 2, 1)
+            out_positions = self.transformer(positions, cross_feats)
 
-        return self.pos_decoder(out_positions.float())
+        return self.pos_decoder(out_positions.float()).permute(0, 2, 1)
