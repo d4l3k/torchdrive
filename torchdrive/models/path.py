@@ -8,7 +8,7 @@ from torch import nn
 from torchdrive.amp import autocast
 from torchdrive.models.mlp import ConvMLP
 from torchdrive.models.regnet import ConvPEBlock
-from torchdrive.models.transformer import TransformerDecoder, transformer_init
+from torchdrive.models.transformer import StockTransformerDecoder, transformer_init
 from torchdrive.positional_encoding import positional_encoding
 
 
@@ -52,14 +52,16 @@ class PathTransformer(nn.Module):
 
         self.bev_project = ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1)
 
-        self.pos_encoder = nn.Linear(pos_dim, dim)
-        self.pos_decoder = nn.Linear(dim, pos_dim)
+        self.pos_encoder = nn.Sequential(
+            nn.Linear(pos_dim, dim, bias=False),
+        )
+        self.pos_decoder = nn.Linear(dim, pos_dim, bias=False)
 
         static_features = 3
         self.static_encoder = ConvMLP(static_features, dim, dim)
         self.direction_embedding = nn.Embedding(direction_buckets, dim)
 
-        self.transformer = TransformerDecoder(
+        self.transformer = StockTransformerDecoder(
             dim=dim, layers=num_layers, num_heads=num_heads
         )
 
@@ -67,18 +69,22 @@ class PathTransformer(nn.Module):
 
     def forward(
         self, bev: torch.Tensor, positions: torch.Tensor, final_pos: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         BS = len(bev)
         device = bev.device
         dtype = bev.dtype
 
-        with autocast():
-            # direction buckets
-            direction_bucket = pos_to_bucket(final_pos, buckets=self.direction_buckets)
-            direction_feats = self.direction_embedding(direction_bucket).unsqueeze(1)
+        position_emb = self.pos_encoder(positions.permute(0, 2, 1))
+        ae_pos = self.pos_decoder(position_emb).permute(0, 2, 1)
 
-            # static features (speed)
-            speed = positions[:, :, 1] - positions[:, :, 0]
+        # direction buckets
+        direction_bucket = pos_to_bucket(final_pos, buckets=self.direction_buckets)
+        direction_feats = self.direction_embedding(direction_bucket).unsqueeze(1)
+
+        # static features (speed)
+        speed = positions[:, :, 1] - positions[:, :, 0]
+
+        with autocast():
             static = self.static_encoder(speed.unsqueeze(-1)).permute(0, 2, 1)
 
             # bev features
@@ -95,8 +101,20 @@ class PathTransformer(nn.Module):
             # cross attention features to decode
             cross_feats = torch.cat((bev, static, direction_feats), dim=1)
 
-            positions = self.pos_encoder(positions.permute(0, 2, 1))
+            out_positions = self.transformer(position_emb, cross_feats)
 
-            out_positions = self.transformer(positions, cross_feats)
+        pred_pos = self.pos_decoder(out_positions.float()).permute(0, 2, 1)
 
-        return self.pos_decoder(out_positions.float()).permute(0, 2, 1)
+        return pred_pos, ae_pos
+
+    def infer(
+        self, bev: torch.Tensor, seq: torch.Tensor, final_pos: torch.Tensor, n: int
+    ) -> torch.Tensor:
+        """
+        infer runs the inference in an autoregressive manner.
+        """
+        for i in range(n):
+            out, _ = self(bev, seq, final_pos)
+            print(out.shape, seq.shape)
+            seq = torch.cat((seq, out[..., -1:]), dim=-1)
+        return seq

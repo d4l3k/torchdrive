@@ -1,3 +1,5 @@
+import math
+
 import torch
 from torch import nn
 
@@ -75,7 +77,6 @@ class TransformerDecoderBlock(nn.Module):
         )
         self.ln3 = nn.LayerNorm(dim)
 
-
     def forward(self, x: torch.Tensor, cross: torch.Tensor) -> torch.Tensor:
         x = self.ln1(x + self.self_attn(x, x))
         x = self.ln2(x + self.cross_attn(x, cross))
@@ -98,7 +99,45 @@ class TransformerDecoder(nn.Module):
             x = block(x, cross)
         return x
 
-def transformer_init(m: nn.Module) -> None:
-    for p in m.parameters():
-        if p.dim() > 1:
-            nn.init.xavier_uniform_(p)
+
+class StockTransformerDecoder(nn.Module):
+    def __init__(self, dim: int, layers: int, num_heads: int) -> None:
+        super().__init__()
+
+        decoder_layer = nn.TransformerDecoderLayer(
+            d_model=dim, dim_feedforward=dim * 4, nhead=num_heads, batch_first=True
+        )
+        self.transformer_decoder = nn.TransformerDecoder(
+            decoder_layer, num_layers=layers
+        )
+
+    def forward(self, x: torch.Tensor, cross: torch.Tensor) -> torch.Tensor:
+        x = sequence_encoding(x)
+
+        device = x.device
+        sz = x.size(1)
+
+        mask = torch.triu(torch.ones(sz, sz, device=device) * float("-inf"), diagonal=1)
+
+        return self.transformer_decoder(x, cross, mask)
+
+
+def transformer_init(model: nn.Module) -> None:
+    for m in model.modules():
+        if isinstance(m, nn.Linear):
+            torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
+            if m.bias is not None:
+                torch.nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.Embedding):
+            torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
+        elif isinstance(m, (nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d)):
+            torch.nn.init.zeros_(m.bias)
+            torch.nn.init.ones_(m.weight)
+        elif isinstance(m, nn.Conv2d):
+            # Note that there is no bias due to BN
+            fan_out = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+            nn.init.normal_(m.weight, mean=0.0, std=math.sqrt(2.0 / fan_out))
+        elif isinstance(m, nn.Conv1d):
+            # Note that there is no bias due to BN
+            fan_out = m.kernel_size[0] * m.out_channels
+            nn.init.normal_(m.weight, mean=0.0, std=math.sqrt(2.0 / fan_out))

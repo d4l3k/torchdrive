@@ -186,6 +186,7 @@ class MultiCamDataset(Dataset):
                 break
 
         self.heading_weights: Dict[int, float] = bin_weights(self.heading_bins)
+        print("heading_weights", self.heading_weights)
 
         self.transform = transform
         self.localization = localization

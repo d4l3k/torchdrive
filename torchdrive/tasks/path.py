@@ -18,7 +18,7 @@ class PathTask(BEVTask):
         dim: int = 128,
         num_heads: int = 8,
         num_layers: int = 3,
-        max_seq_len: int = 40,
+        max_seq_len: int = 120,
     ) -> None:
         super().__init__()
 
@@ -71,11 +71,19 @@ class PathTask(BEVTask):
         prev = positions[..., :-1]
         target = positions[..., 1:]
 
-        predicted = self.transformer(bev, prev, final_pos)
+        predicted, ae_prev = self.transformer(bev, prev, final_pos)
+
+        losses = {}
+        losses["ae_prev"] = F.huber_loss(ae_prev, prev)
 
         if ctx.log_text:
             ctx.add_scalar("paths/seq_len", pos_len)
             ctx.add_scalar("paths/num_elements", num_elements)
+            with torch.no_grad():
+                ctx.add_scalar(
+                    "paths/pos_encoder.weight",
+                    self.transformer.pos_encoder[0].weight.abs().amax(),
+                )
 
         if ctx.log_img:
             fig = plt.figure()
@@ -87,11 +95,9 @@ class PathTask(BEVTask):
             ctx.add_figure("paths", fig)
 
         per_token_loss = F.huber_loss(predicted, target, reduction="none")
-        per_token_loss *= mask.unsqueeze(1)
+        per_token_loss *= mask.unsqueeze(1).expand(-1, 3, -1)
 
         # normalize by number of elements in sequence
-        position_loss = per_token_loss.sum(dim=(1, 2)) * 200 / (num_elements + 1)
+        losses["position"] = per_token_loss.sum(dim=(1, 2)) * 200 / (num_elements + 1)
 
-        return {
-            "position": position_loss,
-        }
+        return losses
