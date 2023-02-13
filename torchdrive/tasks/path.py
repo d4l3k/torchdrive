@@ -19,10 +19,12 @@ class PathTask(BEVTask):
         num_heads: int = 8,
         num_layers: int = 3,
         max_seq_len: int = 120,
+        num_ar_iters: int = 12,
     ) -> None:
         super().__init__()
 
         self.max_seq_len = max_seq_len
+        self.num_ar_iters = num_ar_iters
 
         self.transformer = PathTransformer(
             bev_shape=bev_shape,
@@ -64,40 +66,62 @@ class PathTask(BEVTask):
 
         assert pos_len > 1, "pos length too short"
 
-        posmax = positions.abs().amax()
-        assert posmax < 1000
-
-        # TODO: try adding noise to positions to help recover
-        prev = positions[..., :-1]
-        target = positions[..., 1:]
-
-        predicted, ae_prev = self.transformer(bev, prev, final_pos)
-
-        losses = {}
-        losses["ae_prev"] = F.huber_loss(ae_prev, prev)
-
         if ctx.log_text:
             ctx.add_scalar("paths/seq_len", pos_len)
             ctx.add_scalar("paths/num_elements", num_elements)
-            with torch.no_grad():
-                ctx.add_scalar(
-                    "paths/pos_encoder.weight",
-                    self.transformer.pos_encoder[0].weight.abs().amax(),
-                )
+
+        posmax = positions.abs().amax()
+        assert posmax < 1000
+
+        target = positions[..., 1:]
+        prev = positions[..., :-1]
+
+        all_predicted = []
+        losses = {}
+
+        for i in range(self.num_ar_iters):
+            predicted, ae_prev = self.transformer(bev, prev, final_pos)
+            all_predicted.append(predicted)
+
+            losses[f"ae_prev/{i}"] = F.huber_loss(ae_prev, prev)
+
+            per_token_loss = F.huber_loss(predicted, target, reduction="none")
+            per_token_loss *= mask.unsqueeze(1).expand(-1, 3, -1)
+
+            # normalize by number of elements in sequence
+            losses[f"position/{i}"] = (
+                per_token_loss.sum(dim=(1, 2)) * 200 / (num_elements + 1)
+            )
+
+            prev = predicted[..., :-1]
+            target = target[..., 1:]
+            mask = mask[..., 1:]
 
         if ctx.log_img:
-            fig = plt.figure()
-            length = lengths[0] - 1
-            plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
-            plt.plot(*predicted[0, 0:2, :length].detach().cpu(), label="predicted")
-            fig.legend()
-            plt.gca().set_aspect("equal")
-            ctx.add_figure("paths", fig)
+            with torch.no_grad():
+                fig = plt.figure()
+                length = lengths[0] - 1
+                plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
 
-        per_token_loss = F.huber_loss(predicted, target, reduction="none")
-        per_token_loss *= mask.unsqueeze(1).expand(-1, 3, -1)
+                for i, predicted in enumerate(all_predicted):
+                    if i % max(1, self.num_ar_iters // 4) != 0:
+                        continue
+                    plt.plot(
+                        *predicted[0, 0:2, :length].detach().cpu(),
+                        label=f"predicted {i}",
+                    )
 
-        # normalize by number of elements in sequence
-        losses["position"] = per_token_loss.sum(dim=(1, 2)) * 200 / (num_elements + 1)
+                # autoregressive
+                self.eval()
+                autoregressive = self.transformer.infer(
+                    bev[:1], prev[:1, ..., :2], final_pos[:1], n=length - 2
+                )
+                assert autoregressive.shape == (1, 3, length)
+                plt.plot(*autoregressive[0, 0:2].detach().cpu(), label="autoregressive")
+                self.train()
+
+                fig.legend()
+                plt.gca().set_aspect("equal")
+                ctx.add_figure("paths", fig)
 
         return losses

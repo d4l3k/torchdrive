@@ -17,6 +17,7 @@ class TestPath(unittest.TestCase):
             dim=8,
             num_heads=2,
             num_layers=1,
+            num_ar_iters=3,
         )
         batch = dummy_batch()
         ctx = Context(
@@ -32,6 +33,16 @@ class TestPath(unittest.TestCase):
         )
         bev = torch.rand(2, 5, 4, 4)
         losses = m(ctx, batch, bev)
-        self.assertCountEqual(losses.keys(), ["position", "ae_prev"])
-        self.assertEqual(losses["position"].shape, (2,))
-        self.assertEqual(losses["ae_prev"].shape, tuple())
+        self.assertCountEqual(
+            losses.keys(),
+            [
+                "position/0",
+                "ae_prev/0",
+                "position/1",
+                "ae_prev/1",
+                "position/2",
+                "ae_prev/2",
+            ],
+        )
+        self.assertEqual(losses["position/0"].shape, (2,))
+        self.assertEqual(losses["ae_prev/0"].shape, tuple())

@@ -1,5 +1,5 @@
 import math
-from typing import Tuple
+from typing import Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -108,13 +108,16 @@ class PathTransformer(nn.Module):
         return pred_pos, ae_pos
 
     def infer(
-        self, bev: torch.Tensor, seq: torch.Tensor, final_pos: torch.Tensor, n: int
+        self,
+        bev: torch.Tensor,
+        seq: torch.Tensor,
+        final_pos: torch.Tensor,
+        n: Union[int, torch.Tensor],
     ) -> torch.Tensor:
         """
         infer runs the inference in an autoregressive manner.
         """
         for i in range(n):
             out, _ = self(bev, seq, final_pos)
-            print(out.shape, seq.shape)
             seq = torch.cat((seq, out[..., -1:]), dim=-1)
         return seq
