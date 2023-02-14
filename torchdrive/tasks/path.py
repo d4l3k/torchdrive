@@ -17,7 +17,7 @@ class PathTask(BEVTask):
         bev_dim: int,
         dim: int = 128,
         num_heads: int = 8,
-        num_layers: int = 3,
+        num_layers: int = 6,
         max_seq_len: int = 120,
         num_ar_iters: int = 12,
     ) -> None:
@@ -83,19 +83,15 @@ class PathTask(BEVTask):
             predicted, ae_prev = self.transformer(bev, prev, final_pos)
             all_predicted.append(predicted)
 
-            losses[f"ae_prev/{i}"] = F.huber_loss(ae_prev, prev)
-
             per_token_loss = F.huber_loss(predicted, target, reduction="none")
             per_token_loss *= mask.unsqueeze(1).expand(-1, 3, -1)
 
             # normalize by number of elements in sequence
             losses[f"position/{i}"] = (
-                per_token_loss.sum(dim=(1, 2)) * 200 / (num_elements + 1)
+                per_token_loss.sum(dim=(1, 2)) * 50 / (num_elements + 1)
             )
 
-            prev = predicted[..., :-1]
-            target = target[..., 1:]
-            mask = mask[..., 1:]
+            prev = torch.cat((prev[..., :1], predicted[..., :-1]), dim=-1)
 
         if ctx.log_img:
             with torch.no_grad():
@@ -114,7 +110,7 @@ class PathTask(BEVTask):
                 # autoregressive
                 self.eval()
                 autoregressive = self.transformer.infer(
-                    bev[:1], prev[:1, ..., :2], final_pos[:1], n=length - 2
+                    bev[:1], positions[:1, ..., :2], final_pos[:1], n=length - 2
                 )
                 assert autoregressive.shape == (1, 3, length)
                 plt.plot(*autoregressive[0, 0:2].detach().cpu(), label="autoregressive")

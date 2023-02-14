@@ -37,12 +37,8 @@ class TestPath(unittest.TestCase):
             losses.keys(),
             [
                 "position/0",
-                "ae_prev/0",
                 "position/1",
-                "ae_prev/1",
                 "position/2",
-                "ae_prev/2",
             ],
         )
         self.assertEqual(losses["position/0"].shape, (2,))
-        self.assertEqual(losses["ae_prev/0"].shape, tuple())
