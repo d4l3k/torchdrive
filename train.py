@@ -166,6 +166,7 @@ if args.voxel:
         cam_shape=args.cam_shape,
         dim=args.hr_dim,
         height=12,
+        device=device,
     )
 
 model = BEVTaskVan(

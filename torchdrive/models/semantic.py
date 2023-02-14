@@ -19,6 +19,7 @@ class BDD100KSemSeg:
     directly.
     """
 
+    # all semantic labels
     LABELS = {
         0: "road",
         1: "sidewalk",
@@ -41,6 +42,40 @@ class BDD100KSemSeg:
         18: "bicycle",
     }
 
+    # dynamic objects
+    DYNAMIC = {
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+    }
+
+    # interesting is non-road, non-sky objects
+    INTERESTING = {
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+    }
+
     def __init__(
         self,
         device: torch.device,
@@ -52,6 +87,10 @@ class BDD100KSemSeg:
             "../../third-party/bdd100k-models/sem_seg/configs/sem_seg/",
             config,
         )
+
+        if device == torch.device("cpu"):
+            # half not supported on CPU
+            half = False
         self.half = half
 
         cfg = mmcv.Config.fromfile(cfg_file)

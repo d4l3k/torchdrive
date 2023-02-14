@@ -14,9 +14,9 @@ from torchvision import transforms
 from torchdrive.amp import autocast
 from torchdrive.attention import attention
 from torchdrive.models.mlp import ConvMLP
+from torchdrive.models.regnet import ConvPEBlock
 from torchdrive.positional_encoding import positional_encoding
 from torchdrive.transforms.img import normalize_img_cuda
-from torchdrive.models.regnet import ConvPEBlock
 
 
 class BDD100KDet:
@@ -55,7 +55,6 @@ class BDD100KDet:
         if device == torch.device("cpu"):
             # half not supported on CPU
             half = False
-
         self.half = half
 
         cfg = mmcv.Config.fromfile(cfg_file)

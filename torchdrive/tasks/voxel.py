@@ -14,6 +14,7 @@ from torchdrive.autograd import autograd_context
 from torchdrive.data import Batch
 from torchdrive.losses import projection_loss, tvl1_loss
 from torchdrive.models.regnet import resnet_init
+from torchdrive.models.semantic import BDD100KSemSeg
 from torchdrive.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarcher
 from torchdrive.tasks.bev import BEVTask, Context
 from torchdrive.transforms.depth import BackprojectDepth, Project3D
@@ -73,7 +74,9 @@ class VoxelTask(BEVTask):
         cam_shape: Tuple[int, int],
         dim: int,
         height: int,
+        device: torch.device,
         scale: int = 3,
+        semantic: bool = False,
     ) -> None:
         super().__init__()
 
@@ -81,9 +84,17 @@ class VoxelTask(BEVTask):
         self.cameras = cameras
         self.scale = scale
         self.height = height
+        self.semantic = semantic
 
         # generate voxel grid
-        self.decoder = nn.Conv2d(dim, height, kernel_size=1)
+        self.num_elem: int = 1
+        if semantic:
+            self.classes_elem: int = len(BDD100KSemSeg.INTERESTING)
+            self.vel_elem: int = 3
+            self.num_elem += self.classes_elem + self.vel_elem
+            self.segment: BDD100KSemSeg = BDD100KSemSeg(device=device)
+
+        self.decoder = nn.Conv2d(dim, self.num_elem * height, kernel_size=1)
         resnet_init(self.decoder)
 
         h, w = cam_shape
@@ -119,9 +130,13 @@ class VoxelTask(BEVTask):
         bev_shape = bev.shape[2:]
 
         with autocast():
-            grid = self.decoder(bev).unsqueeze(1).sigmoid_()
+            embedding = self.decoder(bev).unflatten(1, (self.num_elem, self.height))
+
+        grid = embedding[:, :1].sigmoid_()
+        feat_grid = embedding[:, 1:]
 
         grid = grid.permute(0, 1, 4, 3, 2)
+        feat_grid = feat_grid.permute(0, 1, 4, 3, 2)
         # grid, color_grid = axis_grid(grid)
 
         losses = {}
@@ -176,7 +191,9 @@ class VoxelTask(BEVTask):
 
             volumes = Volumes(
                 densities=grid.permute(0, 1, 4, 3, 2).float(),
-                # features=color_grid.permute(0, 1, 4, 3, 2).float(),
+                features=feat_grid.permute(0, 1, 4, 3, 2).float()
+                if self.semantic
+                else None,
                 voxel_size=1 / self.scale,
                 # TODO support non-centered voxel grids
                 # volume_translation=(-self.height / 2 / self.scale, 0, 0),
