@@ -10,7 +10,7 @@ from pytorch3d.structures import Volumes
 from torch import nn
 
 from torchdrive.amp import autocast
-from torchdrive.autograd import autograd_context, autograd_optional
+from torchdrive.autograd import autograd_context
 from torchdrive.data import Batch
 from torchdrive.losses import projection_loss, tvl1_loss
 from torchdrive.models.regnet import resnet_init
@@ -330,44 +330,62 @@ class VoxelTask(BEVTask):
                         )
 
                     if self.semantic:
-                        semantic_img = semantic_img.permute(0, 3, 1, 2)
-                        semantic_classes = semantic_img[:, :self.classes_elem]
-                        semantic_vel = semantic_img[:, self.classes_elem:]
-
-                        semantic_target = self.segment(half_color)
-                        # select interesting classes and convert to probabilities
-                        semantic_target = semantic_target[:, BDD100KSemSeg.INTERESTING]
-                        semantic_target = F.avg_pool2d(semantic_target, 2)
-                        semantic_target = semantic_target.sigmoid()
-
-                        sem_loss = F.binary_cross_entropy_with_logits(semantic_classes, semantic_target, reduction='none')
-                        sem_loss *= F.avg_pool2d(primary_mask, 2)
-
-                        if ctx.log_img:
-                            out_class = torch.argmax(semantic_img[:1], dim=1)
-                            target_class = torch.argmax(semantic_target[:1], dim=1)
-                            ctx.add_image(
-                                f"semantic/{cam}/{frame}/output_target",
-                                render_color(
-                                    torch.cat(
-                                        (
-                                            out_class[0],
-                                            target_class[0],
-                                        ),
-                                        dim=1,
-                                    )
-                                ),
-                            )
-                            ctx.add_image(
-                                f"semantic/{cam}/{frame}/loss",
-                                render_color(sem_loss[0].mean(dim=0)),
-                            )
-
-                        losses[f"semantic/{cam}/o{offset}"] = sem_loss.mean(dim=(1,2,3))
+                        losses[f"semantic/{cam}/o{offset}"] = self._semantic_loss(
+                            ctx, cam, frame, semantic_img, half_color, primary_mask
+                        )
 
                     ctx.backward(losses)
 
         return losses
+
+    def _semantic_loss(
+        self,
+        ctx: Context,
+        cam: str,
+        frame: int,
+        semantic_img: torch.Tensor,
+        color: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        _semantic_loss computes the semantic class probability loss.
+        """
+        semantic_img = semantic_img.permute(0, 3, 1, 2)
+        semantic_classes = semantic_img[:, : self.classes_elem]
+        semantic_vel = semantic_img[:, self.classes_elem :]
+
+        semantic_target = self.segment(color)
+        # select interesting classes and convert to probabilities
+        semantic_target = semantic_target[:, BDD100KSemSeg.INTERESTING]
+        semantic_target = F.avg_pool2d(semantic_target, 2)
+        semantic_target = semantic_target.sigmoid()
+
+        sem_loss = F.binary_cross_entropy_with_logits(
+            semantic_classes, semantic_target, reduction="none"
+        )
+        sem_loss *= F.avg_pool2d(mask, 2)
+
+        if ctx.log_img:
+            out_class = torch.argmax(semantic_img[:1], dim=1)
+            target_class = torch.argmax(semantic_target[:1], dim=1)
+            ctx.add_image(
+                f"semantic/{cam}/{frame}/output_target",
+                render_color(
+                    torch.cat(
+                        (
+                            out_class[0],
+                            target_class[0],
+                        ),
+                        dim=1,
+                    )
+                ),
+            )
+            ctx.add_image(
+                f"semantic/{cam}/{frame}/loss",
+                render_color(sem_loss[0].mean(dim=0)),
+            )
+
+        return sem_loss.mean(dim=(1, 2, 3))
 
     def project(
         self,
