@@ -1,3 +1,4 @@
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
@@ -170,6 +171,7 @@ class BEVTaskVan(torch.nn.Module):
 
         with autograd_context(bev) as bev:
             losses: Dict[str, torch.Tensor] = {}
+            task_times: Dict[str, float] = {}
 
             ctx: Context = Context(
                 log_img=log_img,
@@ -186,10 +188,13 @@ class BEVTaskVan(torch.nn.Module):
                 for name, task in tasks.items():
                     ctx.name = name
 
+                    task_start = time.time()
                     task_losses = task(ctx, batch, task_bev)
                     ctx.backward(task_losses)
                     for k, v in task_losses.items():
                         losses[name + "-" + k] = v
+
+                    task_times[name] = time.time() - task_start
 
             _run_tasks(self.tasks, bev)
 
@@ -198,5 +203,12 @@ class BEVTaskVan(torch.nn.Module):
                     hr_bev = self.upsample(bev)
                 with autograd_context(hr_bev) as hr_bev:
                     _run_tasks(self.hr_tasks, hr_bev)
+
+            if log_text and (writer := self.writer) is not None:
+                writer.add_scalars(
+                    "task_times",
+                    task_times,
+                    global_step=global_step,
+                )
 
         return losses

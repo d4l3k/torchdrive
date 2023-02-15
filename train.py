@@ -60,11 +60,13 @@ parser.add_argument("--anomaly-detection", default=False, action="store_true")
 parser.add_argument("--limit_size", type=int)
 parser.add_argument("--grad_clip", type=float, default=1.0)
 parser.add_argument("--checkpoint_every", type=int, default=500)
+parser.add_argument("--profile", default=False, action="store_true")
 
 # tasks
 parser.add_argument("--det", default=False, action="store_true")
 parser.add_argument("--ae", default=False, action="store_true")
 parser.add_argument("--voxel", default=False, action="store_true")
+parser.add_argument("--voxelsem", default=False, action="store_true")
 parser.add_argument("--path", default=False, action="store_true")
 
 args: argparse.Namespace = parser.parse_args()
@@ -167,6 +169,7 @@ if args.voxel:
         dim=args.hr_dim,
         height=12,
         device=device,
+        semantic=args.voxelsem,
     )
 
 model = BEVTaskVan(
@@ -262,6 +265,17 @@ def save(epoch: int) -> None:
     print(f"saved to {path}, loss = {l}")
 
 
+if args.profile:
+    prof: Optional[torch.profiler.profile] = torch.profiler.profile(
+        schedule=torch.profiler.schedule(wait=10, warmup=1, active=1, repeat=1),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler(
+            os.path.join(args.output, "profile")
+        ),
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True,
+    ).__enter__()
+
 for epoch in range(NUM_EPOCHS):
 
     batch_idx = 0
@@ -347,6 +361,9 @@ for epoch in range(NUM_EPOCHS):
 
             batch_idx += 1
             global_step += 1
+
+        if prof:
+            prof.step()
 
     epoch_loss_mean = epoch_loss / batch_idx
 
