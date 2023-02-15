@@ -54,7 +54,7 @@ class TestVoxel(unittest.TestCase):
             dim=5,
             height=12,
             device=device,
-            semantic=True,
+            semantic=["left"],
         )
         batch = dummy_batch()
         ctx = Context(
@@ -81,7 +81,6 @@ class TestVoxel(unittest.TestCase):
                 "lossproj/left/o1/s1",
                 "lossproj/left/o1/s2",
                 "semantic/left/o1",
-                "semantic/right/o1",
             ],
         )
 

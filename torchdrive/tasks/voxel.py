@@ -1,5 +1,5 @@
 import os.path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -76,7 +76,7 @@ class VoxelTask(BEVTask):
         height: int,
         device: torch.device,
         scale: int = 3,
-        semantic: bool = False,
+        semantic: Optional[List[str]] = None,
     ) -> None:
         super().__init__()
 
@@ -198,17 +198,6 @@ class VoxelTask(BEVTask):
                         allow_pickle=False,
                     )
 
-            volumes = Volumes(
-                densities=grid.permute(0, 1, 4, 3, 2).float(),
-                features=feat_grid.permute(0, 1, 4, 3, 2).float()
-                if self.semantic
-                else None,
-                voxel_size=1 / self.scale,
-                # TODO support non-centered voxel grids
-                # volume_translation=(-self.height / 2 / self.scale, 0, 0),
-                volume_translation=(0, 0, -self.height / 2 / self.scale),
-            )
-
             losses = {}
 
             # total variation loss to encourage sharp edges
@@ -216,8 +205,20 @@ class VoxelTask(BEVTask):
 
             h, w = self.cam_shape
 
-            for frame in range(0, frames - 1, 2):
-                for cam in self.cameras:
+            for cam in self.cameras:
+                cam_semantic = self.semantic and cam in self.semantic
+                volumes = Volumes(
+                    densities=grid.permute(0, 1, 4, 3, 2).float(),
+                    features=feat_grid.permute(0, 1, 4, 3, 2).float()
+                    if cam_semantic
+                    else None,
+                    voxel_size=1 / self.scale,
+                    # TODO support non-centered voxel grids
+                    # volume_translation=(-self.height / 2 / self.scale, 0, 0),
+                    volume_translation=(0, 0, -self.height / 2 / self.scale),
+                )
+
+                for frame in range(0, frames - 1, 2):
                     K = batch.K[cam]
                     T = torch.matmul(cam_T[:, frame], batch.T[cam])
                     cameras = CustomPerspectiveCameras(
@@ -329,7 +330,7 @@ class VoxelTask(BEVTask):
                             proj_loss.mean(dim=(1, 2, 3)) * 40
                         )
 
-                    if self.semantic:
+                    if cam_semantic:
                         losses[f"semantic/{cam}/o{offset}"] = self._semantic_loss(
                             ctx, cam, frame, semantic_img, half_color, primary_mask
                         )

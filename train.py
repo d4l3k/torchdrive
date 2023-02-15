@@ -66,7 +66,7 @@ parser.add_argument("--profile", default=False, action="store_true")
 parser.add_argument("--det", default=False, action="store_true")
 parser.add_argument("--ae", default=False, action="store_true")
 parser.add_argument("--voxel", default=False, action="store_true")
-parser.add_argument("--voxelsem", default=False, action="store_true")
+parser.add_argument("--voxelsem", default=None, type=tuple_str)
 parser.add_argument("--path", default=False, action="store_true")
 
 args: argparse.Namespace = parser.parse_args()
