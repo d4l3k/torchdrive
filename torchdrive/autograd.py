@@ -1,6 +1,6 @@
 import itertools
 from contextlib import contextmanager
-from typing import cast, Generator, List, overload, Tuple, Union
+from typing import cast, Generator, List, overload, Tuple, Union, TypeVar
 
 import torch
 
@@ -64,3 +64,13 @@ def autograd_context(
     else:
         yield paused_tensors
     autograd_resume(*paused_tensors)
+
+T = TypeVar('T')
+
+@contextmanager
+def autograd_optional(tensor: T) -> Generator[T, None, None]:
+    if isinstance(tensor, torch.Tensor):
+        with autograd_context(tensor) as tensor:
+            yield tensor
+    else:
+        yield tensor

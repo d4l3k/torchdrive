@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchdrive.autograd import autograd_context, autograd_pause, autograd_resume
+from torchdrive.autograd import autograd_context, autograd_pause, autograd_resume, autograd_optional
 
 
 class TestAutograd(unittest.TestCase):
@@ -49,6 +49,17 @@ class TestAutograd(unittest.TestCase):
         a.requires_grad = True
 
         with autograd_context(a) as a_paused:
+            a_paused.sum().backward()
+            self.assertIsNotNone(a_paused.grad)
+            self.assertIsNone(a.grad)
+
+        self.assertIsNotNone(a.grad)
+
+    def test_optional(self) -> None:
+        a = torch.rand(1, 2)
+        a.requires_grad = True
+
+        with autograd_optional(a) as a_paused, autograd_optional(None) as none:
             a_paused.sum().backward()
             self.assertIsNotNone(a_paused.grad)
             self.assertIsNone(a.grad)
