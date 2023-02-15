@@ -10,7 +10,7 @@ from pytorch3d.structures import Volumes
 from torch import nn
 
 from torchdrive.amp import autocast
-from torchdrive.autograd import autograd_context
+from torchdrive.autograd import autograd_context, autograd_optional
 from torchdrive.data import Batch
 from torchdrive.losses import projection_loss, tvl1_loss
 from torchdrive.models.regnet import resnet_init
@@ -140,7 +140,16 @@ class VoxelTask(BEVTask):
         # grid, color_grid = axis_grid(grid)
 
         losses = {}
-        with autograd_context(grid) as grid:
+
+        grad_tensors = [grid]
+        if self.semantic:
+            grad_tensors.append(feat_grid)
+        with autograd_context(*grad_tensors) as packed:
+            if self.semantic:
+                grid, feat_grid = packed
+            else:
+                grid = packed
+
             if ctx.log_text:
                 ctx.add_scalars(
                     "grid/minmax",
@@ -225,7 +234,6 @@ class VoxelTask(BEVTask):
                         volumes=volumes,
                         eps=1e-8,
                     )
-                    # semantic_img = semantic_img.permute(0, 3, 1, 2)
 
                     depth = F.interpolate(
                         depth.unsqueeze(1),
@@ -277,9 +285,10 @@ class VoxelTask(BEVTask):
                     )
                     projmask *= primary_mask
                     color = batch.color[cam, offset]
-                    color = F.interpolate(
+                    half_color = F.interpolate(
                         color, [h // 2, w // 2], mode="bilinear", align_corners=False
                     )
+                    color = half_color
 
                     MSSIM_SCALES = 3
                     for scale in range(MSSIM_SCALES):
@@ -319,6 +328,42 @@ class VoxelTask(BEVTask):
                         losses[f"lossproj/{cam}/o{offset}/s{scale}"] = (
                             proj_loss.mean(dim=(1, 2, 3)) * 40
                         )
+
+                    if self.semantic:
+                        semantic_img = semantic_img.permute(0, 3, 1, 2)
+                        semantic_classes = semantic_img[:, :self.classes_elem]
+                        semantic_vel = semantic_img[:, self.classes_elem:]
+
+                        semantic_target = self.segment(half_color)
+                        # select interesting classes and convert to probabilities
+                        semantic_target = semantic_target[:, BDD100KSemSeg.INTERESTING]
+                        semantic_target = F.avg_pool2d(semantic_target, 2)
+                        semantic_target = semantic_target.sigmoid()
+
+                        sem_loss = F.binary_cross_entropy_with_logits(semantic_classes, semantic_target, reduction='none')
+                        sem_loss *= F.avg_pool2d(primary_mask, 2)
+
+                        if ctx.log_img:
+                            out_class = torch.argmax(semantic_img[:1], dim=1)
+                            target_class = torch.argmax(semantic_target[:1], dim=1)
+                            ctx.add_image(
+                                f"semantic/{cam}/{frame}/output_target",
+                                render_color(
+                                    torch.cat(
+                                        (
+                                            out_class[0],
+                                            target_class[0],
+                                        ),
+                                        dim=1,
+                                    )
+                                ),
+                            )
+                            ctx.add_image(
+                                f"semantic/{cam}/{frame}/loss",
+                                render_color(sem_loss[0].mean(dim=0)),
+                            )
+
+                        losses[f"semantic/{cam}/o{offset}"] = sem_loss.mean(dim=(1,2,3))
 
                     ctx.backward(losses)
 

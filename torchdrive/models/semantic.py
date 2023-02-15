@@ -43,7 +43,7 @@ class BDD100KSemSeg:
     }
 
     # dynamic objects
-    DYNAMIC = {
+    DYNAMIC = (
         11,
         12,
         13,
@@ -52,10 +52,10 @@ class BDD100KSemSeg:
         16,
         17,
         18,
-    }
+    )
 
     # interesting is non-road, non-sky objects
-    INTERESTING = {
+    INTERESTING = (
         1,
         2,
         3,
@@ -74,7 +74,7 @@ class BDD100KSemSeg:
         16,
         17,
         18,
-    }
+    )
 
     def __init__(
         self,

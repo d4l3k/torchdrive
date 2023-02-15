@@ -80,6 +80,8 @@ class TestVoxel(unittest.TestCase):
                 "lossproj/left/o1/s0",
                 "lossproj/left/o1/s1",
                 "lossproj/left/o1/s2",
+                "semantic/left/o1",
+                "semantic/right/o1",
             ],
         )
 
