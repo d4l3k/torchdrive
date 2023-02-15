@@ -1,16 +1,24 @@
 import unittest
 
 import torch
+from parameterized import parameterized
 from torchvision import models
 
 from torchdrive.models.regnet import ConvPEBlock, RegNetEncoder, UpsamplePEBlock
 
 
 class TestRegNet(unittest.TestCase):
-    def test_regnet(self) -> None:
-        m = RegNetEncoder((48, 64), 10, trunk=models.regnet_y_400mf)
-        out = m(torch.rand(1, 3, 48, 64))
-        self.assertEqual(out.shape, (1, 10, 3, 4))
+    # pyre-fixme[16]: no attribute expand
+    @parameterized.expand(
+        [
+            (True,),
+            (False,),
+        ]
+    )
+    def test_regnet(self, use_f4: bool) -> None:
+        m = RegNetEncoder((64, 96), 10, trunk=models.regnet_y_400mf, use_f4=use_f4)
+        out = m(torch.rand(1, 3, 64, 96))
+        self.assertEqual(out.shape, (1, 10, 4, 6))
 
     def test_conv_pe_block(self) -> None:
         m = ConvPEBlock(4, 5, (4, 4))

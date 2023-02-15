@@ -2,7 +2,7 @@ import math
 from typing import Protocol, Tuple, Type
 
 import torch
-
+import torch.nn.functional as F
 from torch import nn
 from torchvision import models
 
@@ -42,8 +42,11 @@ class RegNetEncoder(nn.Module):
         cam_shape: Tuple[int, int],
         dim: int,
         trunk: RegNetConstructor = models.regnet_x_800mf,
+        use_f4: bool = True,
     ) -> None:
         super().__init__()
+
+        self.use_f4 = use_f4
 
         self.model: models.RegNet = trunk(pretrained=True)
         assert len(self.model.trunk_output) == 4
@@ -60,11 +63,15 @@ class RegNetEncoder(nn.Module):
 
         self.output_shape: Tuple[int, int] = (cam_shape[0] // 16, cam_shape[1] // 16)
 
-        self.f3_encoder = nn.Sequential(
-            nn.Conv2d(self.num_ch_enc[3] + 6, dim, 3, padding=1),
+        proj_in_dim = self.num_ch_enc[3] + 6
+        if use_f4:
+            proj_in_dim += self.num_ch_enc[4]
+
+        self.proj = nn.Sequential(
+            nn.Conv2d(proj_in_dim, dim, 3, padding=1),
             nn.ReLU(inplace=True),
         )
-        resnet_init(self.f3_encoder)
+        resnet_init(self.proj)
         self.register_buffer(
             "positional_encoding",
             positional_encoding(*self.output_shape),
@@ -78,12 +85,19 @@ class RegNetEncoder(nn.Module):
         f1 = self.model.trunk_output[0](f0)
         f2 = self.model.trunk_output[1](f1)
         f3 = self.model.trunk_output[2](f2)
-        # f4 = self.model.trunk_output[3](f3)
-        # print(f0.shape, f1.shape, f2.shape, f3.shape, f4.shape)
 
         pos_enc = self.positional_encoding.expand(BS, -1, -1, -1)
-        x3 = self.f3_encoder(torch.cat((f3, pos_enc), dim=1))
-        return x3
+        proj_in = [pos_enc, f3]
+
+        if self.use_f4:
+            f4 = self.model.trunk_output[3](f3)
+            f4 = F.upsample(f4, scale_factor=(2, 2))
+            proj_in.append(f4)
+
+        for x in proj_in:
+            print(x.shape)
+
+        return self.proj(torch.cat(proj_in, dim=1))
 
 
 class ConvPEBlock(nn.Module):

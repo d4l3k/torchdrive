@@ -13,3 +13,4 @@ orjson
 tensorboard
 GitPython
 IPython
+parameterized

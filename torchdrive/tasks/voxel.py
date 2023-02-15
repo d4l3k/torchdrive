@@ -331,8 +331,11 @@ class VoxelTask(BEVTask):
                         )
 
                     if cam_semantic:
-                        losses[f"semantic/{cam}/o{offset}"] = self._semantic_loss(
-                            ctx, cam, frame, semantic_img, half_color, primary_mask
+                        losses[f"semantic/{cam}/o{offset}"] = (
+                            self._semantic_loss(
+                                ctx, cam, frame, semantic_img, half_color, primary_mask
+                            )
+                            * 10
                         )
 
                     ctx.backward(losses)
