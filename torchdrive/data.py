@@ -27,13 +27,40 @@ class Batch:
     # future
     long_cam_T: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
 
+    def batch_size(self) -> int:
+        return self.weight.numel()
+
     def to(self, device: torch.device) -> "Batch":
+        """
+        returns a copy of batch that's been transferred to the specified device.
+        """
         return Batch(
             **{
                 field.name: transfer(field.name, getattr(self, field.name), device)
                 for field in fields(Batch)
             }
         )
+
+    def split(self, split_size: int) -> List["Batch"]:
+        """
+        Splits the batch into `split_size` sized pieces.
+        """
+        out = []
+        for field in fields(Batch):
+            original = getattr(self, field.name)
+            parts = split(original, split_size)
+            print(
+                field.name,
+                len(parts),
+                len(original),
+                original.__class__,
+                parts.__class__,
+            )
+            for i, p in enumerate(parts):
+                if len(out) <= i:
+                    out.append({})
+                out[i][field.name] = p
+        return [Batch(*g) for g in out]
 
 
 def dummy_item() -> Batch:
@@ -118,6 +145,9 @@ T = TypeVar("T")
 
 
 def transfer(k: str, x: T, device: torch.device) -> T:
+    """
+    transfers the provided object to the specified device.
+    """
     if isinstance(x, torch.Tensor):
         return x.to(device, non_blocking=True)
     if isinstance(x, list):
@@ -127,3 +157,30 @@ def transfer(k: str, x: T, device: torch.device) -> T:
     if isinstance(x, dict):
         return {key: transfer(k, value, device=device) for key, value in x.items()}
     return x
+
+
+def split(x: T, split_size: int) -> List[T]:
+    """
+    split split_size the object into `split_size` pieces.
+    """
+    if isinstance(x, torch.Tensor):
+        return torch.split(x, split_size)
+    elif isinstance(x, dict):
+        groups = []
+        for key, value in x.items():
+            parts = split(value, split_size)
+            for i, v in enumerate(parts):
+                if len(groups) <= i:
+                    groups.append({})
+                groups[i][key] = v
+        return groups
+    elif isinstance(x, tuple):
+        groups = []
+        for value in x:
+            parts = split(value, split_size)
+            for i, v in enumerate(parts):
+                if len(groups) <= i:
+                    groups.append([])
+                groups[i].append(v)
+        return [tuple(g) for g in groups]
+    raise ValueError(f"can't split {x}")

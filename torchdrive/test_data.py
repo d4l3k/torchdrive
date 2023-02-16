@@ -37,3 +37,16 @@ class TestData(unittest.TestCase):
         device = torch.device("cpu")
         batch = dummy_batch().to(device)
         self.assertEqual(batch.distances.device, device)
+
+    def test_split(self) -> None:
+        out = dummy_batch()
+        self.assertEqual(len(out.split(1)), 2)
+        self.assertEqual(len(out.split(2)), 1)
+        self.assertEqual(len(out.split(3)), 1)
+
+    def test_size(self) -> None:
+        out = dummy_item()
+        self.assertEqual(out.batch_size(), 1)
+
+        out = dummy_batch()
+        self.assertEqual(out.batch_size(), 2)
