@@ -88,9 +88,12 @@ class VoxelTask(BEVTask):
 
         # generate voxel grid
         self.num_elem: int = 1
+        background: List[float] = []
         if semantic:
             self.classes_elem: int = len(BDD100KSemSeg.INTERESTING)
+            background += [-10.0] * self.classes_elem
             self.vel_elem: int = 3
+            background += [0.0, 0.0, 0.0]
             self.num_elem += self.classes_elem + self.vel_elem
             self.segment: BDD100KSemSeg = BDD100KSemSeg(device=device)
 
@@ -111,6 +114,9 @@ class VoxelTask(BEVTask):
         )
         raymarcher = DepthEmissionRaymarcher(
             floor=0,
+            background=torch.tensor(background, device=device)
+            if len(background) > 0
+            else None,
         )
         self.renderer = VolumeRenderer(
             raysampler=raysampler,

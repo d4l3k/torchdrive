@@ -57,11 +57,12 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         device = rays_densities.device
 
         rays_densities = rays_densities.clone()
-
         # clamp furthest point to prob 1
         rays_densities[..., -1, 0] = 1
+
         # set last point to background color
-        if (background := self.background) is not None:
+        if (background := self.background) is not None and rays_features.size(-1) > 0:
+            rays_features = rays_features.clone()
             rays_features[..., -1, :] = background
 
         # set floor depths

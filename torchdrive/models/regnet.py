@@ -68,7 +68,7 @@ class RegNetEncoder(nn.Module):
             proj_in_dim += self.num_ch_enc[4]
 
         self.proj = nn.Sequential(
-            nn.Conv2d(proj_in_dim, dim, 3, padding=1),
+            nn.Conv2d(proj_in_dim, dim, 1, padding=1),
             nn.ReLU(inplace=True),
         )
         resnet_init(self.proj)
@@ -91,11 +91,8 @@ class RegNetEncoder(nn.Module):
 
         if self.use_f4:
             f4 = self.model.trunk_output[3](f3)
-            f4 = F.upsample(f4, scale_factor=(2, 2))
+            f4 = F.upsample(f4.float(), scale_factor=(2, 2))
             proj_in.append(f4)
-
-        for x in proj_in:
-            print(x.shape)
 
         return self.proj(torch.cat(proj_in, dim=1))
 
