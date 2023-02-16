@@ -60,8 +60,9 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         # clamp furthest point to prob 1
         rays_densities[..., -1, 0] = 1
 
+        feat_dim = rays_features.size(-1)
         # set last point to background color
-        if (background := self.background) is not None and rays_features.size(-1) > 0:
+        if (background := self.background) is not None and feat_dim > 0:
             rays_features = rays_features.clone()
             rays_features[..., -1, :] = background
 
@@ -73,7 +74,10 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         torch.nan_to_num_(floor_depth, nan=-1.0)
         floor_depth[floor_depth <= 0] = 10000
         floor_depth = floor_depth.unsqueeze(3).unsqueeze(4)
-        rays_densities[ray_bundle.lengths.unsqueeze(4) > floor_depth] = 1
+        is_floor = ray_bundle.lengths.unsqueeze(4) > floor_depth
+        rays_densities[is_floor] = 1
+        if (background := self.background) is not None and feat_dim > 0:
+            rays_features[is_floor.squeeze(-1), :] = background
 
         ray_shape = rays_densities.shape[:-2]
         probs = rays_densities[..., 0].cumsum_(dim=3)

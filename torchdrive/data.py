@@ -49,13 +49,6 @@ class Batch:
         for field in fields(Batch):
             original = getattr(self, field.name)
             parts = split(original, split_size)
-            print(
-                field.name,
-                len(parts),
-                len(original),
-                original.__class__,
-                parts.__class__,
-            )
             for i, p in enumerate(parts):
                 if len(out) <= i:
                     out.append({})
