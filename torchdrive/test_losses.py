@@ -52,3 +52,27 @@ class TestLosses(unittest.TestCase):
             self.assertFalse(loss.requires_grad, name)
 
         self.assertIsNotNone(t.grad)
+
+    def test_losses_backwards_value(self) -> None:
+        t = torch.arange(4, dtype=torch.float)
+        t.requires_grad = True
+        weights = torch.arange(4, dtype=torch.float)
+        losses = {
+            "t": t,
+        }
+        losses_backward(losses,weights=weights)
+        torch.testing.assert_close(losses["t"], (t*weights).sum()/(weights.sum()))
+
+        losses = {
+            "t": t,
+        }
+        losses_backward(losses)
+        torch.testing.assert_close(losses["t"], t.mean())
+
+        t = torch.ones(1).mean()
+        t.requires_grad=True
+        losses = {
+            "t": t*2,
+        }
+        losses_backward(losses)
+        torch.testing.assert_close(losses["t"], torch.tensor(2.0))
