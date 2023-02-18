@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields
-from typing import Dict, List, Optional, Tuple, TypeVar, Union
+from typing import Callable, Dict, List, Mapping, Optional, Tuple, TypeVar, Union
 
 import torch
 from torch.utils.data import default_collate
@@ -27,6 +27,8 @@ class Batch:
     # future
     long_cam_T: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
 
+    global_batch_size: int = 1
+
     def batch_size(self) -> int:
         return self.weight.numel()
 
@@ -46,14 +48,21 @@ class Batch:
         Splits the batch into `split_size` sized pieces.
         """
         out = []
+        BS = self.batch_size()
+        parts = BS // split_size
+        if BS % split_size != 0:
+            parts += 1
+        for i in range(parts):
+            out.append({"global_batch_size": self.global_batch_size})
         for field in fields(Batch):
-            original = getattr(self, field.name)
+            name = field.name
+            if name == "global_batch_size":
+                continue
+            original = getattr(self, name)
             parts = split(original, split_size)
             for i, p in enumerate(parts):
-                if len(out) <= i:
-                    out.append({})
-                out[i][field.name] = p
-        return [Batch(*g) for g in out]
+                out[i][name] = p
+        return [Batch(**g) for g in out]
 
 
 def dummy_item() -> Batch:
@@ -97,8 +106,9 @@ def _collate_long_cam_T(
     return (out, mask, lens)
 
 
-_COLLATE_FIELDS = {
+_COLLATE_FIELDS: Mapping[str, Callable[[object, ...], object]] = {
     "long_cam_T": _collate_long_cam_T,
+    "global_batch_size": sum,
 }
 
 

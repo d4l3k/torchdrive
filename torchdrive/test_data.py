@@ -50,3 +50,12 @@ class TestData(unittest.TestCase):
 
         out = dummy_batch()
         self.assertEqual(out.batch_size(), 2)
+
+    def test_global_batch_size(self) -> None:
+        self.assertEqual(dummy_item().global_batch_size, 1)
+        batch = dummy_batch()
+        self.assertEqual(batch.global_batch_size, 2)
+        a, b = batch.split(1)
+        print(a, b)
+        self.assertEqual(a.global_batch_size, 2)
+        self.assertEqual(a.batch_size(), 1)
