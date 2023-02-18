@@ -61,6 +61,9 @@ parser.add_argument("--limit_size", type=int)
 parser.add_argument("--grad_clip", type=float, default=1.0)
 parser.add_argument("--checkpoint_every", type=int, default=500)
 parser.add_argument("--profile", default=False, action="store_true")
+parser.add_argument(
+    "--grad_sizes", default=False, action="store_true", help="log grad sizes"
+)
 
 # tasks
 parser.add_argument("--det", default=False, action="store_true")
@@ -311,7 +314,7 @@ for epoch in range(NUM_EPOCHS):
         assert not loss.requires_grad
 
         scaler.unscale_(optimizer)
-        if log_text and writer:
+        if log_text and writer and args.grad_sizes:
             with torch.no_grad():
                 max_grad = 0
                 max_weight = 0
@@ -326,7 +329,7 @@ for epoch in range(NUM_EPOCHS):
                         max_weight = p.abs().amax()
                         max_param = name
                 writer.add_scalar("grad/max", max_grad, global_step)
-                writer.add_scalar("grad/max_weight", max_grad, global_step)
+                writer.add_scalar("grad/max_weight", max_weight, global_step)
                 writer.add_text("grad/max_name", max_param, global_step)
         if args.grad_clip > 0:
             # clip gradients to avoid loss explosion
