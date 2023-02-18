@@ -18,6 +18,8 @@ class TestVoxel(unittest.TestCase):
             dim=5,
             height=12,
             device=device,
+            render_batch_size=1,
+            n_pts_per_ray=10,
         )
         batch = dummy_batch()
         ctx = Context(

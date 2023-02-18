@@ -77,6 +77,8 @@ class VoxelTask(BEVTask):
         device: torch.device,
         scale: int = 3,
         semantic: Optional[List[str]] = None,
+        render_batch_size: int = 2,
+        n_pts_per_ray: int = 216,
     ) -> None:
         super().__init__()
 
@@ -85,6 +87,7 @@ class VoxelTask(BEVTask):
         self.scale = scale
         self.height = height
         self.semantic = semantic
+        self.render_batch_size = render_batch_size
 
         # generate voxel grid
         self.num_elem: int = 1
@@ -108,9 +111,9 @@ class VoxelTask(BEVTask):
         raysampler = NDCMultinomialRaysampler(
             image_width=w // 4,
             image_height=h // 4,
-            n_pts_per_ray=216,
+            n_pts_per_ray=n_pts_per_ray,
             min_depth=0.1,
-            max_depth=216 / scale,
+            max_depth=n_pts_per_ray / scale,
         )
         raymarcher = DepthEmissionRaymarcher(
             floor=0,
@@ -145,6 +148,54 @@ class VoxelTask(BEVTask):
         feat_grid = feat_grid.permute(0, 1, 4, 3, 2)
         # grid, color_grid = axis_grid(grid)
 
+        if ctx.log_text:
+            ctx.add_scalars(
+                "grid/minmax",
+                {"max": grid.max(), "min": grid.min(), "mean": grid.mean()},
+            )
+        if ctx.log_img:
+            ctx.add_image(
+                "grid/x",
+                render_color(grid[0, 0].sum(dim=0).permute(1, 0)),
+            )
+            ctx.add_image(
+                "grid/y",
+                render_color(grid[0, 0].sum(dim=1).permute(1, 0)),
+            )
+
+            gz = render_color(grid[0, 0].sum(dim=2))
+
+            voxel_center = torch.tensor(
+                (bev_shape[0] / 2, bev_shape[1] / 2, 0),
+                device=device,
+                dtype=torch.float32,
+            )
+
+            zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
+            zero_coord[:, -1] = 1
+            for frame in range(0, frames):
+                T = cam_T[:, frame]
+                cam_coords = torch.matmul(T, zero_coord.T)
+                coord = cam_coords[0, :3, 0]
+                x, y, z = (coord * self.scale + voxel_center).int()
+                _, d, w = gz.shape
+                if x >= d or y >= w or x < 0 or y < 0:
+                    continue
+                gz[:, x, y] = torch.tensor((0, 1, 0))
+
+            ctx.add_image(
+                "grid/z",
+                gz,
+            )
+
+            if ctx.output:
+                # save a npz file
+                np.save(
+                    os.path.join(ctx.output, f"grid_{ctx.global_step}.npy"),
+                    grid[0].detach().float().cpu().numpy(),
+                    allow_pickle=False,
+                )
+
         losses = {}
 
         grad_tensors = [grid]
@@ -155,196 +206,194 @@ class VoxelTask(BEVTask):
                 grid, feat_grid = packed
             else:
                 grid = packed
-
-            if ctx.log_text:
-                ctx.add_scalars(
-                    "grid/minmax",
-                    {"max": grid.max(), "min": grid.min(), "mean": grid.mean()},
-                )
-            if ctx.log_img:
-                ctx.add_image(
-                    "grid/x",
-                    render_color(grid[0, 0].sum(dim=0).permute(1, 0)),
-                )
-                ctx.add_image(
-                    "grid/y",
-                    render_color(grid[0, 0].sum(dim=1).permute(1, 0)),
-                )
-
-                gz = render_color(grid[0, 0].sum(dim=2))
-
-                voxel_center = torch.tensor(
-                    (bev_shape[0] / 2, bev_shape[1] / 2, 0),
-                    device=device,
-                    dtype=torch.float32,
-                )
-
-                zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
-                zero_coord[:, -1] = 1
-                for frame in range(0, frames):
-                    T = cam_T[:, frame]
-                    cam_coords = torch.matmul(T, zero_coord.T)
-                    coord = cam_coords[0, :3, 0]
-                    x, y, z = (coord * self.scale + voxel_center).int()
-                    _, d, w = gz.shape
-                    if x >= d or y >= w or x < 0 or y < 0:
-                        continue
-                    gz[:, x, y] = torch.tensor((0, 1, 0))
-
-                ctx.add_image(
-                    "grid/z",
-                    gz,
-                )
-
-                if ctx.output:
-                    # save a npz file
-                    np.save(
-                        os.path.join(ctx.output, f"grid_{ctx.global_step}.npy"),
-                        grid[0].detach().float().cpu().numpy(),
-                        allow_pickle=False,
-                    )
+                feat_grid = None
 
             losses = {}
 
             # total variation loss to encourage sharp edges
             losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 0.01 * 40
 
-            h, w = self.cam_shape
+            minibatches = batch.split(self.render_batch_size)
+            minigrids = torch.split(grid, self.render_batch_size)
+            minifeats = (
+                torch.split(feat_grid, self.render_batch_size)
+                if feat_grid is not None
+                else [None] * len(minigrids)
+            )
 
-            for cam in self.cameras:
-                cam_semantic = self.semantic and cam in self.semantic
-                volumes = Volumes(
-                    densities=grid.permute(0, 1, 4, 3, 2).float(),
-                    features=feat_grid.permute(0, 1, 4, 3, 2).float()
-                    if cam_semantic
-                    else None,
-                    voxel_size=1 / self.scale,
-                    # TODO support non-centered voxel grids
-                    # volume_translation=(-self.height / 2 / self.scale, 0, 0),
-                    volume_translation=(0, 0, -self.height / 2 / self.scale),
+            assert len(minibatches) == len(minigrids)
+            assert len(minibatches) == len(minifeats)
+
+            for i, (minibatch, minigrid, minifeat) in enumerate(
+                zip(minibatches, minigrids, minifeats)
+            ):
+                ctx.weights = minibatch.weight
+                sub_losses = self._losses(ctx, minibatch, minigrid, minifeat)
+                for k, v in sub_losses.items():
+                    if k in losses:
+                        losses[k] += v
+                    else:
+                        losses[k] = v
+
+            ctx.weights = batch.weight
+
+        return losses
+
+    def _losses(
+        self,
+        ctx: Context,
+        batch: Batch,
+        grid: torch.Tensor,
+        feat_grid: Optional[torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        """
+        compute losses for the provided minibatch.
+        """
+        BS = len(batch.distances)
+        frames = batch.distances.shape[1]
+        start_frame = ctx.start_frame
+        start_T = batch.cam_T[:, ctx.start_frame]
+        cam_T = start_T.unsqueeze(1).pinverse().matmul(batch.cam_T)
+        device = grid.device
+
+        losses = {}
+
+        h, w = self.cam_shape
+
+        for cam in self.cameras:
+            cam_semantic = self.semantic and cam in self.semantic
+            volumes = Volumes(
+                densities=grid.permute(0, 1, 4, 3, 2).float(),
+                features=feat_grid.permute(0, 1, 4, 3, 2).float()
+                if feat_grid is not None
+                else None,
+                voxel_size=1 / self.scale,
+                # TODO support non-centered voxel grids
+                # volume_translation=(-self.height / 2 / self.scale, 0, 0),
+                volume_translation=(0, 0, -self.height / 2 / self.scale),
+            )
+
+            for frame in range(0, frames - 1, 2):
+                K = batch.K[cam]
+                T = torch.matmul(cam_T[:, frame], batch.T[cam])
+                cameras = CustomPerspectiveCameras(
+                    T=T,
+                    K=K,
+                    image_size=torch.tensor(
+                        [[h // 2, w // 2]], device=device, dtype=torch.float
+                    ).expand(BS, -1),
+                    device=device,
                 )
 
-                for frame in range(0, frames - 1, 2):
-                    K = batch.K[cam]
-                    T = torch.matmul(cam_T[:, frame], batch.T[cam])
-                    cameras = CustomPerspectiveCameras(
-                        T=T,
-                        K=K,
-                        image_size=torch.tensor(
-                            [[h // 2, w // 2]], device=device, dtype=torch.float
-                        ).expand(BS, -1),
-                        device=device,
+                (depth, semantic_img), ray_bundle = self.renderer(
+                    cameras=cameras,
+                    volumes=volumes,
+                    eps=1e-8,
+                )
+
+                depth = F.interpolate(
+                    depth.unsqueeze(1),
+                    [h // 2, w // 2],
+                    mode="bilinear",
+                    align_corners=False,
+                ).squeeze(1)
+                depth = depth.unsqueeze(1)
+                # upscale to original size
+                if ctx.log_text:
+                    ctx.add_scalars(
+                        f"depth/{cam}/{frame}/minmax",
+                        {"max": depth.max(), "min": depth.min()},
                     )
 
-                    (depth, semantic_img), ray_bundle = self.renderer(
-                        cameras=cameras,
-                        volumes=volumes,
-                        eps=1e-8,
+                if ctx.log_img:
+                    ctx.add_image(
+                        f"depth/{cam}/{frame}",
+                        render_color(-depth[0][0]),
                     )
+                    ctx.add_image(
+                        f"disp/{cam}/{frame}",
+                        # pyre-fixme[6]: float / tensor
+                        render_color(1 / (depth[0][0] + 1e-7)),
+                    )
+                    # ctx.add_image(
+                    #    f"color/{cam}/{frame}",
+                    #    semantic_img[0],
+                    # )
 
-                    depth = F.interpolate(
-                        depth.unsqueeze(1),
-                        [h // 2, w // 2],
-                        mode="bilinear",
-                        align_corners=False,
-                    ).squeeze(1)
-                    depth = depth.unsqueeze(1)
-                    # upscale to original size
-                    if ctx.log_text:
-                        ctx.add_scalars(
-                            f"depth/{cam}/{frame}/minmax",
-                            {"max": depth.max(), "min": depth.min()},
-                        )
+                offset = frame + 1
+                T = batch.frame_T[:, offset]
+                primary_color = batch.color[cam, frame]
+                primary_color = F.interpolate(
+                    primary_color,
+                    [h // 2, w // 2],
+                    mode="bilinear",
+                    align_corners=False,
+                )
+                primary_mask = batch.mask[cam]
+                primary_mask = F.interpolate(
+                    primary_mask,
+                    [h // 2, w // 2],
+                    mode="bilinear",
+                    align_corners=False,
+                )
+                projcolor, projmask = self.project(
+                    batch, cam, T, depth, primary_color, primary_mask
+                )
+                projmask *= primary_mask
+                color = batch.color[cam, offset]
+                half_color = F.interpolate(
+                    color, [h // 2, w // 2], mode="bilinear", align_corners=False
+                )
+                color = half_color
+
+                MSSIM_SCALES = 3
+                for scale in range(MSSIM_SCALES):
+                    if scale > 0:
+                        projcolor = F.avg_pool2d(projcolor, 2)
+                        projmask = F.avg_pool2d(projmask, 2)
+                        color = F.avg_pool2d(color, 2)
+                    proj_loss = (
+                        projection_loss(projcolor, color, projmask) / MSSIM_SCALES
+                    )
 
                     if ctx.log_img:
                         ctx.add_image(
-                            f"depth/{cam}/{frame}",
-                            render_color(-depth[0][0]),
+                            f"{cam}/{offset}/{scale}/color",
+                            normalize_img(
+                                torch.cat(
+                                    (
+                                        color[0],
+                                        projcolor[0],
+                                    ),
+                                    dim=2,
+                                )
+                            ),
                         )
                         ctx.add_image(
-                            f"disp/{cam}/{frame}",
-                            # pyre-fixme[6]: float / tensor
-                            render_color(1 / (depth[0][0] + 1e-7)),
+                            f"{cam}/{offset}/{scale}/color_err",
+                            normalize_img((color[0] - projcolor[0]).abs()),
                         )
-                        # ctx.add_image(
-                        #    f"color/{cam}/{frame}",
-                        #    semantic_img[0],
-                        # )
-
-                    offset = frame + 1
-                    T = batch.frame_T[:, offset]
-                    primary_color = batch.color[cam, frame]
-                    primary_color = F.interpolate(
-                        primary_color,
-                        [h // 2, w // 2],
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-                    primary_mask = batch.mask[cam]
-                    primary_mask = F.interpolate(
-                        primary_mask,
-                        [h // 2, w // 2],
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-                    projcolor, projmask = self.project(
-                        batch, cam, T, depth, primary_color, primary_mask
-                    )
-                    projmask *= primary_mask
-                    color = batch.color[cam, offset]
-                    half_color = F.interpolate(
-                        color, [h // 2, w // 2], mode="bilinear", align_corners=False
-                    )
-                    color = half_color
-
-                    MSSIM_SCALES = 3
-                    for scale in range(MSSIM_SCALES):
-                        if scale > 0:
-                            projcolor = F.avg_pool2d(projcolor, 2)
-                            projmask = F.avg_pool2d(projmask, 2)
-                            color = F.avg_pool2d(color, 2)
-                        proj_loss = (
-                            projection_loss(projcolor, color, projmask) / MSSIM_SCALES
+                        ctx.add_image(
+                            f"{cam}/{offset}/{scale}/proj_loss",
+                            render_color(proj_loss[0][0]),
                         )
-
-                        if ctx.log_img:
-                            ctx.add_image(
-                                f"{cam}/{offset}/{scale}/color",
-                                normalize_img(
-                                    torch.cat(
-                                        (
-                                            color[0],
-                                            projcolor[0],
-                                        ),
-                                        dim=2,
-                                    )
-                                ),
-                            )
-                            ctx.add_image(
-                                f"{cam}/{offset}/{scale}/color_err",
-                                normalize_img((color[0] - projcolor[0]).abs()),
-                            )
-                            ctx.add_image(
-                                f"{cam}/{offset}/{scale}/proj_loss",
-                                render_color(proj_loss[0][0]),
-                            )
-                            ctx.add_image(
-                                f"{cam}/{offset}/{scale}/proj_mask",
-                                render_color(projmask[0][0]),
-                            )
-                        losses[f"lossproj/{cam}/o{offset}/s{scale}"] = (
-                            proj_loss.mean(dim=(1, 2, 3)) * 40
+                        ctx.add_image(
+                            f"{cam}/{offset}/{scale}/proj_mask",
+                            render_color(projmask[0][0]),
                         )
+                    losses[f"lossproj/{cam}/o{offset}/s{scale}"] = (
+                        proj_loss.mean(dim=(1, 2, 3)) * 40
+                    )
 
-                    if cam_semantic:
-                        losses[f"semantic/{cam}/o{offset}"] = (
-                            self._semantic_loss(
-                                ctx, cam, frame, semantic_img, half_color, primary_mask
-                            )
-                            * 10
+                if cam_semantic:
+                    losses[f"semantic/{cam}/o{offset}"] = (
+                        self._semantic_loss(
+                            ctx, cam, frame, semantic_img, half_color, primary_mask
                         )
+                        * 10
+                    )
 
-                    ctx.backward(losses)
+                ctx.backward(losses)
 
         return losses
 

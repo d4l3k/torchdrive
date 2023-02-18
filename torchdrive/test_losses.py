@@ -60,8 +60,8 @@ class TestLosses(unittest.TestCase):
         losses = {
             "t": t,
         }
-        losses_backward(losses,weights=weights)
-        torch.testing.assert_close(losses["t"], (t*weights).sum())
+        losses_backward(losses, weights=weights)
+        torch.testing.assert_close(losses["t"], (t * weights).sum())
 
         t = torch.arange(1, dtype=torch.float).mean()
         t.requires_grad = True
@@ -69,8 +69,8 @@ class TestLosses(unittest.TestCase):
         losses = {
             "t": t,
         }
-        losses_backward(losses,weights=weights)
-        torch.testing.assert_close(losses["t"], (t*weights).sum())
+        losses_backward(losses, weights=weights)
+        torch.testing.assert_close(losses["t"], (t * weights).sum())
 
         losses = {
             "t": t,
@@ -79,9 +79,9 @@ class TestLosses(unittest.TestCase):
         torch.testing.assert_close(losses["t"], t.mean())
 
         t = torch.ones(1).mean()
-        t.requires_grad=True
+        t.requires_grad = True
         losses = {
-            "t": t*2,
+            "t": t * 2,
         }
         losses_backward(losses)
         torch.testing.assert_close(losses["t"], torch.tensor(2.0))
