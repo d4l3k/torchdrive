@@ -361,19 +361,33 @@ class VoxelTask(BEVTask):
         _semantic_loss computes the semantic class probability loss.
         """
         semantic_img = semantic_img.permute(0, 3, 1, 2)
-        semantic_classes = semantic_img[:, : self.classes_elem]
+        semantic_classes = semantic_img[:, : self.classes_elem].sigmoid()
         semantic_vel = semantic_img[:, self.classes_elem :]
 
         semantic_target = self.segment(color)
         # select interesting classes and convert to probabilities
         semantic_target = semantic_target[:, BDD100KSemSeg.INTERESTING]
-        semantic_target = F.avg_pool2d(semantic_target, 2)
-        semantic_target = semantic_target.sigmoid()
+        semantic_target = F.avg_pool2d(semantic_target, 2).sigmoid()
 
-        sem_loss = F.binary_cross_entropy_with_logits(
-            semantic_classes, semantic_target, reduction="none"
+        sem_loss = F.huber_loss(
+            semantic_classes.float(), semantic_target.float(), reduction="none"
         )
         sem_loss *= F.avg_pool2d(mask, 2)
+
+        if ctx.log_text:
+            pred_min, pred_max = semantic_classes.aminmax()
+            targ_min, targ_max = semantic_target.aminmax()
+            ctx.add_scalars(
+                f"semantic/{cam}/{frame}/minmax",
+                {
+                    "pred_min": pred_min,
+                    "pred_max": pred_max,
+                    "pred_mean": semantic_classes.mean(),
+                    "targ_min": targ_min,
+                    "targ_max": targ_max,
+                    "targ_mean": semantic_target.mean(),
+                },
+            )
 
         if ctx.log_img:
             out_class = torch.argmax(semantic_img[:1], dim=1)
@@ -395,7 +409,7 @@ class VoxelTask(BEVTask):
                 render_color(sem_loss[0].mean(dim=0)),
             )
 
-        return sem_loss.mean(dim=(1, 2, 3))
+        return sem_loss.mean(dim=(1, 2, 3)) * 50
 
     def project(
         self,
