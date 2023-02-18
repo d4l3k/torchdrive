@@ -56,6 +56,11 @@ class TestData(unittest.TestCase):
         batch = dummy_batch()
         self.assertEqual(batch.global_batch_size, 2)
         a, b = batch.split(1)
-        print(a, b)
         self.assertEqual(a.global_batch_size, 2)
         self.assertEqual(a.batch_size(), 1)
+
+    def test_weights(self) -> None:
+        batch = dummy_batch()
+        torch.testing.assert_close(batch.weight.sum(), torch.tensor(1.0))
+        a, b = batch.split(1)
+        torch.testing.assert_close(a.weight.sum(), torch.tensor(0.5))

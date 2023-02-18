@@ -106,8 +106,18 @@ def _collate_long_cam_T(
     return (out, mask, lens)
 
 
+def _collate_weight(
+    tensors: List[torch.Tensor],
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    weights = torch.stack(tensors)
+    # normalize to sum to 1
+    weights /= (weights.sum()+1e-8)
+
+    return weights
+
 _COLLATE_FIELDS: Mapping[str, Callable[[object, ...], object]] = {
     "long_cam_T": _collate_long_cam_T,
+    "weight": _collate_weight,
     "global_batch_size": sum,
 }
 
