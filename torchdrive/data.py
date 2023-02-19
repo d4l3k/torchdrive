@@ -116,7 +116,7 @@ def _collate_weight(
     return weights
 
 
-_COLLATE_FIELDS: Mapping[str, Callable[[object, ...], object]] = {
+_COLLATE_FIELDS: Mapping[str, Callable[[object], object]] = {
     "long_cam_T": _collate_long_cam_T,
     "weight": _collate_weight,
     "global_batch_size": sum,
