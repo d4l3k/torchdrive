@@ -4,9 +4,13 @@ from unittest.mock import call, MagicMock
 
 import torch
 
+import torch._dynamo
+
 from torchdrive.data import Batch, dummy_batch
 
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan, Context
+
+torch._dynamo.config.verbose = True
 
 
 class DummyBEVTask(BEVTask):

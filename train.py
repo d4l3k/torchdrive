@@ -4,11 +4,11 @@ import json
 import os
 import os.path
 from collections import defaultdict
-from typing import cast, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Callable, cast, Dict, Iterator, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.distributed as dist
-from torch import optim
+from torch import nn, optim
 from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.parameter import Parameter
@@ -63,6 +63,9 @@ parser.add_argument("--checkpoint_every", type=int, default=500)
 parser.add_argument("--profile", default=False, action="store_true")
 parser.add_argument(
     "--grad_sizes", default=False, action="store_true", help="log grad sizes"
+)
+parser.add_argument(
+    "--compile", default=False, action="store_true", help="use torch.compile"
 )
 
 # tasks
@@ -142,6 +145,12 @@ dataloader = DataLoader[Batch](
 if args.anomaly_detection:
     torch.set_anomaly_enabled(True)
 
+compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m
+if args.compile:
+    print("using torch.compile")
+    # pyre-fixme[16]: no attribute compile
+    compile_fn = torch.compile
+
 tasks: Dict[str, BEVTask] = {}
 hr_tasks: Dict[str, BEVTask] = {}
 if args.path:
@@ -149,6 +158,7 @@ if args.path:
         bev_shape=args.bev_shape,
         bev_dim=args.dim,
         dim=args.dim,
+        compile_fn=compile_fn,
     )
 if args.det:
     tasks["det"] = DetTask(
@@ -157,6 +167,7 @@ if args.det:
         bev_shape=args.bev_shape,
         dim=args.dim,
         device=device,
+        compile_fn=compile_fn,
     )
 if args.ae:
     tasks["ae"] = AETask(
@@ -185,6 +196,7 @@ model = BEVTaskVan(
     hr_dim=args.hr_dim,
     writer=writer,
     output=args.output,
+    compile_fn=compile_fn,
 )
 
 model = model.to(device)

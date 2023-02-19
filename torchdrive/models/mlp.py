@@ -14,10 +14,10 @@ class ConvMLP(nn.Module):
         self.decoder = nn.Sequential(
             nn.Conv1d(input_dim, hidden_dim, 1),
             nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.Conv1d(hidden_dim, hidden_dim, 1),
             nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.Conv1d(hidden_dim, output_dim, 1),
         )
 

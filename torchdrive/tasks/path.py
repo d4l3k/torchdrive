@@ -1,9 +1,10 @@
-from typing import Dict, Tuple
+from typing import Callable, Dict, Tuple
 
 import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.functional as F
+from torch import nn
 
 from torchdrive.data import Batch
 from torchdrive.models.path import PathTransformer
@@ -20,18 +21,21 @@ class PathTask(BEVTask):
         num_layers: int = 6,
         max_seq_len: int = 120,
         num_ar_iters: int = 12,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
 
         self.max_seq_len = max_seq_len
         self.num_ar_iters = num_ar_iters
 
-        self.transformer = PathTransformer(
-            bev_shape=bev_shape,
-            bev_dim=bev_dim,
-            dim=dim,
-            num_heads=num_heads,
-            num_layers=num_layers,
+        self.transformer: nn.Module = compile_fn(
+            PathTransformer(
+                bev_shape=bev_shape,
+                bev_dim=bev_dim,
+                dim=dim,
+                num_heads=num_heads,
+                num_layers=num_layers,
+            )
         )
 
     def forward(
@@ -109,8 +113,12 @@ class PathTask(BEVTask):
 
                 # autoregressive
                 self.eval()
-                autoregressive = self.transformer.infer(
-                    bev[:1], positions[:1, ..., :2], final_pos[:1], n=length - 2
+                autoregressive = PathTransformer.infer(
+                    self.transformer,
+                    bev[:1],
+                    positions[:1, ..., :2],
+                    final_pos[:1],
+                    n=length - 2,
                 )
                 assert autoregressive.shape == (1, 3, length)
                 plt.plot(*autoregressive[0, 0:2].detach().cpu(), label="autoregressive")

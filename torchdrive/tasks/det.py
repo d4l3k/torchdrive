@@ -1,13 +1,13 @@
 import json
 import os.path
-from typing import cast, Dict, List, Tuple
+from typing import Callable, cast, Dict, List, Tuple
 
 import torch
 import torch.nn.functional as F
+from torch import nn
 from torchvision.utils import draw_bounding_boxes
 
 from torchdrive.amp import autocast
-
 from torchdrive.data import Batch
 from torchdrive.losses import generalized_box_iou
 from torchdrive.matcher import HungarianMatcher
@@ -47,16 +47,19 @@ class DetTask(BEVTask):
         bev_shape: Tuple[int, int],
         dim: int,
         device: torch.device,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
 
         self.cam_shape = cam_shape
         self.cameras = cameras
 
-        self.decoder = DetBEVDecoder(
+        decoder = DetBEVDecoder(
             bev_shape=bev_shape,
             dim=dim,
         )
+        self.num_classes: int = decoder.num_classes
+        self.decoder: nn.Module = compile_fn(decoder)
 
         # not a module -- not saved
         self.det = BDD100KDet(
@@ -256,7 +259,7 @@ class DetTask(BEVTask):
         # set target to num_classes for unmatched ones
         target_classes = torch.full(
             unmatched_classes.shape[:1],
-            self.decoder.num_classes,
+            self.num_classes,
             dtype=torch.int64,
             device=device,
         )
@@ -265,7 +268,7 @@ class DetTask(BEVTask):
         log_sizes = {}
         log_heights = {}
         LOSS_DIM_WEIGHT = 0.1
-        for k in range(self.decoder.num_classes + 1):
+        for k in range(self.num_classes + 1):
             idxs = classes == k
             class_sizes = sizes[idxs]
             if class_sizes.numel() == 0:
@@ -305,7 +308,7 @@ class DetTask(BEVTask):
             )
 
             num_matched = unmatched_queries.logical_not().count_nonzero()
-            num_predicted = (classes != self.decoder.num_classes).count_nonzero()
+            num_predicted = (classes != self.num_classes).count_nonzero()
 
             ctx.add_scalars(
                 "classes/num_boxes3d",

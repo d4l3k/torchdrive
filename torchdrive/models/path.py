@@ -107,8 +107,9 @@ class PathTransformer(nn.Module):
 
         return pred_pos, ae_pos
 
+    @staticmethod
     def infer(
-        self,
+        m: nn.Module,
         bev: torch.Tensor,
         seq: torch.Tensor,
         final_pos: torch.Tensor,
@@ -118,6 +119,6 @@ class PathTransformer(nn.Module):
         infer runs the inference in an autoregressive manner.
         """
         for i in range(n):
-            out, _ = self(bev, seq, final_pos)
+            out, _ = m(bev, seq, final_pos)
             seq = torch.cat((seq, out[..., -1:]), dim=-1)
         return seq

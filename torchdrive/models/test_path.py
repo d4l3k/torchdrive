@@ -36,7 +36,8 @@ class PathTest(unittest.TestCase):
 
         m.eval()
         with torch.no_grad():
-            out = m.infer(
+            out = PathTransformer.infer(
+                m,
                 bev=torch.rand(1, bev_dim, 4, 4),
                 seq=torch.rand(1, 3, 2),
                 final_pos=torch.rand(1, 3),

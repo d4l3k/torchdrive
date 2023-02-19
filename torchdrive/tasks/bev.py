@@ -1,7 +1,7 @@
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -94,6 +94,7 @@ class BEVTaskVan(torch.nn.Module):
         num_encode_frames: int = 3,
         num_upsamples: int = 4,
         num_backprop_frames: int = 2,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         """
         Args:
@@ -111,11 +112,11 @@ class BEVTaskVan(torch.nn.Module):
         self.cameras = cameras
         self.num_encode_frames = num_encode_frames
         self.num_backprop_frames = num_backprop_frames
-        self.frame_encoder = CamBEVEncoder(
-            cameras, cam_shape=cam_shape, bev_shape=bev_shape, dim=dim
+        self.frame_encoder: nn.Module = compile_fn(
+            CamBEVEncoder(cameras, cam_shape=cam_shape, bev_shape=bev_shape, dim=dim)
         )
-        self.frame_merger = BEVMerger(
-            num_frames=self.num_encode_frames, bev_shape=bev_shape, dim=dim
+        self.frame_merger: nn.Module = compile_fn(
+            BEVMerger(num_frames=self.num_encode_frames, bev_shape=bev_shape, dim=dim)
         )
 
         self.cam_shape = cam_shape
@@ -125,11 +126,13 @@ class BEVTaskVan(torch.nn.Module):
         self.hr_tasks = nn.ModuleDict(hr_tasks)
         if len(hr_tasks) > 0:
             assert hr_dim is not None, "must specify hr_dim for hr_tasks"
-            self.upsample: BEVUpsampler = BEVUpsampler(
-                num_upsamples=num_upsamples,
-                bev_shape=bev_shape,
-                dim=dim,
-                output_dim=hr_dim,
+            self.upsample: nn.Module = compile_fn(
+                BEVUpsampler(
+                    num_upsamples=num_upsamples,
+                    bev_shape=bev_shape,
+                    dim=dim,
+                    output_dim=hr_dim,
+                )
             )
 
     def should_log(self, global_step: int) -> Tuple[bool, bool]:
