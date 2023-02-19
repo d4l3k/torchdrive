@@ -158,7 +158,7 @@ if args.path:
         bev_shape=args.bev_shape,
         bev_dim=args.dim,
         dim=args.dim,
-        compile_fn=compile_fn,
+        #compile_fn=compile_fn,
     )
 if args.det:
     tasks["det"] = DetTask(
