@@ -66,6 +66,7 @@ class DetTask(BEVTask):
             device=device,
             # config="faster_rcnn_convnext-t_fpn_fp16_3x_det_bdd100k.py",
             config="atss_r50_fpn_3x_det_bdd100k.py",
+            compile_fn=compile_fn,
         )
         self.matcher = HungarianMatcher()
 

@@ -1,5 +1,5 @@
 import os.path
-from typing import Dict, List, Tuple, Union
+from typing import Callable, Dict, List, Tuple, Union
 
 import mmcv
 
@@ -7,7 +7,7 @@ import torch
 from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
 from mmcv.runner import load_checkpoint, wrap_fp16_model
 from mmdet.models import build_detector
-from mmdet.models.detectors import BaseDetector, TwoStageDetector
+from mmdet.models.detectors import TwoStageDetector
 from torch import nn
 from torchvision import transforms
 
@@ -45,6 +45,7 @@ class BDD100KDet:
         device: torch.device,
         half: bool = True,
         config: str = "cascade_rcnn_convnext-t_fpn_fp16_3x_det_bdd100k.py",
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         cfg_file = os.path.join(
             os.path.dirname(__file__),
@@ -74,8 +75,8 @@ class BDD100KDet:
             model = model.half()
 
         model = model.to(device)
-        # pyre-fixme[8]
-        self.model: BaseDetector = model
+        # pyre-fixme[6]: invalid parameter
+        self.model: nn.Module = compile_fn(model.simple_test)
 
         if isinstance(model, TwoStageDetector):
             # anchors are stupidly on CPU device -- force them over early
@@ -113,7 +114,7 @@ class BDD100KDet:
             img, img_metas = self.transform(img)
             if self.half:
                 img = img.half()
-            return self.model.simple_test(img, img_metas=img_metas)
+            return self.model(img, img_metas=img_metas)
 
 
 class DetBEVDecoder(nn.Module):
