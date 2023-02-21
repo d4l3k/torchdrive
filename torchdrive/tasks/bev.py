@@ -135,11 +135,11 @@ class BEVTaskVan(torch.nn.Module):
                 )
             )
 
-    def should_log(self, global_step: int) -> Tuple[bool, bool]:
+    def should_log(self, global_step: int, BS: int) -> Tuple[bool, bool]:
         if self.writer is None:
             return False, False
 
-        log_interval = 500
+        log_interval = 1000 // BS
         should_log = (global_step % log_interval) == 0
         log_text_interval = log_interval // 10
         log_text = (global_step % log_text_interval) == 0
@@ -155,8 +155,8 @@ class BEVTaskVan(torch.nn.Module):
     def forward(
         self, batch: Batch, global_step: int, scaler: Optional[amp.GradScaler] = None
     ) -> Dict[str, torch.Tensor]:
-        log_img, log_text = self.should_log(global_step)
         BS = len(batch.distances)
+        log_img, log_text = self.should_log(global_step, BS)
 
         with autocast():
             bev_frames = []

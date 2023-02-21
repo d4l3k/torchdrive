@@ -39,7 +39,6 @@ parser = argparse.ArgumentParser(description="train")
 parser.add_argument("--output", required=True, type=str, default="out")
 parser.add_argument("--load", type=str)
 parser.add_argument("--epochs", type=int, default=20)
-parser.add_argument("--log_interval", type=int, default=100)
 parser.add_argument("--lr", type=float, default=1e-4)
 parser.add_argument("--dataset", type=str, required=True)
 parser.add_argument("--masks", type=str, required=True)
@@ -59,7 +58,7 @@ parser.add_argument("--skip_load_optim", default=False, action="store_true")
 parser.add_argument("--anomaly-detection", default=False, action="store_true")
 parser.add_argument("--limit_size", type=int)
 parser.add_argument("--grad_clip", type=float, default=1.0)
-parser.add_argument("--checkpoint_every", type=int, default=500)
+parser.add_argument("--checkpoint_every", type=int, default=2000)
 parser.add_argument("--profile", default=False, action="store_true")
 parser.add_argument(
     "--grad_sizes", default=False, action="store_true", help="log grad sizes"
@@ -108,7 +107,7 @@ device_id: int = rank % torch.cuda.device_count()
 device = torch.device(device_id)
 torch.cuda.set_device(device)
 # pyre-fixme[16: no attribute set_float32_matmul_precision
-torch.set_float32_matmul_precision('high')
+torch.set_float32_matmul_precision("high")
 
 BS: int = args.batch_size
 NUM_EPOCHS: int = args.epochs
@@ -160,7 +159,7 @@ if args.path:
         bev_shape=args.bev_shape,
         bev_dim=args.dim,
         dim=args.dim,
-        #compile_fn=compile_fn,
+        # compile_fn=compile_fn,
     )
 if args.det:
     tasks["det"] = DetTask(
@@ -319,11 +318,10 @@ for epoch in range(NUM_EPOCHS):
 
         batch = batch.to(device)
 
-        log_img, log_text = model.should_log(global_step)
+        log_img, log_text = model.should_log(global_step, BS)
 
         optimizer.zero_grad(set_to_none=True)
 
-        # with torch.autograd.detect_anomaly():
         losses = ddp_model(batch, global_step, scaler)
         loss: torch.Tensor = cast(torch.Tensor, sum(losses.values()))
         assert not loss.requires_grad
@@ -369,12 +367,12 @@ for epoch in range(NUM_EPOCHS):
                     writer.add_scalar(k, v / loss_count, global_step)
                 reset_metrics()
 
-            if global_step % args.log_interval == 0:
+            if log_img:
                 for k, v in losses.items():
                     print(f"- {k}: {v.item()}")
                 print(f"= {loss.item()}")
 
-            if global_step > 0 and (global_step % args.checkpoint_every) == 0:
+            if global_step > 0 and (global_step % (args.checkpoint_every // BS)) == 0:
                 save(epoch)
 
             batch_idx += 1
