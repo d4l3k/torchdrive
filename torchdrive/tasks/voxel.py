@@ -1,5 +1,5 @@
 import os.path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable
 
 import numpy as np
 
@@ -79,6 +79,7 @@ class VoxelTask(BEVTask):
         semantic: Optional[List[str]] = None,
         render_batch_size: int = 2,
         n_pts_per_ray: int = 216,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x
     ) -> None:
         super().__init__()
 
@@ -123,7 +124,7 @@ class VoxelTask(BEVTask):
         )
         self.renderer = VolumeRenderer(
             raysampler=raysampler,
-            raymarcher=raymarcher,
+            raymarcher=compile_fn(raymarcher),
         )
 
     def forward(

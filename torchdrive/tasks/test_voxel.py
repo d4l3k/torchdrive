@@ -20,8 +20,8 @@ class TestVoxel(unittest.TestCase):
             device=device,
             render_batch_size=1,
             n_pts_per_ray=10,
-        )
-        batch = dummy_batch()
+        ).to(device)
+        batch = dummy_batch().to(device)
         ctx = Context(
             log_img=True,
             log_text=True,
@@ -33,7 +33,7 @@ class TestVoxel(unittest.TestCase):
             output="",
             weights=batch.weight,
         )
-        bev = torch.rand(2, 5, 4, 4)
+        bev = torch.rand(2, 5, 4, 4, device=device)
         losses = m(ctx, batch, bev)
         self.assertCountEqual(
             losses.keys(),
