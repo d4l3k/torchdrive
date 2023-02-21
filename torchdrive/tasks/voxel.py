@@ -1,5 +1,5 @@
 import os.path
-from typing import Dict, List, Optional, Tuple, Callable
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -79,7 +79,7 @@ class VoxelTask(BEVTask):
         semantic: Optional[List[str]] = None,
         render_batch_size: int = 2,
         n_pts_per_ray: int = 216,
-        compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
     ) -> None:
         super().__init__()
 
@@ -106,8 +106,8 @@ class VoxelTask(BEVTask):
 
         h, w = cam_shape
 
-        self.backproject_depth = BackprojectDepth(h // 2, w // 2)
-        self.project_3d = Project3D(h // 2, w // 2)
+        self.backproject_depth: nn.Module = compile_fn(BackprojectDepth(h // 2, w // 2))
+        self.project_3d: nn.Module = compile_fn(Project3D(h // 2, w // 2))
 
         raysampler = NDCMultinomialRaysampler(
             image_width=w // 4,
@@ -262,7 +262,7 @@ class VoxelTask(BEVTask):
         h, w = self.cam_shape
 
         for cam in self.cameras:
-            cam_semantic = self.semantic and cam in self.semantic
+            cam_semantic = self.semantic is not None and cam in self.semantic
             volumes = Volumes(
                 densities=grid.permute(0, 1, 4, 3, 2).float(),
                 features=feat_grid.permute(0, 1, 4, 3, 2).float()
