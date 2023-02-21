@@ -1,11 +1,12 @@
 import os.path
+from typing import Callable
 
 import mmcv
 import torch
 from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
 from mmcv.runner import load_checkpoint
 from mmseg.models import build_segmentor
-from mmseg.models.segmentors import BaseSegmentor
+from torch import nn
 from torchvision import transforms
 
 from torchdrive.transforms.img import normalize_img_cuda
@@ -81,6 +82,7 @@ class BDD100KSemSeg:
         device: torch.device,
         half: bool = True,
         config: str = "upernet_convnext-t_fp16_512x1024_80k_sem_seg_bdd100k.py",
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         cfg_file = os.path.join(
             os.path.dirname(__file__),
@@ -105,8 +107,9 @@ class BDD100KSemSeg:
         if half:
             model = model.half()
 
-        # pyre-fixme[8]
-        self.model: BaseSegmentor = model.to(device)
+        model = model.to(device)
+        # pyre-fixme[6]: nn.Module
+        self.model: nn.Module = compile_fn(model.encode_decode)
         self.transform = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
         )
@@ -117,4 +120,4 @@ class BDD100KSemSeg:
             if self.half:
                 img = img.half()
             img = self.transform(img)
-            return self.model.encode_decode(img, img_metas=[])
+            return self.model(img, img_metas=[])

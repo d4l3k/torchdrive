@@ -99,7 +99,9 @@ class VoxelTask(BEVTask):
             self.vel_elem: int = 3
             background += [0.0, 0.0, 0.0]
             self.num_elem += self.classes_elem + self.vel_elem
-            self.segment: BDD100KSemSeg = BDD100KSemSeg(device=device)
+            self.segment: BDD100KSemSeg = BDD100KSemSeg(
+                device=device, compile_fn=compile_fn
+            )
 
         self.decoder = nn.Conv2d(dim, self.num_elem * height, kernel_size=1)
         resnet_init(self.decoder)

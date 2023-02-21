@@ -5,9 +5,9 @@ import torch
 from torchdrive.models.semantic import BDD100KSemSeg
 
 
-class TestDet(unittest.TestCase):
-    def test_bdd100kdet(self) -> None:
+class TestSemantic(unittest.TestCase):
+    def test_bdd100ksemseg(self) -> None:
         device = torch.device("cpu")
-        m = BDD100KSemSeg(device, half=False)
-        out = m(torch.rand(1, 3, 48, 64))
+        m = BDD100KSemSeg(device)
+        out = m(torch.rand(1, 3, 48, 64, device=device))
         self.assertIsNotNone(out)
