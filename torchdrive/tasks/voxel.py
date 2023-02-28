@@ -77,7 +77,7 @@ class VoxelTask(BEVTask):
         device: torch.device,
         scale: int = 3,
         semantic: Optional[List[str]] = None,
-        render_batch_size: int = 2,
+        render_batch_size: int = 4,
         n_pts_per_ray: int = 216,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
     ) -> None:
@@ -100,7 +100,7 @@ class VoxelTask(BEVTask):
             background += [0.0, 0.0, 0.0]
             self.num_elem += self.classes_elem + self.vel_elem
             self.segment: BDD100KSemSeg = BDD100KSemSeg(
-                device=device, compile_fn=compile_fn
+                device=device, #compile_fn=compile_fn
             )
 
         self.decoder = nn.Conv2d(dim, self.num_elem * height, kernel_size=1)
