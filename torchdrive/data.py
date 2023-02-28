@@ -1,8 +1,8 @@
 from dataclasses import dataclass, fields
-from typing import Callable, Dict, List, Mapping, Optional, Tuple, TypeVar, Union
+from typing import Callable, Dict, List, Mapping, Optional, Tuple, TypeVar, Union, Iterator
 
 import torch
-from torch.utils.data import default_collate
+from torch.utils.data import default_collate, DataLoader
 
 
 @dataclass(frozen=True)
@@ -134,7 +134,7 @@ def collate(
     batch = [item for item in batch if item is not None]
     if len(batch) <= BS / 2:
         if strict:
-            raise RuntimeError("not enough data in batch")
+            raise RuntimeError(f"not enough data in batch, BS={BS}")
         return None
 
     return Batch(
@@ -198,3 +198,53 @@ def split(x: T, split_size: int) -> List[T]:
                 groups[i].append(v)
         return [tuple(g) for g in groups]
     raise ValueError(f"can't split {x}")
+
+class TransferCollator:
+    """
+    TransferCollator takes in a torch DataLoader with a batch size of 1 and
+    buffers, transfers and collates into larger batches.
+
+    This overlaps the data transfer of the batches with compute by
+    starting the async transfer of the next batch before returning the current
+    one. This should produce better utilization since it overlaps the H2D and
+    compute channels.
+
+    Unlike the normal dataloader collate behavior, collate runs on the target
+    device after data transfer.
+
+    If the last batch is smaller than batch_size it is discarded.
+    """
+    def __init__(self, dataloader: DataLoader[Batch], batch_size: int, device:
+                 torch.device, buffer_factor: int = 2) -> None:
+        self.dataloader = dataloader
+        self.buf: List[Batch] = []
+        self.device = device
+        self.batch_size = batch_size
+        self.buffer_factor = buffer_factor
+        self.iter: Optional[Iterator[Batch]] = None
+
+    def __iter__(self) -> "TransferCollator":
+        self.iter = iter(self.dataloader)
+        self.buf = []
+        return self
+
+    def __next__(self) -> Batch:
+        it = self.iter
+        assert it is not None
+        while len(self.buf) < (self.buffer_factor*self.batch_size):
+            try:
+                out: Batch = next(it)
+            except StopIteration:
+                break
+            if out is None:
+                continue
+            self.buf.append(out.to(self.device))
+
+        if len(self.buf) < self.batch_size:
+            raise StopIteration
+
+        batch = collate(self.buf[:self.batch_size])
+        self.buf = self.buf[self.batch_size:]
+
+        assert batch is not None, "collate returned None"
+        return batch

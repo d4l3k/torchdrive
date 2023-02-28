@@ -2,9 +2,20 @@ import unittest
 from dataclasses import replace
 
 import torch
+from torch.utils.data import DataLoader, Dataset
 
-from torchdrive.data import Batch, collate, dummy_batch, dummy_item, nonstrict_collate
+from torchdrive.data import Batch, collate, dummy_batch, dummy_item, nonstrict_collate, TransferCollator
 
+
+class DummyDataset(Dataset[Batch]):
+    def __init__(self, size: int) -> None:
+        self.size = size
+
+    def __len__(self) -> int:
+        return self.size
+
+    def __getitem__(self, i: int) -> Batch:
+        return dummy_item()
 
 class TestData(unittest.TestCase):
     def test_dummy_batch(self) -> None:
@@ -64,3 +75,16 @@ class TestData(unittest.TestCase):
         torch.testing.assert_close(batch.weight.sum(), torch.tensor(1.0))
         a, b = batch.split(1)
         torch.testing.assert_close(a.weight.sum(), torch.tensor(0.5))
+
+    def test_transfer_collator(self) -> None:
+        dataset = DummyDataset(5)
+        dataloader = DataLoader(dataset, batch_size=None)
+        device = torch.device('cpu')
+        batch_size = 2
+        collator = TransferCollator(dataloader, batch_size=batch_size, device=device)
+
+        out = list(collator)
+        self.assertEqual(len(out), 2)
+        for batch in out:
+            self.assertEqual(batch.batch_size(), batch_size)
+
