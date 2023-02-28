@@ -118,11 +118,13 @@ class MultiCamDataset(Dataset):
         localization: bool = False,
         nframes_per_point: int = 2,
         limit_size: Optional[int] = None,
+        dtype: torch.dtype = torch.bfloat16,
     ) -> None:
         self.frames: List[Tuple[str, int]] = []
         self.dynamic = dynamic
         self.dim: Tuple[int, int] = tuple(reversed(cam_shape))
         self.nframes_per_point = nframes_per_point
+        self.dtype = dtype
 
         self.cameras = cameras
 
@@ -534,8 +536,8 @@ class MultiCamDataset(Dataset):
             # out["inv_K", label] = K.pinverse()
             Ts[label] = T
             for i, c in enumerate(color):
-                colors[label, i] = c
-            masks[label] = mask
+                colors[label, i] = c.to(self.dtype)
+            masks[label] = mask.to(self.dtype)
 
         for camera in self.cameras:
             load(camera, frames)
