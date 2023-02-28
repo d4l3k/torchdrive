@@ -290,7 +290,7 @@ if args.profile:
         ),
         record_shapes=True,
         profile_memory=True,
-        with_stack=True,
+        with_stack=False,
     ).__enter__()
 
 for epoch in range(NUM_EPOCHS):
