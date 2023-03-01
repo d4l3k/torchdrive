@@ -189,15 +189,16 @@ class BEVTaskVan(torch.nn.Module):
 
             def _run_tasks(tasks: nn.ModuleDict, task_bev: torch.Tensor) -> None:
                 for name, task in tasks.items():
-                    ctx.name = name
+                    with torch.autograd.profiler.record_function(name):
+                        ctx.name = name
 
-                    task_start = time.time()
-                    task_losses = task(ctx, batch, task_bev)
-                    ctx.backward(task_losses)
-                    for k, v in task_losses.items():
-                        losses[name + "-" + k] = v
+                        task_start = time.time()
+                        task_losses = task(ctx, batch, task_bev)
+                        ctx.backward(task_losses)
+                        for k, v in task_losses.items():
+                            losses[name + "-" + k] = v
 
-                    task_times[name] = time.time() - task_start
+                        task_times[name] = time.time() - task_start
 
             _run_tasks(self.tasks, bev)
 
