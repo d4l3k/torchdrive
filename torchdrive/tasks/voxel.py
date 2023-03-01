@@ -100,7 +100,7 @@ class VoxelTask(BEVTask):
             background += [0.0, 0.0, 0.0]
             self.num_elem += self.classes_elem + self.vel_elem
             self.segment: BDD100KSemSeg = BDD100KSemSeg(
-                device=device, #compile_fn=compile_fn
+                device=device,  # compile_fn=compile_fn
             )
 
         self.decoder = nn.Conv2d(dim, self.num_elem * height, kernel_size=1)
@@ -115,7 +115,7 @@ class VoxelTask(BEVTask):
             image_width=w // 4,
             image_height=h // 4,
             n_pts_per_ray=n_pts_per_ray,
-            min_depth=0.1,
+            min_depth=0.5,
             max_depth=n_pts_per_ray / scale,
         )
         raymarcher = DepthEmissionRaymarcher(
@@ -257,6 +257,9 @@ class VoxelTask(BEVTask):
         start_frame = ctx.start_frame
         start_T = batch.cam_T[:, ctx.start_frame]
         cam_T = start_T.unsqueeze(1).pinverse().matmul(batch.cam_T)
+        frame_time = batch.frame_time - batch.frame_time[:, ctx.start_frame].unsqueeze(
+            1
+        )
         device = grid.device
 
         losses = {}
@@ -264,7 +267,6 @@ class VoxelTask(BEVTask):
         h, w = self.cam_shape
 
         for cam in self.cameras:
-            cam_semantic = self.semantic is not None and cam in self.semantic
             volumes = Volumes(
                 densities=grid.permute(0, 1, 4, 3, 2).float(),
                 features=feat_grid.permute(0, 1, 4, 3, 2).float()
@@ -276,76 +278,117 @@ class VoxelTask(BEVTask):
                 volume_translation=(0, 0, -self.height / 2 / self.scale),
             )
 
-            for frame in range(0, frames - 1, 2):
-                K = batch.K[cam]
-                T = torch.matmul(cam_T[:, frame], batch.T[cam])
-                cameras = CustomPerspectiveCameras(
-                    T=T,
-                    K=K,
-                    image_size=torch.tensor(
-                        [[h // 2, w // 2]], device=device, dtype=torch.float
-                    ).expand(BS, -1),
-                    device=device,
+            K = batch.K[cam]
+            T = batch.T[cam]
+            cameras = CustomPerspectiveCameras(
+                T=T,
+                K=K,
+                image_size=torch.tensor(
+                    [[h // 2, w // 2]], device=device, dtype=torch.float
+                ).expand(BS, -1),
+                device=device,
+            )
+
+            (depth, semantic_img), ray_bundle = self.renderer(
+                cameras=cameras,
+                volumes=volumes,
+                eps=1e-8,
+            )
+            if semantic_img is not None:
+                semantic_img = semantic_img.permute(0, 3, 1, 2)
+
+            depth = F.interpolate(
+                depth.float().unsqueeze(1),
+                [h // 2, w // 2],
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(1)
+            depth = depth.unsqueeze(1)
+            # upscale to original size
+            if ctx.log_text:
+                ctx.add_scalars(
+                    f"depth/{cam}/minmax",
+                    {"max": depth.max(), "min": depth.min()},
                 )
 
-                (depth, semantic_img), ray_bundle = self.renderer(
-                    cameras=cameras,
-                    volumes=volumes,
-                    eps=1e-8,
+            if ctx.log_img:
+                ctx.add_image(
+                    f"depth/{cam}",
+                    render_color(-depth[0][0]),
+                )
+                ctx.add_image(
+                    f"disp/{cam}",
+                    # pyre-fixme[6]: float / tensor
+                    render_color(1 / (depth[0][0] + 1e-7)),
                 )
 
-                depth = F.interpolate(
-                    depth.unsqueeze(1),
+            frame = ctx.start_frame
+
+            primary_color = batch.color[cam, frame]
+            primary_color = F.interpolate(
+                primary_color.float(),
+                [h // 2, w // 2],
+                mode="bilinear",
+                align_corners=False,
+            )
+            primary_mask = batch.mask[cam]
+            primary_mask = F.interpolate(
+                primary_mask.float(),
+                [h // 2, w // 2],
+                mode="bilinear",
+                align_corners=False,
+            )
+
+            if self.semantic:
+                semantic_loss, dynamic_mask = self._semantic_loss(
+                    ctx, cam, semantic_img, primary_color, primary_mask
+                )
+                losses[f"semantic/{cam}"] = semantic_loss * 500
+
+                semantic_vel = semantic_img[:, self.classes_elem :]
+                semantic_vel = F.interpolate(
+                    semantic_vel.float(),
                     [h // 2, w // 2],
                     mode="bilinear",
                     align_corners=False,
-                ).squeeze(1)
-                depth = depth.unsqueeze(1)
-                # upscale to original size
-                if ctx.log_text:
-                    ctx.add_scalars(
-                        f"depth/{cam}/{frame}/minmax",
-                        {"max": depth.max(), "min": depth.min()},
-                    )
-
+                )
                 if ctx.log_img:
                     ctx.add_image(
-                        f"depth/{cam}/{frame}",
-                        render_color(-depth[0][0]),
+                        f"{cam}/semantic_vel",
+                        normalize_img(semantic_vel[0]),
                     )
                     ctx.add_image(
-                        f"disp/{cam}/{frame}",
-                        # pyre-fixme[6]: float / tensor
-                        render_color(1 / (depth[0][0] + 1e-7)),
+                        f"{cam}/dynamic_mask",
+                        render_color(dynamic_mask[0]),
                     )
-                    # ctx.add_image(
-                    #    f"color/{cam}/{frame}",
-                    #    semantic_img[0],
-                    # )
+                dynamic_mask = dynamic_mask.unsqueeze(1).expand(-1, 3, -1, -1)
+                semantic_vel *= dynamic_mask
+                semantic_vel *= primary_mask
+            else:
+                semantic_vel = torch.zeros_like(primary_color)
 
-                offset = frame + 1
-                T = batch.frame_T[:, offset]
-                primary_color = batch.color[cam, frame]
-                primary_color = F.interpolate(
-                    primary_color,
-                    [h // 2, w // 2],
-                    mode="bilinear",
-                    align_corners=False,
-                )
-                primary_mask = batch.mask[cam]
-                primary_mask = F.interpolate(
-                    primary_mask,
-                    [h // 2, w // 2],
-                    mode="bilinear",
-                    align_corners=False,
-                )
+            for offset in [-1, 1]:
+                T = batch.frame_T[:, frame + offset]
+                if offset < 0:
+                    T = T.pinverse()
+                time = frame_time[:, frame + offset]
+
                 projcolor, projmask = self.project(
-                    batch, cam, T, depth, primary_color, primary_mask
+                    batch,
+                    cam,
+                    T,
+                    depth,
+                    primary_color,
+                    primary_mask,
+                    semantic_vel * time.reshape(-1, 1, 1, 1),
                 )
                 projmask *= primary_mask
-                color = batch.color[cam, offset]
+                color = batch.color[cam, frame + offset]
                 half_color = F.interpolate(
-                    color, [h // 2, w // 2], mode="bilinear", align_corners=False
+                    color.float(),
+                    [h // 2, w // 2],
+                    mode="bilinear",
+                    align_corners=False,
                 )
                 color = half_color
 
@@ -388,15 +431,7 @@ class VoxelTask(BEVTask):
                         proj_loss.mean(dim=(1, 2, 3)) * 40
                     )
 
-                if cam_semantic:
-                    losses[f"semantic/{cam}/o{offset}"] = (
-                        self._semantic_loss(
-                            ctx, cam, frame, semantic_img, half_color, primary_mask
-                        )
-                        * 10
-                    )
-
-                ctx.backward(losses)
+            ctx.backward(losses)
 
         return losses
 
@@ -404,21 +439,18 @@ class VoxelTask(BEVTask):
         self,
         ctx: Context,
         cam: str,
-        frame: int,
         semantic_img: torch.Tensor,
         color: torch.Tensor,
         mask: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         _semantic_loss computes the semantic class probability loss.
         """
-        semantic_img = semantic_img.permute(0, 3, 1, 2)
         semantic_classes = semantic_img[:, : self.classes_elem].sigmoid()
-        semantic_vel = semantic_img[:, self.classes_elem :]
 
-        semantic_target = self.segment(color)
+        segmentation_target = self.segment(color)
         # select interesting classes and convert to probabilities
-        semantic_target = semantic_target[:, BDD100KSemSeg.INTERESTING]
+        semantic_target = segmentation_target[:, BDD100KSemSeg.INTERESTING]
         semantic_target = F.avg_pool2d(semantic_target, 2).sigmoid()
 
         sem_loss = F.huber_loss(
@@ -430,7 +462,7 @@ class VoxelTask(BEVTask):
             pred_min, pred_max = semantic_classes.aminmax()
             targ_min, targ_max = semantic_target.aminmax()
             ctx.add_scalars(
-                f"semantic/{cam}/{frame}/minmax",
+                f"semantic/{cam}/minmax",
                 {
                     "pred_min": pred_min,
                     "pred_max": pred_max,
@@ -445,7 +477,7 @@ class VoxelTask(BEVTask):
             out_class = torch.argmax(semantic_img[:1], dim=1)
             target_class = torch.argmax(semantic_target[:1], dim=1)
             ctx.add_image(
-                f"semantic/{cam}/{frame}/output_target",
+                f"semantic/{cam}/output_target",
                 render_color(
                     torch.cat(
                         (
@@ -457,11 +489,17 @@ class VoxelTask(BEVTask):
                 ),
             )
             ctx.add_image(
-                f"semantic/{cam}/{frame}/loss",
+                f"semantic/{cam}/loss",
                 render_color(sem_loss[0].mean(dim=0)),
             )
 
-        return sem_loss.mean(dim=(1, 2, 3)) * 50
+        dynamic_mask = segmentation_target[:, BDD100KSemSeg.DYNAMIC]
+        dynamic_mask = dynamic_mask.sigmoid().amax(dim=1).round()
+
+        return (
+            sem_loss.mean(dim=(1, 2, 3)),
+            dynamic_mask,
+        )
 
     def project(
         self,
@@ -471,6 +509,7 @@ class VoxelTask(BEVTask):
         depth: torch.Tensor,
         color: torch.Tensor,
         mask: torch.Tensor,
+        vel: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         src_K = batch.K[cam].clone()
         # convert to image space
@@ -484,6 +523,10 @@ class VoxelTask(BEVTask):
         target_inv_K = target_K.pinverse()
 
         cam_points = self.backproject_depth(depth, target_inv_K)
+
+        # add velocity to points
+        # print(cam_points.shape, vel.shape)
+        # cam_points += vel.flatten(-2, -1)
 
         T = batch.T[cam].pinverse().matmul(cam_T).matmul(batch.T[cam])
 

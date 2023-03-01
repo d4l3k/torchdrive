@@ -1,8 +1,18 @@
 from dataclasses import dataclass, fields
-from typing import Callable, Dict, List, Mapping, Optional, Tuple, TypeVar, Union, Iterator
+from typing import (
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 import torch
-from torch.utils.data import default_collate, DataLoader
+from torch.utils.data import DataLoader, default_collate
 
 
 @dataclass(frozen=True)
@@ -15,6 +25,8 @@ class Batch:
     cam_T: torch.Tensor
     # per frame car relative translation matrix
     frame_T: torch.Tensor
+    # time for each frame in seconds, monotonically increasing, can be starting at any point
+    frame_time: torch.Tensor
     # per camera intrinsics, normalized
     K: Dict[str, torch.Tensor]
     # car to camera local translation matrix, extrinsics
@@ -66,7 +78,7 @@ class Batch:
 
 
 def dummy_item() -> Batch:
-    N = 2
+    N = 3
     color = {}
     cams = ["left", "right"]
     for cam in cams:
@@ -78,6 +90,7 @@ def dummy_item() -> Batch:
         cam_T=torch.rand(N, 4, 4),
         long_cam_T=torch.rand(9 * 3, 4, 4),
         frame_T=torch.rand(N, 4, 4),
+        frame_time=torch.arange(N, dtype=torch.float),
         K={cam: torch.rand(4, 4) for cam in cams},
         T={cam: torch.rand(4, 4) for cam in cams},
         color=color,
@@ -199,6 +212,7 @@ def split(x: T, split_size: int) -> List[T]:
         return [tuple(g) for g in groups]
     raise ValueError(f"can't split {x}")
 
+
 class TransferCollator:
     """
     TransferCollator takes in a torch DataLoader with a batch size of 1 and
@@ -214,8 +228,14 @@ class TransferCollator:
 
     If the last batch is smaller than batch_size it is discarded.
     """
-    def __init__(self, dataloader: DataLoader[Batch], batch_size: int, device:
-                 torch.device, buffer_factor: int = 2) -> None:
+
+    def __init__(
+        self,
+        dataloader: DataLoader[Batch],
+        batch_size: int,
+        device: torch.device,
+        buffer_factor: int = 2,
+    ) -> None:
         self.dataloader = dataloader
         self.buf: List[Batch] = []
         self.device = device
@@ -231,7 +251,7 @@ class TransferCollator:
     def __next__(self) -> Batch:
         it = self.iter
         assert it is not None
-        while len(self.buf) < (self.buffer_factor*self.batch_size):
+        while len(self.buf) < (self.buffer_factor * self.batch_size):
             try:
                 out: Batch = next(it)
             except StopIteration:
@@ -243,8 +263,8 @@ class TransferCollator:
         if len(self.buf) < self.batch_size:
             raise StopIteration
 
-        batch = collate(self.buf[:self.batch_size])
-        self.buf = self.buf[self.batch_size:]
+        batch = collate(self.buf[: self.batch_size])
+        self.buf = self.buf[self.batch_size :]
 
         assert batch is not None, "collate returned None"
         return batch

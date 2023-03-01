@@ -522,6 +522,7 @@ class MultiCamDataset(Dataset):
         dists = dists[info_idxs]
         cam_T = cam_Ts[info_idxs]
         frame_T = frame_T[info_idxs]
+        frame_time = torch.tensor(info_idxs, dtype=torch.float) / 36
 
         Ks: Dict[str, torch.Tensor] = {}
         Ts: Dict[str, torch.Tensor] = {}
@@ -552,4 +553,5 @@ class MultiCamDataset(Dataset):
             long_cam_T=cam_Ts,
             distances=dists,
             frame_T=frame_T,
+            frame_time=frame_time,
         )

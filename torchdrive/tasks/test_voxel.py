@@ -45,6 +45,12 @@ class TestVoxel(unittest.TestCase):
                 "lossproj/left/o1/s0",
                 "lossproj/left/o1/s1",
                 "lossproj/left/o1/s2",
+                "lossproj/right/o-1/s0",
+                "lossproj/right/o-1/s1",
+                "lossproj/right/o-1/s2",
+                "lossproj/left/o-1/s0",
+                "lossproj/left/o-1/s1",
+                "lossproj/left/o-1/s2",
             ],
         )
 
@@ -82,7 +88,14 @@ class TestVoxel(unittest.TestCase):
                 "lossproj/left/o1/s0",
                 "lossproj/left/o1/s1",
                 "lossproj/left/o1/s2",
-                "semantic/left/o1",
+                "semantic/left",
+                "semantic/right",
+                "lossproj/right/o-1/s0",
+                "lossproj/right/o-1/s1",
+                "lossproj/right/o-1/s2",
+                "lossproj/left/o-1/s0",
+                "lossproj/left/o-1/s1",
+                "lossproj/left/o-1/s2",
             ],
         )
 

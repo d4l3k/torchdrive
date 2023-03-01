@@ -17,7 +17,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 
 from torchdrive.checkpoint import remap_state_dict
-from torchdrive.data import Batch, nonstrict_collate, transfer
+from torchdrive.data import Batch, transfer, TransferCollator
 from torchdrive.datasets.rice import MultiCamDataset
 from torchdrive.tasks.ae import AETask
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
@@ -59,6 +59,7 @@ parser.add_argument("--anomaly-detection", default=False, action="store_true")
 parser.add_argument("--limit_size", type=int)
 parser.add_argument("--grad_clip", type=float, default=1.0)
 parser.add_argument("--checkpoint_every", type=int, default=2000)
+parser.add_argument("--num_encode_frames", type=int, default=3)
 parser.add_argument("--profile", default=False, action="store_true")
 parser.add_argument(
     "--grad_sizes", default=False, action="store_true", help="log grad sizes"
@@ -119,7 +120,7 @@ dataset = MultiCamDataset(
     dynamic=True,
     cam_shape=args.cam_shape,
     # 3 encode frames, 3 decode frames, overlap last frame
-    nframes_per_point=5,
+    nframes_per_point=args.num_encode_frames + 3 - 1,
     limit_size=args.limit_size,
 )
 if rank == 0:
@@ -135,13 +136,14 @@ sampler: DistributedSampler[MultiCamDataset] = DistributedSampler(
 )
 dataloader = DataLoader[Batch](
     dataset,
-    batch_size=BS,
+    batch_size=None,
     num_workers=args.num_workers,
-    drop_last=True,
-    collate_fn=nonstrict_collate,
-    pin_memory=False,
-    sampler=sampler,
+    # drop_last=True,
+    # collate_fn=nonstrict_collate,
+    pin_memory=True,
+    # sampler=sampler,
 )
+collator = TransferCollator(dataloader, batch_size=args.batch_size, device=device)
 
 if args.anomaly_detection:
     torch.set_anomaly_enabled(True)
@@ -199,6 +201,7 @@ model = BEVTaskVan(
     writer=writer,
     output=args.output,
     compile_fn=compile_fn,
+    num_encode_frames=args.num_encode_frames,
 )
 
 model = model.to(device)
@@ -310,7 +313,7 @@ for epoch in range(NUM_EPOCHS):
             global_step,
         )
 
-    for batch in tqdm(dataloader, desc=f"epoch {epoch}"):
+    for batch in tqdm(collator, desc=f"epoch {epoch}"):
         batch = cast(Optional[Batch], batch)
         if batch is None:
             print("empty batch")
