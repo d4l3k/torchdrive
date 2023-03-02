@@ -268,3 +268,6 @@ class TransferCollator:
 
         assert batch is not None, "collate returned None"
         return batch
+
+    def __len__(self) -> int:
+        return len(self.dataloader) // self.batch_size

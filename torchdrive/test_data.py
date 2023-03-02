@@ -83,6 +83,8 @@ class TestData(unittest.TestCase):
         batch_size = 2
         collator = TransferCollator(dataloader, batch_size=batch_size, device=device)
 
+        self.assertEqual(len(collator), 2)
+
         out = list(collator)
         self.assertEqual(len(out), 2)
         for batch in out:
