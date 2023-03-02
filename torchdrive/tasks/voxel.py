@@ -339,6 +339,8 @@ class VoxelTask(BEVTask):
                 align_corners=False,
             )
 
+            per_pixel_weights = torch.ones_like(primary_color)
+
             if self.semantic:
                 semantic_loss, dynamic_mask = self._semantic_loss(
                     ctx, cam, semantic_img, primary_color, primary_mask
@@ -364,6 +366,11 @@ class VoxelTask(BEVTask):
                 dynamic_mask = dynamic_mask.unsqueeze(1).expand(-1, 3, -1, -1)
                 semantic_vel *= dynamic_mask
                 semantic_vel *= primary_mask
+
+                # focus more on dynamic objects
+                per_pixel_weights += dynamic_mask*10
+                # normalize mean
+                per_pixel_weights /= per_pixel_weights.mean()
             else:
                 semantic_vel = torch.zeros_like(primary_color)
 
@@ -391,6 +398,7 @@ class VoxelTask(BEVTask):
                     align_corners=False,
                 )
                 color = half_color
+                proj_weights = per_pixel_weights
 
                 MSSIM_SCALES = 3
                 for scale in range(MSSIM_SCALES):
@@ -398,9 +406,10 @@ class VoxelTask(BEVTask):
                         projcolor = F.avg_pool2d(projcolor, 2)
                         projmask = F.avg_pool2d(projmask, 2)
                         color = F.avg_pool2d(color, 2)
+                        proj_weights = F.avg_pool2d(proj_weights, 2)
                     proj_loss = (
                         projection_loss(projcolor, color, projmask) / MSSIM_SCALES
-                    )
+                    ) * proj_weights
 
                     if ctx.log_img:
                         ctx.add_image(
@@ -522,7 +531,7 @@ class VoxelTask(BEVTask):
         target_K[:, 1] *= self.backproject_depth.height
         target_inv_K = target_K.pinverse()
 
-        world_points = self.backproject_depth(depth, target_inv_K, batch.T[cam])
+        world_points = self.backproject_depth(depth, target_inv_K, batch.T[cam]).clone()
 
         # add velocity to points
         world_points[:, :3] += vel.flatten(-2, -1)

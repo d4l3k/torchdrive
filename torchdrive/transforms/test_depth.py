@@ -23,11 +23,13 @@ class TestDepth(unittest.TestCase):
         src_K = torch.rand(2, 4, 4)
         T1 = torch.rand(2, 4, 4)
         T2 = torch.rand(2, 4, 4)
-        depth = torch.rand(2, 4, 6)
+        depth = torch.rand(2, 4, 6, requires_grad=True)
         color = torch.rand(2, 3, 4, 6)
 
         cam_points = backproject_depth(depth, target_inv_K, T2)
         torch.testing.assert_close(cam_points[:, 3].mean(), torch.tensor(1.0))
+
+        cam_points += 0
         pix_coords = project_3d(cam_points, src_K, T1)
 
         out = pix_coords.sum()
@@ -42,3 +44,4 @@ class TestDepth(unittest.TestCase):
             align_corners=False,
         )
         self.assertEqual(color.shape, (2, 3, 4, 6))
+        color.sum().backward()
