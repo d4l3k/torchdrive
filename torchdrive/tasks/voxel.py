@@ -214,7 +214,7 @@ class VoxelTask(BEVTask):
             losses = {}
 
             # total variation loss to encourage sharp edges
-            losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 0.01 * 40
+            losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 0.01 * 400
 
             minibatches = batch.split(self.render_batch_size)
             minigrids = torch.split(grid, self.render_batch_size)
@@ -522,15 +522,14 @@ class VoxelTask(BEVTask):
         target_K[:, 1] *= self.backproject_depth.height
         target_inv_K = target_K.pinverse()
 
-        cam_points = self.backproject_depth(depth, target_inv_K)
+        world_points = self.backproject_depth(depth, target_inv_K, batch.T[cam])
 
         # add velocity to points
-        # print(cam_points.shape, vel.shape)
-        # cam_points += vel.flatten(-2, -1)
+        world_points[:, :3] += vel.flatten(-2, -1)
 
-        T = batch.T[cam].pinverse().matmul(cam_T).matmul(batch.T[cam])
-
-        pix_coords = self.project_3d(cam_points, src_K, T)
+        # (world to cam) * camera motion
+        T = batch.T[cam].pinverse().matmul(cam_T)
+        pix_coords = self.project_3d(world_points, src_K, T)
 
         color = F.grid_sample(
             color,

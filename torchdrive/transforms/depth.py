@@ -39,7 +39,17 @@ class BackprojectDepth(nn.Module):
             "pix_coords", torch.cat([pix_coords, self.ones], 1), persistent=False
         )
 
-    def forward(self, depth: torch.Tensor, inv_K: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, depth: torch.Tensor, inv_K: torch.Tensor, T: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Args:
+            depth: per pixel depth map [BS, h, w]
+            inv_K: pixel coordinates to camera space intrinsics [BS, 4, 4]
+            T: image space to world space transform [BS, 4, 4]
+        Returns:
+            world_points: [BS, 4, h * w]
+        """
         bs = len(depth)
         cam_points = torch.matmul(
             inv_K[:, :3, :3], self.pix_coords[:bs].expand(bs, -1, -1)
@@ -47,7 +57,9 @@ class BackprojectDepth(nn.Module):
         cam_points = depth.view(bs, 1, -1) * cam_points
         cam_points = torch.cat([cam_points, self.ones.expand(bs, -1, -1)], 1)
 
-        return cam_points
+        world_points = torch.matmul(T, cam_points)
+        # normalize w -- perspective transform
+        return world_points / world_points[:, 3:]
 
 
 class Project3D(nn.Module):
