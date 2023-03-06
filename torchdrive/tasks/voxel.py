@@ -345,7 +345,7 @@ class VoxelTask(BEVTask):
                 semantic_loss, dynamic_mask = self._semantic_loss(
                     ctx, cam, semantic_img, primary_color, primary_mask
                 )
-                losses[f"semantic/{cam}"] = semantic_loss * 500
+                # losses[f"semantic/{cam}"] = semantic_loss * 100
 
                 semantic_vel = semantic_img[:, self.classes_elem :]
                 semantic_vel = F.interpolate(
@@ -368,7 +368,7 @@ class VoxelTask(BEVTask):
                 semantic_vel *= primary_mask
 
                 # focus more on dynamic objects
-                per_pixel_weights += dynamic_mask*10
+                per_pixel_weights += dynamic_mask
                 # normalize mean
                 per_pixel_weights /= per_pixel_weights.mean()
             else:
