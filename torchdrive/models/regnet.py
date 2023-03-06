@@ -63,20 +63,17 @@ class RegNetEncoder(nn.Module):
 
         self.output_shape: Tuple[int, int] = (cam_shape[0] // 16, cam_shape[1] // 16)
 
-        proj_in_dim = self.num_ch_enc[3] + 6
         if use_f4:
-            proj_in_dim += self.num_ch_enc[4]
+            self.f4_proj: nn.Module = nn.Conv2d(self.num_ch_enc[4], dim, 1)
+            resnet_init(self.f4_proj)
+        self.f3_proj = nn.Conv2d(self.num_ch_enc[3], dim, 1)
+        resnet_init(self.f3_proj)
 
-        self.proj = nn.Sequential(
-            nn.Conv2d(proj_in_dim, dim, 1),
-            nn.ReLU(inplace=True),
+        self.pos_encoding = nn.Parameter(
+            torch.zeros(dim, *self.output_shape, dtype=torch.float),
+            requires_grad=True,
         )
-        resnet_init(self.proj)
-        self.register_buffer(
-            "positional_encoding",
-            positional_encoding(*self.output_shape),
-            persistent=False,
-        )
+        nn.init.normal_(self.pos_encoding, mean=0.0, std=0.01)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         BS = x.shape[0]
@@ -86,15 +83,16 @@ class RegNetEncoder(nn.Module):
         f2 = self.model.trunk_output[1](f1)
         f3 = self.model.trunk_output[2](f2)
 
-        pos_enc = self.positional_encoding.expand(BS, -1, -1, -1)
-        proj_in = [pos_enc, f3]
+        out = self.f3_proj(f3)
 
         if self.use_f4:
             f4 = self.model.trunk_output[3](f3)
             f4 = F.interpolate(f4.float(), size=f3.shape[-2:])
-            proj_in.append(f4)
+            out += self.f4_proj(f4)
 
-        return self.proj(torch.cat(proj_in, dim=1))
+        out += self.pos_encoding
+
+        return out
 
 
 class ConvPEBlock(nn.Module):
