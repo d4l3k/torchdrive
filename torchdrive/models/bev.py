@@ -11,7 +11,7 @@ from torchdrive.models.regnet import (
     UpsamplePEBlock,
 )
 
-from torchdrive.positional_encoding import positional_encoding
+from torchdrive.positional_encoding import apply_sin_cos_enc2d
 
 
 class GridTransformer(nn.Module):
@@ -39,17 +39,13 @@ class GridTransformer(nn.Module):
         self.output_shape = output_shape
         self.num_heads = num_heads
 
-        self.register_buffer(
-            "positional_encoding", positional_encoding(*output_shape), persistent=False
-        )
-
         self.context_encoder = nn.Sequential(
             nn.Conv2d(dim * num_inputs, dim, 1),
             nn.MaxPool2d(input_shape),
         )
 
         self.query_encoder = nn.Sequential(
-            nn.Conv2d(dim + 6, dim, 1),
+            nn.Conv2d(dim, dim, 1),
         )
 
         self.kv_encoder = nn.Sequential(
@@ -67,9 +63,8 @@ class GridTransformer(nn.Module):
         BS = len(merged_feats)
 
         context = self.context_encoder(merged_feats)
-        context = torch.tile(context, (1, 1, *self.output_shape))
-        pos_enc = self.positional_encoding.expand(len(context), -1, -1, -1)
-        context = torch.concat((context, pos_enc), dim=1)
+        context = context.expand(-1, -1, *self.output_shape)
+        context = apply_sin_cos_enc2d(context)
 
         query = (
             self.query_encoder(context).permute(0, 2, 3, 1).reshape(BS, -1, self.dim)

@@ -19,6 +19,7 @@ class TestRegNet(unittest.TestCase):
         m = RegNetEncoder((64, 96), 10, trunk=models.regnet_y_400mf, use_f4=use_f4)
         out = m(torch.rand(1, 3, 64, 96))
         self.assertEqual(out.shape, (1, 10, 4, 6))
+        out.mean().backward()
 
     def test_conv_pe_block(self) -> None:
         m = ConvPEBlock(4, 5, (4, 4))
