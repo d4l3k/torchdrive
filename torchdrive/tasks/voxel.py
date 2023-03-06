@@ -134,11 +134,13 @@ class VoxelTask(BEVTask):
         )
 
         # image space model
-        self.depth_decoder = compile_fn(DepthDecoder(
-            num_upsamples=2,
-            cam_shape=(h // 16, w // 16),
-            dim=dim,
-        ))
+        self.depth_decoder: nn.Module = compile_fn(
+            DepthDecoder(
+                num_upsamples=2,
+                cam_shape=(h // 16, w // 16),
+                dim=dim,
+            )
+        )
 
     def forward(
         self, ctx: Context, batch: Batch, bev: torch.Tensor
