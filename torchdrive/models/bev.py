@@ -1,4 +1,4 @@
-from typing import Dict, List, Mapping, Tuple, Type
+from typing import Callable, Dict, List, Mapping, Tuple, Type
 
 import torch
 from torch import nn
@@ -90,27 +90,31 @@ class CamBEVEncoder(nn.Module):
         cam_encoder: Type[RegNetEncoder] = RegNetEncoder,
         transformer: Type[GridTransformer] = GridTransformer,
         conv: Type[ConvPEBlock] = ConvPEBlock,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
 
         self.cameras = cameras
         self.cam_encoders = nn.ModuleDict(
-            {cam: cam_encoder(cam_shape, dim=dim) for cam in cameras}
+            {cam: compile_fn(cam_encoder(cam_shape, dim=dim)) for cam in cameras}
         )
 
-        self.transformer: nn.Module = transformer(
-            output_shape=bev_shape,
-            input_shape=self.cam_encoders[cameras[0]].output_shape,
-            dim=dim,
-            num_inputs=len(self.cameras),
+        self.transform: nn.Module = compile_fn(
+            nn.Sequential(
+                transformer(
+                    output_shape=bev_shape,
+                    input_shape=self.cam_encoders[cameras[0]].output_shape,
+                    dim=dim,
+                    num_inputs=len(self.cameras),
+                ),
+                conv(
+                    dim,
+                    dim,
+                    input_shape=bev_shape,
+                ),
+            )
         )
-        resnet_init(self.transformer)
-        self.conv: nn.Module = conv(
-            dim,
-            dim,
-            input_shape=bev_shape,
-        )
-        resnet_init(self.conv)
+        resnet_init(self.transform)
 
     def forward(
         self, camera_frames: Mapping[str, torch.Tensor], pause: bool = False
@@ -119,9 +123,10 @@ class CamBEVEncoder(nn.Module):
             cam: self.cam_encoders[cam](camera_frames[cam]) for cam in self.cameras
         }
         if pause:
-            cam_feats = {k: autograd_pause(v) for k, v in cam_feats.items()}
+            for k, v in cam_feats.items():
+                cam_feats[k] = autograd_pause(v)
         ordered_frames = [cam_feats[cam] for cam in self.cameras]
-        return cam_feats, self.conv(self.transformer(ordered_frames))
+        return cam_feats, self.transform(ordered_frames)
 
 
 class BEVMerger(nn.Module):
