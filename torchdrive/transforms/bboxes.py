@@ -99,7 +99,7 @@ def points_to_bboxes2d(
     K[:, 2, 2] = 1
 
     # convert to list of points
-    points = points.reshape(-1, 3)
+    points = points.flatten(0, 2)
     ones = torch.ones(*points.shape[:-1], 1, device=device)
     points = torch.cat([points, ones], dim=-1).unsqueeze(2)
 
@@ -114,12 +114,12 @@ def points_to_bboxes2d(
     points = torch.matmul(P, points)
 
     # box mask
-    invalid_mask = (points[:, 2, 0] < 0).reshape(BS, num_queries, 8).any(dim=2)
+    invalid_mask = (points[:, 2, 0] < 0).unflatten(0, (BS, num_queries, 8)).any(dim=2)
 
     # TODO: discard boxes where points is negative?
     pix_coords = points[:, (0, 1), 0] / (points[:, 2:3, 0] + 1e-8)
 
-    pix_coords = pix_coords.reshape(BS, num_queries, 8, 2)
+    pix_coords = pix_coords.unflatten(0, (BS, num_queries, 8))
 
     xmin = pix_coords[..., 0].amin(dim=-1)
     xmax = pix_coords[..., 0].amax(dim=-1)
