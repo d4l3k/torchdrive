@@ -9,7 +9,7 @@ from torchdrive.amp import autocast
 from torchdrive.models.mlp import ConvMLP
 from torchdrive.models.regnet import ConvPEBlock
 from torchdrive.models.transformer import StockTransformerDecoder, transformer_init
-from torchdrive.positional_encoding import positional_encoding
+from torchdrive.positional_encoding import apply_sin_cos_enc2d
 
 
 def rel_dists(series: torch.Tensor) -> torch.Tensor:
@@ -45,10 +45,7 @@ class PathTransformer(nn.Module):
         self.dim = dim
         self.direction_buckets = direction_buckets
 
-        self.register_buffer(
-            "positional_encoding", positional_encoding(*bev_shape), persistent=False
-        )
-        self.bev_encoder = nn.Conv2d(bev_dim + 6, dim, 1)
+        self.bev_encoder = nn.Conv2d(bev_dim, dim, 1)
 
         self.bev_project = ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1)
 
@@ -89,13 +86,7 @@ class PathTransformer(nn.Module):
 
             # bev features
             bev = self.bev_project(bev)
-            bev = torch.cat(
-                (
-                    self.positional_encoding.expand(BS, -1, -1, -1),
-                    bev,
-                ),
-                dim=1,
-            )
+            bev = apply_sin_cos_enc2d(bev)
             bev = self.bev_encoder(bev).flatten(-2, -1).permute(0, 2, 1)
 
             # cross attention features to decode
