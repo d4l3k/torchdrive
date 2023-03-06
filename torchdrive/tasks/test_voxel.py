@@ -12,10 +12,12 @@ from torchdrive.tasks.voxel import axis_grid, VoxelTask
 class TestVoxel(unittest.TestCase):
     def test_voxel_task(self) -> None:
         device = torch.device("cpu")
+        cameras = ["left", "right"]
         m = VoxelTask(
-            cameras=["left", "right"],
+            cameras=cameras,
             cam_shape=(320, 240),
-            dim=5,
+            dim=4,
+            hr_dim=5,
             height=12,
             device=device,
             render_batch_size=1,
@@ -32,6 +34,7 @@ class TestVoxel(unittest.TestCase):
             name="det",
             output="",
             weights=batch.weight,
+            cam_feats={cam: torch.rand(2, 4, 320 // 16, 240 // 16) for cam in cameras},
         )
         bev = torch.rand(2, 5, 4, 4, device=device)
         losses = m(ctx, batch, bev)
@@ -39,27 +42,41 @@ class TestVoxel(unittest.TestCase):
             losses.keys(),
             [
                 "tvl1",
-                "lossproj/right/o1/s0",
-                "lossproj/right/o1/s1",
-                "lossproj/right/o1/s2",
-                "lossproj/left/o1/s0",
-                "lossproj/left/o1/s1",
-                "lossproj/left/o1/s2",
-                "lossproj/right/o-1/s0",
-                "lossproj/right/o-1/s1",
-                "lossproj/right/o-1/s2",
-                "lossproj/left/o-1/s0",
-                "lossproj/left/o-1/s1",
-                "lossproj/left/o-1/s2",
+                "lossproj-voxel/right/o1/s0",
+                "lossproj-voxel/right/o1/s1",
+                "lossproj-voxel/right/o1/s2",
+                "lossproj-voxel/left/o1/s0",
+                "lossproj-voxel/left/o1/s1",
+                "lossproj-voxel/left/o1/s2",
+                "lossproj-voxel/right/o-1/s0",
+                "lossproj-voxel/right/o-1/s1",
+                "lossproj-voxel/right/o-1/s2",
+                "lossproj-voxel/left/o-1/s0",
+                "lossproj-voxel/left/o-1/s1",
+                "lossproj-voxel/left/o-1/s2",
+                "lossproj-cam/right/o1/s0",
+                "lossproj-cam/right/o1/s1",
+                "lossproj-cam/right/o1/s2",
+                "lossproj-cam/left/o1/s0",
+                "lossproj-cam/left/o1/s1",
+                "lossproj-cam/left/o1/s2",
+                "lossproj-cam/right/o-1/s0",
+                "lossproj-cam/right/o-1/s1",
+                "lossproj-cam/right/o-1/s2",
+                "lossproj-cam/left/o-1/s0",
+                "lossproj-cam/left/o-1/s1",
+                "lossproj-cam/left/o-1/s2",
             ],
         )
 
     def test_semantic_voxel_task(self) -> None:
         device = torch.device("cpu")
+        cameras = ["left", "right"]
         m = VoxelTask(
-            cameras=["left", "right"],
+            cameras=cameras,
             cam_shape=(320, 240),
-            dim=5,
+            dim=4,
+            hr_dim=5,
             height=12,
             device=device,
             semantic=["left"],
@@ -75,6 +92,7 @@ class TestVoxel(unittest.TestCase):
             name="det",
             output="",
             weights=batch.weight,
+            cam_feats={cam: torch.rand(2, 4, 320 // 16, 240 // 16) for cam in cameras},
         )
         bev = torch.rand(2, 5, 4, 4)
         losses = m(ctx, batch, bev)
@@ -82,20 +100,32 @@ class TestVoxel(unittest.TestCase):
             losses.keys(),
             [
                 "tvl1",
-                "lossproj/right/o1/s0",
-                "lossproj/right/o1/s1",
-                "lossproj/right/o1/s2",
-                "lossproj/left/o1/s0",
-                "lossproj/left/o1/s1",
-                "lossproj/left/o1/s2",
-                "semantic/left",
-                "semantic/right",
-                "lossproj/right/o-1/s0",
-                "lossproj/right/o-1/s1",
-                "lossproj/right/o-1/s2",
-                "lossproj/left/o-1/s0",
-                "lossproj/left/o-1/s1",
-                "lossproj/left/o-1/s2",
+                # "semantic/left",
+                # "semantic/right",
+                "lossproj-voxel/right/o1/s0",
+                "lossproj-voxel/right/o1/s1",
+                "lossproj-voxel/right/o1/s2",
+                "lossproj-voxel/left/o1/s0",
+                "lossproj-voxel/left/o1/s1",
+                "lossproj-voxel/left/o1/s2",
+                "lossproj-voxel/right/o-1/s0",
+                "lossproj-voxel/right/o-1/s1",
+                "lossproj-voxel/right/o-1/s2",
+                "lossproj-voxel/left/o-1/s0",
+                "lossproj-voxel/left/o-1/s1",
+                "lossproj-voxel/left/o-1/s2",
+                "lossproj-cam/right/o1/s0",
+                "lossproj-cam/right/o1/s1",
+                "lossproj-cam/right/o1/s2",
+                "lossproj-cam/left/o1/s0",
+                "lossproj-cam/left/o1/s1",
+                "lossproj-cam/left/o1/s2",
+                "lossproj-cam/right/o-1/s0",
+                "lossproj-cam/right/o-1/s1",
+                "lossproj-cam/right/o-1/s2",
+                "lossproj-cam/left/o-1/s0",
+                "lossproj-cam/left/o-1/s1",
+                "lossproj-cam/left/o-1/s2",
             ],
         )
 

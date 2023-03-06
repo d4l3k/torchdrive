@@ -92,3 +92,15 @@ class Project3D(nn.Module):
         pix_coords[..., 1] /= self.height - 1
         pix_coords = (pix_coords - 0.5) * 2
         return pix_coords
+
+
+def disp_to_depth(
+    disp: torch.Tensor, max_depth: float = 100.0, min_depth: float = 0.1
+) -> torch.Tensor:
+    min_disp = 1 / max_depth
+    max_disp = 1 / min_depth
+    scaled_disp = min_disp + (max_disp - min_disp) * disp
+    # pyre-fixme[58]: `/` is not supported for operand types `int` and `Tensor`.
+    depth = 1 / scaled_disp
+    # pyre-fixme[7]: Expected `Tensor` but got `float`.
+    return depth

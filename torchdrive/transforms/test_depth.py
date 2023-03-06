@@ -3,7 +3,7 @@ import unittest
 import torch
 import torch.nn.functional as F
 
-from torchdrive.transforms.depth import BackprojectDepth, Project3D
+from torchdrive.transforms.depth import BackprojectDepth, disp_to_depth, Project3D
 
 
 class TestDepth(unittest.TestCase):
@@ -45,3 +45,9 @@ class TestDepth(unittest.TestCase):
         )
         self.assertEqual(color.shape, (2, 3, 4, 6))
         color.sum().backward()
+
+    def test_disp_to_depth(self) -> None:
+        out = disp_to_depth(torch.tensor((0.0, 100000)))
+        expected = torch.tensor((100.0, 0.0))
+        print(out, expected)
+        torch.testing.assert_close(out, expected)

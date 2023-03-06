@@ -183,7 +183,8 @@ if args.voxel:
     hr_tasks["voxel"] = VoxelTask(
         cameras=args.cameras,
         cam_shape=args.cam_shape,
-        dim=args.hr_dim,
+        dim=args.dim,
+        hr_dim=args.hr_dim,
         height=12,
         device=device,
         semantic=args.voxelsem,

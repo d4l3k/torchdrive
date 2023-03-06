@@ -31,4 +31,4 @@ class DepthDecoder(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.upsample(x)
+        return self.upsample(x).squeeze(1)

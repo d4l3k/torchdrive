@@ -1,6 +1,6 @@
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import torch
@@ -33,7 +33,7 @@ class Context:
     start_frame: int
     output: str
     weights: torch.Tensor
-    cam_feats: Mapping[str, torch.Tensor] = {}
+    cam_feats: Mapping[str, torch.Tensor] = field(default_factory=dict)
 
     name: str = "<unknown>"
 
