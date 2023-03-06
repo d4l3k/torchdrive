@@ -4,7 +4,13 @@ import torch
 
 from torchdrive.debug import assert_not_nan
 
-from torchdrive.positional_encoding import positional_encoding, sequence_encoding
+from torchdrive.positional_encoding import (
+    apply_sin_cos_enc2d,
+    positional_encoding,
+    sequence_encoding,
+    sin_cos_enc,
+    sin_cos_enc2d,
+)
 
 
 class TestPositionalEncoding(unittest.TestCase):
@@ -24,3 +30,17 @@ class TestPositionalEncoding(unittest.TestCase):
         y = sequence_encoding(x)
         self.assertEqual(x.shape, y.shape)
         assert_not_nan(y)
+
+    def test_sin_cos_enc(self) -> None:
+        device = torch.device("cpu")
+        out = sin_cos_enc(seq_len=5, dim=6, device=device)
+        self.assertEqual(out.shape, (5, 6))
+
+    def test_sin_cos_enc2d(self) -> None:
+        device = torch.device("cpu")
+        out = sin_cos_enc2d(h=4, w=5, dim=6, device=device)
+        self.assertEqual(out.shape, (6, 4, 5))
+
+    def test_apply_sin_cos_enc2d(self) -> None:
+        out = apply_sin_cos_enc2d(torch.rand(2, 6, 4, 5))
+        self.assertEqual(out.shape, (2, 6, 4, 5))
