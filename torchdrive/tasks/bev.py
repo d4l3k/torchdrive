@@ -1,7 +1,7 @@
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -9,7 +9,7 @@ from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
 
 from torchdrive.amp import autocast
-from torchdrive.autograd import autograd_context
+from torchdrive.autograd import autograd_context, autograd_resume
 from torchdrive.data import Batch
 from torchdrive.losses import losses_backward
 from torchdrive.models.bev import BEVMerger, BEVUpsampler, CamBEVEncoder
@@ -33,6 +33,8 @@ class Context:
     start_frame: int
     output: str
     weights: torch.Tensor
+    cam_feats: Mapping[str, torch.Tensor] = {}
+
     name: str = "<unknown>"
 
     def backward(self, losses: Dict[str, torch.Tensor]) -> None:
@@ -158,6 +160,8 @@ class BEVTaskVan(torch.nn.Module):
         BS = len(batch.distances)
         log_img, log_text = self.should_log(global_step, BS)
 
+        last_cam_feats = {}
+
         with autocast():
             bev_frames = []
             first_backprop_frame = max(
@@ -166,10 +170,17 @@ class BEVTaskVan(torch.nn.Module):
             with torch.no_grad():
                 for frame in range(0, first_backprop_frame):
                     cams = {cam: batch.color[cam, frame] for cam in self.cameras}
-                    bev_frames.append(self.frame_encoder(cams))
+                    _, bev_frame = self.frame_encoder(cams)
+                    bev_frames.append(bev_frame)
             for frame in range(first_backprop_frame, self.num_encode_frames):
                 cams = {cam: batch.color[cam, frame] for cam in self.cameras}
-                bev_frames.append(self.frame_encoder(cams))
+                last_cam_feats, bev_frame = self.frame_encoder(
+                    cams,
+                    # pause the last cam encoder backprop for tasks with image
+                    # space losses
+                    pause=frame == (self.num_encode_frames - 1),
+                )
+                bev_frames.append(bev_frame)
             bev = self.frame_merger(bev_frames)
 
         with autograd_context(bev) as bev:
@@ -185,6 +196,7 @@ class BEVTaskVan(torch.nn.Module):
                 output=self.output,
                 start_frame=self.num_encode_frames - 1,
                 weights=batch.weight,
+                cam_feats=last_cam_feats,
             )
 
             def _run_tasks(tasks: nn.ModuleDict, task_bev: torch.Tensor) -> None:
@@ -214,5 +226,8 @@ class BEVTaskVan(torch.nn.Module):
                     task_times,
                     global_step=global_step,
                 )
+
+        # resume autograd on cameras
+        autograd_resume(*last_cam_feats.values())
 
         return losses

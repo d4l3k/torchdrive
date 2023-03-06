@@ -50,8 +50,9 @@ class TestBEVTransformer(unittest.TestCase):
             "left": img,
             "right": img,
         }
-        out = m(camera_frames)
+        cam_feats, out = m(camera_frames)
         self.assertEqual(out.shape, (2, 8, 4, 4))
+        self.assertCountEqual(cam_feats.keys(), ("left", "right"))
 
     def test_bev_merger(self) -> None:
         m = BEVMerger(num_frames=3, bev_shape=(4, 4), dim=5)

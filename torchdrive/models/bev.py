@@ -1,16 +1,17 @@
-from typing import List, Mapping, Tuple, Type
+from typing import Dict, List, Mapping, Tuple, Type
 
 import torch
 from torch import nn
 
 from torchdrive.attention import attention
+
+from torchdrive.autograd import autograd_pause
 from torchdrive.models.regnet import (
     ConvPEBlock,
     RegNetEncoder,
     resnet_init,
     UpsamplePEBlock,
 )
-
 from torchdrive.positional_encoding import apply_sin_cos_enc2d
 
 
@@ -111,11 +112,16 @@ class CamBEVEncoder(nn.Module):
         )
         resnet_init(self.conv)
 
-    def forward(self, camera_frames: Mapping[str, torch.Tensor]) -> torch.Tensor:
-        ordered_frames = [
-            self.cam_encoders[cam](camera_frames[cam]) for cam in self.cameras
-        ]
-        return self.conv(self.transformer(ordered_frames))
+    def forward(
+        self, camera_frames: Mapping[str, torch.Tensor], pause: bool = False
+    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+        cam_feats = {
+            cam: self.cam_encoders[cam](camera_frames[cam]) for cam in self.cameras
+        }
+        if pause:
+            cam_feats = {k: autograd_pause(v) for k, v in cam_feats.items()}
+        ordered_frames = [cam_feats[cam] for cam in self.cameras]
+        return cam_feats, self.conv(self.transformer(ordered_frames))
 
 
 class BEVMerger(nn.Module):
