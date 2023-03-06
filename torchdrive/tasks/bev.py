@@ -114,13 +114,12 @@ class BEVTaskVan(torch.nn.Module):
         self.cameras = cameras
         self.num_encode_frames = num_encode_frames
         self.num_backprop_frames = num_backprop_frames
-        self.frame_encoder: nn.Module = CamBEVEncoder(
+        self.frame_encoder: nn.Module = compile_fn(CamBEVEncoder(
             cameras,
             cam_shape=cam_shape,
             bev_shape=bev_shape,
             dim=dim,
-            compile_fn=compile_fn,
-        )
+        ))
         self.frame_merger: nn.Module = compile_fn(
             BEVMerger(num_frames=self.num_encode_frames, bev_shape=bev_shape, dim=dim)
         )

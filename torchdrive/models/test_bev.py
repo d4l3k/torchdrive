@@ -42,15 +42,19 @@ class TestBEVTransformer(unittest.TestCase):
         self.assertEqual(out.shape, (2, 16, 4, 4))
 
     def test_cam_bev_encoder(self) -> None:
+        device = torch.device('cpu')
         m = CamBEVEncoder(
-            cameras=["left", "right"], bev_shape=(4, 4), cam_shape=(48, 64), dim=8
-        )
-        img = torch.rand(2, 3, 48, 64)
+            cameras=["left", "right"], bev_shape=(4, 4), cam_shape=(48, 64),
+            dim=8,
+            #compile_fn=torch.compile,
+        ).to(device)
+        img = torch.rand(2, 3, 48, 64, device=device)
         camera_frames = {
             "left": img,
             "right": img,
         }
         cam_feats, out = m(camera_frames)
+        cam_feats, out = m(camera_frames, pause=True)
         self.assertEqual(out.shape, (2, 8, 4, 4))
         self.assertCountEqual(cam_feats.keys(), ("left", "right"))
 

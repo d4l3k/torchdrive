@@ -134,11 +134,11 @@ class VoxelTask(BEVTask):
         )
 
         # image space model
-        self.depth_decoder = DepthDecoder(
+        self.depth_decoder = compile_fn(DepthDecoder(
             num_upsamples=2,
             cam_shape=(h // 16, w // 16),
             dim=dim,
-        )
+        ))
 
     def forward(
         self, ctx: Context, batch: Batch, bev: torch.Tensor
@@ -365,9 +365,10 @@ class VoxelTask(BEVTask):
             else:
                 semantic_vel = torch.zeros_like(primary_color)
 
-            cam_disp = self.depth_decoder(ctx.cam_feats[cam])
+            with autocast():
+                cam_disp = self.depth_decoder(ctx.cam_feats[cam])
             cam_depth = disp_to_depth(
-                cam_disp, min_depth=self.min_depth, max_depth=self.max_depth
+                cam_disp.float(), min_depth=self.min_depth, max_depth=self.max_depth
             )
 
             for label, depth in [("voxel", voxel_depth), ("cam", cam_depth)]:

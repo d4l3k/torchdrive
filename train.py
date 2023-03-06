@@ -15,6 +15,7 @@ from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
@@ -24,7 +25,6 @@ from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 from torchdrive.tasks.det import DetTask
 from torchdrive.tasks.path import PathTask
 from torchdrive.tasks.voxel import VoxelTask
-from tqdm import tqdm
 
 
 def tuple_str(s: str) -> Tuple[str, ...]:

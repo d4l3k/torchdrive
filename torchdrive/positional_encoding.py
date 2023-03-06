@@ -52,7 +52,7 @@ def sin_cos_enc(
     )
     # pyre-fixme[6]: expected Tensor but got float
     div = torch.exp(-math.log(10000) * (2 * (dim_arr // 2) / dim))
-    pos *= div
+    pos = pos * div
     pos[:, 0::2] = torch.sin(pos[:, 0::2])
     pos[:, 1::2] = torch.cos(pos[:, 1::2])
     return pos

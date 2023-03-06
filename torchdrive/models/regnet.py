@@ -88,9 +88,9 @@ class RegNetEncoder(nn.Module):
         if self.use_f4:
             f4 = self.model.trunk_output[3](f3)
             f4 = F.interpolate(f4.float(), size=f3.shape[-2:])
-            out += self.f4_proj(f4)
+            out = out + self.f4_proj(f4)
 
-        out += self.pos_encoding
+        out = out + self.pos_encoding
 
         return out
 

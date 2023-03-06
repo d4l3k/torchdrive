@@ -52,6 +52,7 @@ class GridTransformer(nn.Module):
         self.kv_encoder = nn.Sequential(
             nn.Conv1d(dim, 2 * dim, 1),
         )
+        self.pos_encoding = apply_sin_cos_enc2d
 
     def forward(self, input_feats: List[torch.Tensor]) -> torch.Tensor:
         """
@@ -65,17 +66,17 @@ class GridTransformer(nn.Module):
 
         context = self.context_encoder(merged_feats)
         context = context.expand(-1, -1, *self.output_shape)
-        context = apply_sin_cos_enc2d(context)
+        context = self.pos_encoding(context)
 
         query = (
-            self.query_encoder(context).permute(0, 2, 3, 1).reshape(BS, -1, self.dim)
+            self.query_encoder(context).permute(0, 2, 3, 1).flatten(1, 2)
         )
         q_seqlen = query.shape[1]
 
-        x = merged_feats.reshape(BS, self.dim, -1)
+        x = torch.stack(input_feats, dim=-1).flatten(2, 4)
         kv = self.kv_encoder(x).permute(0, 2, 1)
         bev = attention(query, kv, dim=self.dim, num_heads=self.num_heads)
-        bev = bev.reshape(BS, *self.output_shape, self.dim)
+        bev = bev.unflatten(1, self.output_shape)
         bev = bev.permute(0, 3, 1, 2)
         return bev
 
@@ -90,29 +91,26 @@ class CamBEVEncoder(nn.Module):
         cam_encoder: Type[RegNetEncoder] = RegNetEncoder,
         transformer: Type[GridTransformer] = GridTransformer,
         conv: Type[ConvPEBlock] = ConvPEBlock,
-        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
 
         self.cameras = cameras
         self.cam_encoders = nn.ModuleDict(
-            {cam: compile_fn(cam_encoder(cam_shape, dim=dim)) for cam in cameras}
+            {cam: cam_encoder(cam_shape, dim=dim) for cam in cameras}
         )
 
-        self.transform: nn.Module = compile_fn(
-            nn.Sequential(
-                transformer(
-                    output_shape=bev_shape,
-                    input_shape=self.cam_encoders[cameras[0]].output_shape,
-                    dim=dim,
-                    num_inputs=len(self.cameras),
-                ),
-                conv(
-                    dim,
-                    dim,
-                    input_shape=bev_shape,
-                ),
-            )
+        self.transform: nn.Module = nn.Sequential(
+            transformer(
+                output_shape=bev_shape,
+                input_shape=self.cam_encoders[cameras[0]].output_shape,
+                dim=dim,
+                num_inputs=len(self.cameras),
+            ),
+            conv(
+                dim,
+                dim,
+                input_shape=bev_shape,
+            ),
         )
         resnet_init(self.transform)
 
