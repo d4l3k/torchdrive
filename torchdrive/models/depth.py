@@ -27,8 +27,17 @@ class DepthDecoder(nn.Module):
                 dim=dim,
                 output_dim=final_dim,
             ),
-            nn.Conv2d(final_dim, 1, 1),
+            nn.Conv2d(final_dim, 4, 1),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.upsample(x).squeeze(1)
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        x: [BS, dim, *cam_shape]
+        Returns:
+            disp: [BS, *(cam_shape * 2**num_upsamples)]
+            vel: [BS, 3, *(cam_shape * 2**num_upsamples)]
+        """
+        out = self.upsample(x)
+        disp = out[:, 0]
+        vel = out[:, 1:]
+        return disp, vel
