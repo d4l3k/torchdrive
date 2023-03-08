@@ -466,10 +466,11 @@ class VoxelTask(BEVTask):
                 f"depth{label}/{cam}",
                 render_color(-depth[0][0]),
             )
+            disp = 1 / (depth[0][0] + 1e-7)
+            disp *= primary_mask[0, 0]
             ctx.add_image(
                 f"disp{label}/{cam}",
-                # pyre-fixme[6]: float / tensor
-                render_color(1 / (depth[0][0] + 1e-7)),
+                render_color(disp),
             )
 
         for offset in [-1, 1]:
