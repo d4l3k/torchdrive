@@ -104,3 +104,16 @@ def disp_to_depth(
     depth = 1 / scaled_disp
     # pyre-fixme[7]: Expected `Tensor` but got `float`.
     return depth
+
+
+def depth_to_disp(
+    depth: torch.Tensor, max_depth: float = 100.0, min_depth: float = 0.1
+) -> torch.Tensor:
+    min_disp = 1 / max_depth
+    max_disp = 1 / min_depth
+
+    # pyre-fixme[58]: `/` is not supported for operand types `int` and `Tensor`.
+    scaled_disp = 1 / (depth + 1e-7)
+    scaled_disp = (scaled_disp - min_disp) / (max_disp - min_disp)
+    # pyre-fixme[16]: `float` has no attribute `clamp`.
+    return scaled_disp.clamp(0, 1)

@@ -3,7 +3,12 @@ import unittest
 import torch
 import torch.nn.functional as F
 
-from torchdrive.transforms.depth import BackprojectDepth, disp_to_depth, Project3D
+from torchdrive.transforms.depth import (
+    BackprojectDepth,
+    depth_to_disp,
+    disp_to_depth,
+    Project3D,
+)
 
 
 class TestDepth(unittest.TestCase):
@@ -51,3 +56,8 @@ class TestDepth(unittest.TestCase):
         expected = torch.tensor((100.0, 0.0))
         print(out, expected)
         torch.testing.assert_close(out, expected)
+
+    def test_disp_conversions(self) -> None:
+        expected_disp = torch.rand(10)
+        depth = disp_to_depth(expected_disp)
+        torch.testing.assert_close(depth_to_disp(depth), expected_disp)

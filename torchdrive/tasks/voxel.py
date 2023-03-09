@@ -12,13 +12,18 @@ from torch import nn
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context
 from torchdrive.data import Batch
-from torchdrive.losses import projection_loss, tvl1_loss
+from torchdrive.losses import projection_loss, smooth_loss, tvl1_loss
 from torchdrive.models.depth import DepthDecoder
 from torchdrive.models.regnet import resnet_init
 from torchdrive.models.semantic import BDD100KSemSeg
 from torchdrive.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarcher
 from torchdrive.tasks.bev import BEVTask, Context
-from torchdrive.transforms.depth import BackprojectDepth, disp_to_depth, Project3D
+from torchdrive.transforms.depth import (
+    BackprojectDepth,
+    depth_to_disp,
+    disp_to_depth,
+    Project3D,
+)
 from torchdrive.transforms.img import normalize_img, render_color
 
 
@@ -82,6 +87,7 @@ class VoxelTask(BEVTask):
         render_batch_size: int = 2,
         n_pts_per_ray: int = 216,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
+        offsets: Tuple[int, ...] = (-2, -1, 1, 2),
     ) -> None:
         super().__init__()
 
@@ -91,6 +97,7 @@ class VoxelTask(BEVTask):
         self.height = height
         self.semantic = semantic
         self.render_batch_size = render_batch_size
+        self.offsets = offsets
 
         # generate voxel grid
         self.num_elem: int = 1
@@ -461,23 +468,31 @@ class VoxelTask(BEVTask):
                 {"max": amax, "min": amin},
             )
 
+        disp = depth_to_disp(
+            depth,
+            min_depth=self.min_depth,
+            max_depth=self.max_depth,
+        )
+        losses[f"losssmooth/{label}/{cam}"] = smooth_loss(disp, primary_color)
+
         if ctx.log_img:
             ctx.add_image(
                 f"depth{label}/{cam}",
                 render_color(-depth[0][0]),
             )
-            disp = 1 / (depth[0][0] + 1e-7)
-            disp *= primary_mask[0, 0]
+            out_disp = disp[0, 0] * primary_mask[0, 0]
             ctx.add_image(
                 f"disp{label}/{cam}",
-                render_color(disp),
+                render_color(out_disp),
             )
 
-        for offset in [-1, 1]:
-            T = batch.frame_T[:, frame + offset]
+        for offset in self.offsets:
+            target_frame = frame + offset
+            assert target_frame >= 0, (frame, offset)
+            T = batch.frame_T[:, target_frame]
             if offset < 0:
                 T = T.pinverse()
-            time = frame_time[:, frame + offset]
+            time = frame_time[:, target_frame]
 
             projcolor, projmask = self.project(
                 batch,
@@ -489,7 +504,7 @@ class VoxelTask(BEVTask):
                 semantic_vel * time.reshape(-1, 1, 1, 1),
             )
             projmask *= primary_mask
-            color = batch.color[cam, frame + offset]
+            color = batch.color[cam, target_frame]
             half_color = F.interpolate(
                 color.float(),
                 [h // 2, w // 2],

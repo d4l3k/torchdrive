@@ -120,7 +120,7 @@ dataset = MultiCamDataset(
     dynamic=True,
     cam_shape=args.cam_shape,
     # 3 encode frames, 3 decode frames, overlap last frame
-    nframes_per_point=args.num_encode_frames + 1,
+    nframes_per_point=args.num_encode_frames + 2,
     limit_size=args.limit_size,
 )
 if rank == 0:

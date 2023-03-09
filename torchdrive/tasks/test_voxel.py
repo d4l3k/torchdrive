@@ -22,6 +22,7 @@ class TestVoxel(unittest.TestCase):
             device=device,
             render_batch_size=1,
             n_pts_per_ray=10,
+            offsets=(-1, 1),
         ).to(device)
         batch = dummy_batch().to(device)
         ctx = Context(
@@ -66,6 +67,10 @@ class TestVoxel(unittest.TestCase):
                 "lossproj-cam/left/o-1/s0",
                 "lossproj-cam/left/o-1/s1",
                 "lossproj-cam/left/o-1/s2",
+                "losssmooth/voxel/left",
+                "losssmooth/voxel/right",
+                "losssmooth/cam/left",
+                "losssmooth/cam/right",
             ],
         )
 
@@ -80,6 +85,7 @@ class TestVoxel(unittest.TestCase):
             height=12,
             device=device,
             semantic=["left"],
+            offsets=(-1, 1),
         )
         batch = dummy_batch()
         ctx = Context(
@@ -126,6 +132,10 @@ class TestVoxel(unittest.TestCase):
                 "lossproj-cam/left/o-1/s0",
                 "lossproj-cam/left/o-1/s1",
                 "lossproj-cam/left/o-1/s2",
+                "losssmooth/voxel/left",
+                "losssmooth/voxel/right",
+                "losssmooth/cam/left",
+                "losssmooth/cam/right",
             ],
         )
 
