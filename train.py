@@ -15,7 +15,6 @@ from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
@@ -25,6 +24,7 @@ from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 from torchdrive.tasks.det import DetTask
 from torchdrive.tasks.path import PathTask
 from torchdrive.tasks.voxel import VoxelTask
+from tqdm import tqdm
 
 
 def tuple_str(s: str) -> Tuple[str, ...]:
@@ -337,6 +337,10 @@ for epoch in range(NUM_EPOCHS):
                 max_weight = 0
                 max_param = "n/a"
                 for name, p in model.named_parameters():
+                    # find unused parameters
+                    if p.requires_grad:
+                        assert p.grad is not None, f"missing grad on param {name}"
+
                     if p.grad is None:
                         continue
 

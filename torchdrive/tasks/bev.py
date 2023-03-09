@@ -1,7 +1,7 @@
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -21,6 +21,13 @@ def _cpu_float(
     if isinstance(v, torch.Tensor):
         return v.detach().float().cpu()
     return v
+
+
+def _get_orig_mod(m: nn.Module) -> nn.Module:
+    if hasattr(m, "_orig_mod"):
+        # pyre-fixme[7]: Union[Module, Tensor]
+        return m._orig_mod
+    return m
 
 
 @dataclass
@@ -114,12 +121,14 @@ class BEVTaskVan(torch.nn.Module):
         self.cameras = cameras
         self.num_encode_frames = num_encode_frames
         self.num_backprop_frames = num_backprop_frames
-        self.frame_encoder: nn.Module = compile_fn(CamBEVEncoder(
-            cameras,
-            cam_shape=cam_shape,
-            bev_shape=bev_shape,
-            dim=dim,
-        ))
+        self.frame_encoder: nn.Module = compile_fn(
+            CamBEVEncoder(
+                cameras,
+                cam_shape=cam_shape,
+                bev_shape=bev_shape,
+                dim=dim,
+            )
+        )
         self.frame_merger: nn.Module = compile_fn(
             BEVMerger(num_frames=self.num_encode_frames, bev_shape=bev_shape, dim=dim)
         )
@@ -152,9 +161,13 @@ class BEVTaskVan(torch.nn.Module):
         return should_log, log_text
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
-        params = list(self.parameters())
+        frame_encoder = cast(CamBEVEncoder, _get_orig_mod(self.frame_encoder))
+        per_cam_params = frame_encoder.per_cam_parameters()
+        per_cam_set = set(per_cam_params)
+        params = [p for p in self.parameters() if p not in per_cam_set]
         return [
             {"name": "default", "params": params, "lr": lr},
+            {"name": "per_cam", "params": per_cam_params, "lr": lr / len(self.cameras)},
         ]
 
     def forward(

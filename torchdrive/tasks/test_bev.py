@@ -46,3 +46,4 @@ class TestBEV(unittest.TestCase):
                 call("hr_dummy-test", 8, global_step=500),
             ],
         )
+        self.assertEqual(len(m.param_opts(lr=1e-4)), 2)

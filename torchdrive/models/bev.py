@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Mapping, Tuple, Type
+from typing import Dict, List, Mapping, Tuple, Type
 
 import torch
 from torch import nn
@@ -68,9 +68,7 @@ class GridTransformer(nn.Module):
         context = context.expand(-1, -1, *self.output_shape)
         context = self.pos_encoding(context)
 
-        query = (
-            self.query_encoder(context).permute(0, 2, 3, 1).flatten(1, 2)
-        )
+        query = self.query_encoder(context).permute(0, 2, 3, 1).flatten(1, 2)
         q_seqlen = query.shape[1]
 
         x = torch.stack(input_feats, dim=-1).flatten(2, 4)
@@ -98,21 +96,30 @@ class CamBEVEncoder(nn.Module):
         self.cam_encoders = nn.ModuleDict(
             {cam: cam_encoder(cam_shape, dim=dim) for cam in cameras}
         )
-
-        self.transform: nn.Module = nn.Sequential(
-            transformer(
-                output_shape=bev_shape,
-                input_shape=self.cam_encoders[cameras[0]].output_shape,
-                dim=dim,
-                num_inputs=len(self.cameras),
-            ),
-            conv(
-                dim,
-                dim,
-                input_shape=bev_shape,
-            ),
+        self.cam_transformers = nn.ModuleDict(
+            {
+                cam: transformer(
+                    output_shape=bev_shape,
+                    input_shape=self.cam_encoders[cameras[0]].output_shape,
+                    dim=dim,
+                    num_inputs=1,
+                )
+                for cam in cameras
+            }
         )
-        resnet_init(self.transform)
+        resnet_init(self.cam_transformers)
+
+        self.conv: nn.Module = conv(
+            len(cameras) * dim,
+            dim,
+            input_shape=bev_shape,
+        )
+        resnet_init(self.conv)
+
+    def per_cam_parameters(self) -> List[torch.nn.Parameter]:
+        return list(self.cam_transformers.parameters()) + list(
+            self.cam_encoders.parameters()
+        )
 
     def forward(
         self, camera_frames: Mapping[str, torch.Tensor], pause: bool = False
@@ -123,8 +130,10 @@ class CamBEVEncoder(nn.Module):
         if pause:
             for k, v in cam_feats.items():
                 cam_feats[k] = autograd_pause(v)
-        ordered_frames = [cam_feats[cam] for cam in self.cameras]
-        return cam_feats, self.transform(ordered_frames)
+        ordered_grids = [
+            self.cam_transformers[cam]([cam_feats[cam]]) for cam in self.cameras
+        ]
+        return cam_feats, self.conv(torch.cat(ordered_grids, dim=1))
 
 
 class BEVMerger(nn.Module):
