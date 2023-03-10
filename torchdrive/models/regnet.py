@@ -1,10 +1,12 @@
 import math
-from typing import Protocol, Tuple, Type
+from collections import OrderedDict
+from typing import Callable, Optional, Protocol, Tuple, Type
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 from torchvision import models
+from torchvision.ops.misc import Conv3dNormActivation
 
 from torchdrive.positional_encoding import positional_encoding
 
@@ -18,7 +20,13 @@ def resnet_init(module: nn.Module) -> None:
             # Note that there is no bias due to BN
             fan_out = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
             nn.init.normal_(m.weight, mean=0.0, std=math.sqrt(2.0 / fan_out))
-        elif isinstance(m, nn.BatchNorm2d):
+        elif isinstance(m, nn.Conv3d):
+            # Note that there is no bias due to BN
+            fan_out = (
+                m.kernel_size[0] * m.kernel_size[1] * m.kernel_size[2] * m.out_channels
+            )
+            nn.init.normal_(m.weight, mean=0.0, std=math.sqrt(2.0 / fan_out))
+        elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm3d)):
             nn.init.ones_(m.weight)
             nn.init.zeros_(m.bias)
         elif isinstance(m, nn.Linear):
@@ -164,3 +172,108 @@ class UpsamplePEBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.upsample(x.float())  # upsample doesn't support bfloat16
         return self.decode(x)
+
+
+class BottleneckTransform3d(nn.Sequential):
+    """Bottleneck transformation: 1x1, 3x3 [+SE], 1x1.
+    Uses 3D convolutions.
+        BSD-3-Clause license
+    Adapted from https://github.com/pytorch/vision/blob/main/torchvision/models/regnet.py
+    """
+
+    def __init__(
+        self,
+        width_in: int,
+        width_out: int,
+        stride: int,
+        norm_layer: Callable[..., nn.Module],
+        activation_layer: Callable[..., nn.Module],
+        group_width: int,
+        bottleneck_multiplier: float,
+        se_ratio: Optional[float],
+    ) -> None:
+        layers: OrderedDict[str, nn.Module] = OrderedDict()
+        w_b = int(round(width_out * bottleneck_multiplier))
+        g = w_b // group_width
+
+        layers["a"] = Conv3dNormActivation(
+            width_in,
+            w_b,
+            kernel_size=1,
+            stride=1,
+            norm_layer=norm_layer,
+            activation_layer=activation_layer,
+        )
+        layers["b"] = Conv3dNormActivation(
+            w_b,
+            w_b,
+            kernel_size=3,
+            stride=stride,
+            groups=g,
+            norm_layer=norm_layer,
+            activation_layer=activation_layer,
+        )
+
+        assert not se_ratio
+
+        layers["c"] = Conv3dNormActivation(
+            w_b,
+            width_out,
+            kernel_size=1,
+            stride=1,
+            norm_layer=norm_layer,
+            activation_layer=None,
+        )
+        super().__init__(layers)
+
+
+class ResBottleneckBlock3d(nn.Module):
+    """Residual bottleneck block: x + F(x), F = bottleneck transform.
+        Uses 3D convolutions.
+        BSD-3-Clause license
+    Adapted from https://github.com/pytorch/vision/blob/main/torchvision/models/regnet.py
+    """
+
+    def __init__(
+        self,
+        width_in: int,
+        width_out: int,
+        stride: int,
+        norm_layer: Callable[..., nn.Module],
+        activation_layer: Callable[..., nn.Module],
+        group_width: int = 1,
+        bottleneck_multiplier: float = 1.0,
+        se_ratio: Optional[float] = None,
+    ) -> None:
+        super().__init__()
+
+        # Use skip connection with projection if shape changes
+        self.proj: Optional[Conv3dNormActivation] = None
+        should_proj = (width_in != width_out) or (stride != 1)
+        if should_proj:
+            self.proj = Conv3dNormActivation(
+                width_in,
+                width_out,
+                kernel_size=1,
+                stride=stride,
+                norm_layer=norm_layer,
+                activation_layer=None,
+            )
+        self.f = BottleneckTransform3d(
+            width_in,
+            width_out,
+            stride,
+            norm_layer,
+            activation_layer,
+            group_width,
+            bottleneck_multiplier,
+            se_ratio,
+        )
+        self.activation: nn.Module = activation_layer(inplace=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.proj is not None:
+            x = self.proj(x) + self.f(x)
+        else:
+            x = x + self.f(x)
+        return self.activation(x)
