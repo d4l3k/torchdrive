@@ -6,7 +6,7 @@ import os
 import os.path
 import random
 from collections import defaultdict
-from typing import Callable, cast, Dict, List, Optional, Tuple, Union
+from typing import Callable, cast, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import av
 import cv2
@@ -259,34 +259,23 @@ class MultiCamDataset(Dataset):
     @functools.lru_cache(maxsize=16)  # noqa: B019
     def _load_offsets(
         self, path: str, cam: str
-    ) -> Tuple[str, int, List[int], List[int]]:
+    ) -> Tuple[str, int, Sequence[int], Sequence[int]]:
         index_path = os.path.join(path, f"{cam}_index.csv")
         with open(index_path, "rt") as f:
             first_line = f.readline()
             try:
-                file = os.path.join(path, f"{cam}.h265")
+                file: str = os.path.join(path, f"{cam}.h265")
                 start_i = int(first_line)
             except ValueError:
-                file = os.path.join(path, "../..", first_line.strip())
+                file: str = os.path.join(path, "../..", first_line.strip())
                 start_i = int(f.readline())
 
-            offsets = []
-            sizes = []
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                bits = line.split(" ")
-                offsets.append(int(bits[0]))
-                if len(bits) == 2:
-                    sizes.append(int(bits[1]))
+            data = np.loadtxt(f, dtype=np.int64, delimiter=" ")
+            # pyre-fixme[9]
+            offsets: Sequence[int] = data[:, 0]
+            # pyre-fixme[9]
+            sizes: Sequence[int] = data[:, 1]
 
-        if len(sizes) == 0:
-            for i, offset in enumerate(offsets[:-1]):
-                sizes.append(offsets[i + 1] - offset)
-            file_size = os.path.getsize(file)
-            # take size to end of file or max frame size
-            sizes.append(min(file_size - offsets[-1], max(sizes)))
         assert len(sizes) == len(offsets)
 
         return file, start_i, offsets, sizes
@@ -423,6 +412,11 @@ class MultiCamDataset(Dataset):
         except av.error.MemoryError as e:
             print(e)
 
+    def _get_alignment(self, path: str) -> Dict[str, int]:
+        path = os.path.join(path, "alignment.json")
+        with open(path, "rb") as f:
+            return orjson.loads(f.read())
+
     def _get_raw_infos(
         self, path: str, a: int, b: int
     ) -> Optional[List[Dict[str, float]]]:
@@ -482,6 +476,7 @@ class MultiCamDataset(Dataset):
         # metadata
         frame_count = self.per_path_frame_count[path]
         infos = self._get_infos(path, idx, frame_count)
+        alignment: Mapping[str, int] = self._get_alignment(path)
 
         speeds = infos["Speed"]
         dists = (speeds / FPS).cumsum(dim=0)
@@ -531,6 +526,12 @@ class MultiCamDataset(Dataset):
 
         def load(cam: str, frames: List[int]) -> None:
             label = cam
+
+            # align camera frames
+            cam_alignment = alignment[cam]
+            assert cam_alignment >= 0
+            frames = [i - cam_alignment for i in frames]
+
             color, mask, K, T = self._get_rect_frames(path, cam, frames)
             # mask[:, 0:240, :] = 0
             Ks[label] = K
