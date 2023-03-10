@@ -137,6 +137,12 @@ class MultiCamDataset(Dataset):
         self.speed_bins: Dict[int, int] = defaultdict(lambda: 0)
         self.heading_bins: Dict[int, int] = defaultdict(lambda: 0)
 
+        DROP_FIRST_N = 10
+        DROP_LAST_N = 10 + self.nframes_per_point
+        if not dynamic:
+            DROP_LAST_N += 30
+        MIN_DIST_M = 10
+
         for path in indexes:
             path = os.path.dirname(path)
             infos = self._get_raw_infos(path, 0, -1)
@@ -153,19 +159,16 @@ class MultiCamDataset(Dataset):
             infos = infos[:frame_count]
             self.per_path_frame_count[path] = frame_count
 
-            dist = sum(info["Speed"] for info in infos) / FPS
-            if dist < 25:
-                continue
-
             speeds = []
-            for i in range(10, frame_count - 50):
+            for i in range(DROP_FIRST_N, frame_count - DROP_LAST_N):
                 info = infos[i]
                 speed = info["Speed"]
                 if speed < 5 or speed > 80:  # kph
                     continue
 
+                # minimum travel distance
                 dist = sum(infos[j]["Speed"] / FPS for j in range(i, frame_count))
-                if dist < 30:  # at least 30 meters
+                if dist < MIN_DIST_M:
                     continue
 
                 speeds.append(speed)
@@ -490,14 +493,14 @@ class MultiCamDataset(Dataset):
         else:
             max_frame = idx + cast(int, max_idxs[0].item())
 
-        mid_frame = (idx + max_frame) // 2
-        # need to use 10 frame gap to avoid iframe collisions
-        far_frame1 = random.randrange(idx + 10, mid_frame - 10)
-        far_frame2 = random.randrange(mid_frame, max_frame - 10)
-
         if self.dynamic:
             points = [idx]
         else:
+            mid_frame = (idx + max_frame) // 2
+            # need to use 10 frame gap to avoid iframe collisions
+            far_frame1 = random.randrange(idx + 10, mid_frame - 10)
+            far_frame2 = random.randrange(mid_frame, max_frame - 10)
+
             points = [
                 idx,
                 self._nearest_iframe(far_frame1, start_i),

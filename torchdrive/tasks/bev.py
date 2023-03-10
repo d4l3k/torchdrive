@@ -167,7 +167,7 @@ class BEVTaskVan(torch.nn.Module):
         params = [p for p in self.parameters() if p not in per_cam_set]
         return [
             {"name": "default", "params": params, "lr": lr},
-            {"name": "per_cam", "params": per_cam_params, "lr": lr / len(self.cameras)},
+            {"name": "per_cam", "params": per_cam_params, "lr": lr},
         ]
 
     def forward(
