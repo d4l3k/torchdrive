@@ -83,8 +83,9 @@ class VoxelTask(BEVTask):
         height: int,
         device: torch.device,
         scale: int = 3,
+        z_offset: float =0.5,
         semantic: Optional[List[str]] = None,
-        render_batch_size: int = 2,
+        render_batch_size: int = 3,
         n_pts_per_ray: int = 216,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
         offsets: Tuple[int, ...] = (-2, -1, 1, 2),
@@ -98,6 +99,7 @@ class VoxelTask(BEVTask):
         self.semantic = semantic
         self.render_batch_size = render_batch_size
         self.offsets = offsets
+        self.volume_translation: Tuple[float, float, float] = (0, 0, -self.height * z_offset / self.scale)
 
         # generate voxel grid
         self.num_elem: int = 1
@@ -114,7 +116,7 @@ class VoxelTask(BEVTask):
 
         h, w = cam_shape
 
-        self.decoder = nn.Conv2d(hr_dim, self.num_elem * height, kernel_size=1)
+        self.decoder: nn.Module = compile_fn(nn.Conv2d(hr_dim, self.num_elem * height, kernel_size=1))
         resnet_init(self.decoder)
 
         self.backproject_depth: nn.Module = compile_fn(BackprojectDepth(h // 2, w // 2))
@@ -130,7 +132,7 @@ class VoxelTask(BEVTask):
             max_depth=self.max_depth,
         )
         raymarcher = DepthEmissionRaymarcher(
-            floor=0,
+            floor=None,
             background=torch.tensor(background, device=device)
             if len(background) > 0
             else None,
@@ -234,7 +236,7 @@ class VoxelTask(BEVTask):
             losses = {}
 
             # total variation loss to encourage sharp edges
-            losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 0.01 * 40
+            losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 0.1
 
             mini_batches = batch.split(self.render_batch_size)
             mini_grids = torch.split(grid, self.render_batch_size)
@@ -300,7 +302,7 @@ class VoxelTask(BEVTask):
                 voxel_size=1 / self.scale,
                 # TODO support non-centered voxel grids
                 # volume_translation=(-self.height / 2 / self.scale, 0, 0),
-                volume_translation=(0, 0, -self.height / 2 / self.scale),
+                volume_translation=self.volume_translation,
             )
 
             K = batch.K[cam]
@@ -375,10 +377,58 @@ class VoxelTask(BEVTask):
                 dynamic_mask = torch.zeros_like(primary_color)
                 semantic_vel = torch.zeros_like(primary_color)
 
+            with torch.autograd.profiler.record_function("depth_decoder"), autocast():
+                cam_disp, cam_vel = self.depth_decoder(ctx.cam_feats[cam])
+
+            cam_vel = F.interpolate(
+                cam_vel.float(),
+                [h // 2, w // 2],
+                mode="bilinear",
+                align_corners=False,
+            )
+            cam_vel *= dynamic_mask
+            cam_vel *= primary_mask
+            cam_disp = cam_disp.float().sigmoid()
+            cam_depth = disp_to_depth(
+                cam_disp,
+                min_depth=self.min_depth,
+                max_depth=self.max_depth,
+            )
+
+            self._depth_loss(
+                ctx=ctx,
+                label="cam",
+                cam=cam,
+                disp=cam_disp,
+                depth=cam_depth,
+                semantic_vel=cam_vel,
+                losses=losses,
+                h=h,
+                w=w,
+                batch=batch,
+                frame=frame,
+                frame_time=frame_time,
+                primary_color=primary_color,
+                primary_mask=primary_mask,
+                per_pixel_weights=per_pixel_weights*0.1,
+            )
+
+            del cam_vel
+            del cam_depth
+
+            voxel_disp = depth_to_disp(
+                voxel_depth,
+                min_depth=self.min_depth,
+                max_depth=self.max_depth,
+            )
+
+            cam_target_loss = F.l1_loss(voxel_disp, cam_disp.detach()) * primary_mask
+            losses[f"lossvoxel_cam_target/{cam}"] = cam_target_loss.mean(dim=(1, 2, 3))
             self._depth_loss(
                 ctx=ctx,
                 label="voxel",
                 cam=cam,
+                disp=voxel_disp,
                 depth=voxel_depth,
                 semantic_vel=semantic_vel,
                 losses=losses,
@@ -394,44 +444,7 @@ class VoxelTask(BEVTask):
             del voxel_depth
             del semantic_vel
             del semantic_img
-
-            with torch.autograd.profiler.record_function("depth_decoder"), autocast():
-                cam_disp, cam_vel = self.depth_decoder(ctx.cam_feats[cam])
-
-            cam_vel = F.interpolate(
-                cam_vel.float(),
-                [h // 2, w // 2],
-                mode="bilinear",
-                align_corners=False,
-            )
-            cam_vel *= dynamic_mask
-            cam_vel *= primary_mask
-            cam_depth = disp_to_depth(
-                cam_disp.float().sigmoid(),
-                min_depth=self.min_depth,
-                max_depth=self.max_depth,
-            )
-
-            self._depth_loss(
-                ctx=ctx,
-                label="cam",
-                cam=cam,
-                depth=cam_depth,
-                semantic_vel=cam_vel,
-                losses=losses,
-                h=h,
-                w=w,
-                batch=batch,
-                frame=frame,
-                frame_time=frame_time,
-                primary_color=primary_color,
-                primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights,
-            )
-
-            del cam_vel
             del cam_disp
-            del cam_depth
 
         return losses
 
@@ -440,6 +453,7 @@ class VoxelTask(BEVTask):
         ctx: Context,
         label: str,
         cam: str,
+        disp: torch.Tensor,
         depth: torch.Tensor,
         semantic_vel: torch.Tensor,
         losses: Dict[str, torch.Tensor],
@@ -457,8 +471,13 @@ class VoxelTask(BEVTask):
             [h // 2, w // 2],
             mode="bilinear",
             align_corners=False,
-        ).squeeze(1)
-        depth = depth.unsqueeze(1)
+        )
+        disp = F.interpolate(
+            disp.float().unsqueeze(1),
+            [h // 2, w // 2],
+            mode="bilinear",
+            align_corners=False,
+        )
         # upscale to original size
         if ctx.log_text:
             amin, amax = depth.aminmax()
@@ -468,11 +487,6 @@ class VoxelTask(BEVTask):
                 {"max": amax, "min": amin},
             )
 
-        disp = depth_to_disp(
-            depth,
-            min_depth=self.min_depth,
-            max_depth=self.max_depth,
-        )
         losses[f"losssmooth/{label}/{cam}"] = smooth_loss(disp, primary_color)
 
         if ctx.log_img:

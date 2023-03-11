@@ -71,6 +71,8 @@ class TestVoxel(unittest.TestCase):
                 "losssmooth/voxel/right",
                 "losssmooth/cam/left",
                 "losssmooth/cam/right",
+                "lossvoxel_cam_target/left",
+                "lossvoxel_cam_target/right",
             ],
         )
 
@@ -136,6 +138,8 @@ class TestVoxel(unittest.TestCase):
                 "losssmooth/voxel/right",
                 "losssmooth/cam/left",
                 "losssmooth/cam/right",
+                "lossvoxel_cam_target/left",
+                "lossvoxel_cam_target/right",
             ],
         )
 

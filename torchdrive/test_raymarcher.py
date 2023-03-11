@@ -1,4 +1,5 @@
 import unittest
+from typing import Optional
 
 from parameterized import parameterized
 
@@ -9,11 +10,12 @@ from torchdrive.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarc
 
 
 class TestRaymarcher(unittest.TestCase):
+    # pyre-fixme[16]: no attribute expand
     @parameterized.expand([
         (0.1,),
         (None,),
     ])
-    def test_depth_emission(self, floor) -> None:
+    def test_depth_emission(self, floor: Optional[float]) -> None:
         BS = 2
         X = 3
         Y = 3
