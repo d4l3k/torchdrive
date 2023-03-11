@@ -15,7 +15,7 @@ class DepthEmissionRaymarcher(torch.nn.Module):
     """
 
     def __init__(
-        self, background: Optional[torch.Tensor] = None, floor: float = 0
+        self, background: Optional[torch.Tensor] = None, floor: Optional[float] = 0
     ) -> None:
         super().__init__()
 
@@ -66,18 +66,18 @@ class DepthEmissionRaymarcher(torch.nn.Module):
             rays_features = rays_features.clone()
             rays_features[..., -1, :] = background
 
-        # set floor depths
-        # depth = (z-z0)/vz
-        floor_depth = (self.floor - ray_bundle.origins[..., 2]) / ray_bundle.directions[
-            ..., 2
-        ]
-        torch.nan_to_num_(floor_depth, nan=-1.0)
-        floor_depth[floor_depth <= 0] = 10000
-        floor_depth = floor_depth.unsqueeze(3).unsqueeze(4)
-        is_floor = ray_bundle.lengths.unsqueeze(4) > floor_depth
-        rays_densities[is_floor] = 1
-        if (background := self.background) is not None and feat_dim > 0:
-            rays_features[is_floor.squeeze(-1), :] = background
+        if self.floor:
+            # set floor depths
+            # depth = (z-z0)/vz
+            floor_depth = (self.floor - ray_bundle.origins[..., 2]) / ray_bundle.directions[
+                ..., 2
+            ]
+            floor_depth[floor_depth <= 0] = 10000
+            floor_depth = floor_depth.unsqueeze(3).unsqueeze(4)
+            is_floor = ray_bundle.lengths.unsqueeze(4) > floor_depth
+            rays_densities[is_floor] = 1
+            if (background := self.background) is not None and feat_dim > 0:
+                rays_features[is_floor.squeeze(-1), :] = background
 
         ray_shape = rays_densities.shape[:-2]
         probs = rays_densities[..., 0].cumsum_(dim=3)
