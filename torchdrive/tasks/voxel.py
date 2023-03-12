@@ -538,7 +538,7 @@ class VoxelTask(BEVTask):
                 projcolor, color, scales=3, mask=projmask
             )
             identity_proj_loss = multi_scale_projection_loss(
-                projcolor, primary_color, scales=3, mask=projmask
+                color, primary_color, scales=3, mask=projmask
             )
 
             # automask

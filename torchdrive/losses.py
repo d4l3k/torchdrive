@@ -142,7 +142,7 @@ def multi_scale_projection_loss(
             loss = scale_loss
         else:
             loss += scale_loss
-    return loss
+    return loss / scales
 
 
 def smooth_loss(disp: torch.Tensor, img: torch.Tensor) -> torch.Tensor:
