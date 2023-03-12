@@ -117,6 +117,34 @@ def projection_loss(
     return loss
 
 
+def min_pool2d(a: torch.Tensor, kernel_size: int) -> torch.Tensor:
+    return -F.max_pool2d(-a, kernel_size)
+
+
+def multi_scale_projection_loss(
+    a: torch.Tensor, b: torch.Tensor, scales: int, mask: Optional[torch.Tensor] = None
+) -> torch.Tensor:
+    """
+    multi_scale_projection_loss does a multiscale projection loss which is a
+    combination of ssim and l1 loss.
+    """
+    size = a.shape[2:]
+    loss: torch.Tensor
+    for scale in range(scales):
+        if scale > 0:
+            a = F.avg_pool2d(a, 2)
+            b = F.avg_pool2d(b, 2)
+            if mask is not None:
+                mask = min_pool2d(mask, 2)
+        scale_loss = projection_loss(a, b, mask)
+        scale_loss = F.interpolate(scale_loss, size=size)
+        if scale == 0:
+            loss = scale_loss
+        else:
+            loss += scale_loss
+    return loss
+
+
 def smooth_loss(disp: torch.Tensor, img: torch.Tensor) -> torch.Tensor:
     """Computes the smoothness loss for a disparity image
     The color image is used for edge-aware smoothness

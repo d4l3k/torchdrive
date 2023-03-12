@@ -5,6 +5,7 @@ from torch.testing import assert_close
 
 from torchdrive.losses import (
     losses_backward,
+    multi_scale_projection_loss,
     projection_loss,
     smooth_loss,
     SSIM,
@@ -25,11 +26,24 @@ class TestLosses(unittest.TestCase):
         assert_close(out, out2)
 
     def test_projection_loss(self) -> None:
-        x = torch.rand(2, 3, 9, 16)
-        y = torch.rand(2, 3, 9, 16)
+        x = torch.rand(2, 3, 9, 16, requires_grad=True)
+        y = torch.rand(2, 3, 9, 16, requires_grad=True)
         mask = torch.rand(2, 1, 9, 16)
         out = projection_loss(x, y, mask)
         self.assertEqual(out.shape, (2, 1, 9, 16))
+        out.mean().backward()
+        self.assertIsNotNone(x.grad)
+        self.assertIsNotNone(y.grad)
+
+    def test_multi_scale_projection_loss(self) -> None:
+        x = torch.rand(2, 3, 9, 16, requires_grad=True)
+        y = torch.rand(2, 3, 9, 16, requires_grad=True)
+        mask = torch.rand(2, 1, 9, 16)
+        out = multi_scale_projection_loss(x, y, scales=3, mask=mask)
+        self.assertEqual(out.shape, (2, 1, 9, 16))
+        out.mean().backward()
+        self.assertIsNotNone(x.grad)
+        self.assertIsNotNone(y.grad)
 
     def test_smooth(self) -> None:
         out = smooth_loss(torch.rand(2, 3, 9, 16), torch.rand(2, 3, 9, 16))
