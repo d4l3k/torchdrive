@@ -12,7 +12,7 @@ from torch import nn
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context
 from torchdrive.data import Batch
-from torchdrive.losses import projection_loss, smooth_loss, tvl1_loss
+from torchdrive.losses import multi_scale_projection_loss, smooth_loss, tvl1_loss
 from torchdrive.models.depth import DepthDecoder
 from torchdrive.models.regnet import resnet_init
 from torchdrive.models.semantic import BDD100KSemSeg
@@ -83,7 +83,7 @@ class VoxelTask(BEVTask):
         height: int,
         device: torch.device,
         scale: int = 3,
-        z_offset: float =0.5,
+        z_offset: float = 0.5,
         semantic: Optional[List[str]] = None,
         render_batch_size: int = 3,
         n_pts_per_ray: int = 216,
@@ -99,7 +99,11 @@ class VoxelTask(BEVTask):
         self.semantic = semantic
         self.render_batch_size = render_batch_size
         self.offsets = offsets
-        self.volume_translation: Tuple[float, float, float] = (0, 0, -self.height * z_offset / self.scale)
+        self.volume_translation: Tuple[float, float, float] = (
+            0,
+            0,
+            -self.height * z_offset / self.scale,
+        )
 
         # generate voxel grid
         self.num_elem: int = 1
@@ -116,7 +120,9 @@ class VoxelTask(BEVTask):
 
         h, w = cam_shape
 
-        self.decoder: nn.Module = compile_fn(nn.Conv2d(hr_dim, self.num_elem * height, kernel_size=1))
+        self.decoder: nn.Module = compile_fn(
+            nn.Conv2d(hr_dim, self.num_elem * height, kernel_size=1)
+        )
         resnet_init(self.decoder)
 
         self.backproject_depth: nn.Module = compile_fn(BackprojectDepth(h // 2, w // 2))
@@ -341,7 +347,7 @@ class VoxelTask(BEVTask):
                 align_corners=False,
             )
 
-            per_pixel_weights = torch.ones_like(primary_color)
+            per_pixel_weights = torch.ones_like(primary_color).mean(dim=1, keepdim=True)
 
             if self.semantic:
                 semantic_loss, dynamic_mask = self._semantic_loss(
@@ -365,7 +371,7 @@ class VoxelTask(BEVTask):
                         f"{cam}/dynamic_mask",
                         render_color(dynamic_mask[0]),
                     )
-                dynamic_mask = dynamic_mask.unsqueeze(1).expand(-1, 3, -1, -1)
+                dynamic_mask = dynamic_mask.unsqueeze(1)
                 semantic_vel *= dynamic_mask
                 semantic_vel *= primary_mask
 
@@ -410,7 +416,7 @@ class VoxelTask(BEVTask):
                 frame_time=frame_time,
                 primary_color=primary_color,
                 primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights*0.1,
+                per_pixel_weights=per_pixel_weights * 0.1,
             )
 
             del cam_vel
@@ -528,44 +534,41 @@ class VoxelTask(BEVTask):
             color = half_color
             proj_weights = per_pixel_weights
 
-            MSSIM_SCALES = 3
-            for scale in range(MSSIM_SCALES):
-                if scale > 0:
-                    projcolor = F.avg_pool2d(projcolor, 2)
-                    projmask = F.avg_pool2d(projmask, 2)
-                    color = F.avg_pool2d(color, 2)
-                    proj_weights = F.avg_pool2d(proj_weights, 2)
-                proj_loss = (
-                    projection_loss(projcolor, color, projmask) / MSSIM_SCALES
-                ) * proj_weights
+            proj_loss = multi_scale_projection_loss(
+                projcolor, color, scales=3, mask=projmask
+            )
+            identity_proj_loss = multi_scale_projection_loss(
+                projcolor, primary_color, scales=3, mask=projmask
+            )
 
-                if ctx.log_img:
-                    ctx.add_image(
-                        f"{label}/{cam}/{offset}/{scale}/color",
-                        normalize_img(
-                            torch.cat(
-                                (
-                                    color[0],
-                                    projcolor[0],
-                                ),
-                                dim=2,
-                            )
-                        ),
-                    )
-                    ctx.add_image(
-                        f"{label}/{cam}/{offset}/{scale}/color_err",
-                        normalize_img((color[0] - projcolor[0]).abs()),
-                    )
-                    ctx.add_image(
-                        f"{label}/{cam}/{offset}/{scale}/proj_loss",
-                        render_color(proj_loss[0][0]),
-                    )
-                    ctx.add_image(
-                        f"{label}/{cam}/{offset}/{scale}/proj_mask",
-                        render_color(projmask[0][0]),
-                    )
-                losses[f"lossproj-{label}/{cam}/o{offset}/s{scale}"] = (
-                    proj_loss.mean(dim=(1, 2, 3)) * 40
+            # automask
+            min_proj_loss = torch.minimum(proj_loss, identity_proj_loss)
+
+            min_proj_loss *= proj_weights
+            losses[f"lossproj-{label}/{cam}/o{offset}"] = (
+                min_proj_loss.mean(dim=(1, 2, 3)) * 40
+            )
+
+            if ctx.log_img:
+                ctx.add_image(
+                    f"{label}/{cam}/{offset}/color",
+                    normalize_img(
+                        torch.cat(
+                            (
+                                color[0],
+                                projcolor[0],
+                            ),
+                            dim=2,
+                        )
+                    ),
+                )
+                ctx.add_image(
+                    f"{label}/{cam}/{offset}/min_proj_loss",
+                    render_color(min_proj_loss[0, 0]),
+                )
+                ctx.add_image(
+                    f"{label}/{cam}/{offset}/automask",
+                    render_color(proj_loss[0, 0] < identity_proj_loss[0, 0]),
                 )
 
         ctx.backward(losses)

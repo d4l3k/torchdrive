@@ -165,9 +165,11 @@ class BEVTaskVan(torch.nn.Module):
         per_cam_params = frame_encoder.per_cam_parameters()
         per_cam_set = set(per_cam_params)
         params = [p for p in self.parameters() if p not in per_cam_set]
+        per_cam_lr = lr
+        # per_cam_lr /= len (self.cameras)
         return [
             {"name": "default", "params": params, "lr": lr},
-            {"name": "per_cam", "params": per_cam_params, "lr": lr / len (self.cameras)},
+            {"name": "per_cam", "params": per_cam_params, "lr": per_cam_lr},
         ]
 
     def forward(
