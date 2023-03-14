@@ -85,7 +85,7 @@ class VoxelTask(BEVTask):
         scale: int = 3,
         z_offset: float = 0.5,
         semantic: Optional[List[str]] = None,
-        render_batch_size: int = 3,
+        render_batch_size: int = 5,
         n_pts_per_ray: int = 216,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
         offsets: Tuple[int, ...] = (-2, -1, 1, 2),
@@ -156,6 +156,7 @@ class VoxelTask(BEVTask):
                 dim=dim,
             )
         )
+        self.projection_loss: nn.Module = compile_fn(multi_scale_projection_loss)
 
     def forward(
         self, ctx: Context, batch: Batch, bev: torch.Tensor
@@ -429,7 +430,7 @@ class VoxelTask(BEVTask):
             )
 
             cam_target_loss = F.l1_loss(voxel_disp, cam_disp.detach()) * primary_mask
-            losses[f"lossvoxel_cam_target/{cam}"] = cam_target_loss.mean(dim=(1, 2, 3))
+            losses[f"lossvoxel_cam_target/{cam}"] = cam_target_loss.mean(dim=(1, 2, 3)) * 4
             self._depth_loss(
                 ctx=ctx,
                 label="voxel",
@@ -534,10 +535,10 @@ class VoxelTask(BEVTask):
             color = half_color
             proj_weights = per_pixel_weights
 
-            proj_loss = multi_scale_projection_loss(
+            proj_loss = self.projection_loss(
                 projcolor, color, scales=3, mask=projmask
             )
-            identity_proj_loss = multi_scale_projection_loss(
+            identity_proj_loss = self.projection_loss(
                 color, primary_color, scales=3, mask=projmask
             )
 

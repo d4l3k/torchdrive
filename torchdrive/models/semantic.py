@@ -110,13 +110,14 @@ class BDD100KSemSeg:
         model = model.to(device)
         # pyre-fixme[6]: nn.Module
         self.model: nn.Module = compile_fn(model.encode_decode)
-        self.transform = transforms.Normalize(
+        self.transform = compile_fn(transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-        )
+        ))
+        self.normalize = compile_fn(normalize_img_cuda)
 
     def __call__(self, img: torch.Tensor) -> torch.Tensor:
-        with torch.inference_mode():
-            img = normalize_img_cuda(img)
+        with torch.no_grad():
+            img = self.normalize(img)
             if self.half:
                 img = img.half()
             img = self.transform(img)
