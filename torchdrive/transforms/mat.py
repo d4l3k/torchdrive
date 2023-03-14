@@ -48,7 +48,7 @@ def rot_from_axisangle(vec: torch.Tensor) -> torch.Tensor:
     yzC = y * zC
     zxC = z * xC
 
-    rot = torch.zeros((vec.shape[0], 4, 4)).to(device=vec.device, non_blocking=True)
+    rot = torch.zeros((vec.shape[0], 4, 4), device=vec.device)
 
     rot[:, 0, 0] = torch.squeeze(x * xC + ca)
     rot[:, 0, 1] = torch.squeeze(xyC - zs)
@@ -66,9 +66,7 @@ def rot_from_axisangle(vec: torch.Tensor) -> torch.Tensor:
 
 def get_translation_matrix(translation_vector: torch.Tensor) -> torch.Tensor:
     """Convert a translation vector into a 4x4 transformation matrix"""
-    T = torch.zeros(translation_vector.shape[0], 4, 4).to(
-        device=translation_vector.device, non_blocking=True
-    )
+    T = torch.zeros(translation_vector.shape[0], 4, 4, device=translation_vector.device)
 
     t = translation_vector.contiguous().view(-1, 3, 1)
 

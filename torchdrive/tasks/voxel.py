@@ -156,6 +156,7 @@ class VoxelTask(BEVTask):
                 dim=dim,
             )
         )
+        # pyre-fixme[6]: nn.Module
         self.projection_loss: nn.Module = compile_fn(multi_scale_projection_loss)
 
     def forward(
@@ -430,7 +431,9 @@ class VoxelTask(BEVTask):
             )
 
             cam_target_loss = F.l1_loss(voxel_disp, cam_disp.detach()) * primary_mask
-            losses[f"lossvoxel_cam_target/{cam}"] = cam_target_loss.mean(dim=(1, 2, 3)) * 4
+            losses[f"lossvoxel_cam_target/{cam}"] = (
+                cam_target_loss.mean(dim=(1, 2, 3)) * 4
+            )
             self._depth_loss(
                 ctx=ctx,
                 label="voxel",
@@ -535,9 +538,7 @@ class VoxelTask(BEVTask):
             color = half_color
             proj_weights = per_pixel_weights
 
-            proj_loss = self.projection_loss(
-                projcolor, color, scales=3, mask=projmask
-            )
+            proj_loss = self.projection_loss(projcolor, color, scales=3, mask=projmask)
             identity_proj_loss = self.projection_loss(
                 color, primary_color, scales=3, mask=projmask
             )
