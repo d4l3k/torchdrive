@@ -107,7 +107,7 @@ else:
 device_id: int = rank % torch.cuda.device_count()
 device = torch.device(device_id)
 torch.cuda.set_device(device)
-# pyre-fixme[16: no attribute set_float32_matmul_precision
+# pyre-fixme[16]: no attribute set_float32_matmul_precision
 torch.set_float32_matmul_precision("high")
 
 BS: int = args.batch_size
