@@ -92,7 +92,7 @@ class PathTask(BEVTask):
 
             # normalize by number of elements in sequence
             losses[f"position/{i}"] = (
-                per_token_loss.sum(dim=(1, 2)) * 50 / (num_elements + 1)
+                per_token_loss.sum(dim=(1, 2)) * 5 / (num_elements + 1)
             )
 
             prev = torch.cat((prev[..., :1], predicted[..., :-1]), dim=-1)

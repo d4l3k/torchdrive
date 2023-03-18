@@ -233,7 +233,9 @@ optimizer = optim.AdamW(
     weight_decay=1e-2,  # 1e-4
 )  # increased to reduce exploding gradients
 lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.1)
-scaler: amp.GradScaler = amp.GradScaler()
+# scaler is only needed for fp16 not bf16
+# scaler: amp.GradScaler = amp.GradScaler()
+scaler: Optional[amp.GradScaler] = None
 
 if args.load:
     state_dict: Dict[str, torch.Tensor] = torch.load(args.load, map_location=device)
@@ -331,7 +333,8 @@ for epoch in range(NUM_EPOCHS):
         loss: torch.Tensor = cast(torch.Tensor, sum(losses.values()))
         assert not loss.requires_grad
 
-        scaler.unscale_(optimizer)
+        if scaler:
+            scaler.unscale_(optimizer)
         if log_text and writer and args.grad_sizes:
             with torch.no_grad():
                 max_grad = 0
@@ -356,8 +359,11 @@ for epoch in range(NUM_EPOCHS):
         if args.grad_clip > 0:
             # clip gradients to avoid loss explosion
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
-        scaler.step(optimizer)
-        scaler.update()
+        if scaler:
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            optimizer.step()
 
         with torch.no_grad():
             epoch_loss += loss.detach()
