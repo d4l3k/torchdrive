@@ -138,7 +138,7 @@ class MultiCamDataset(Dataset):
         self.heading_bins: Dict[int, int] = defaultdict(lambda: 0)
 
         DROP_FIRST_N = 10
-        DROP_LAST_N = 10 + self.nframes_per_point
+        DROP_LAST_N = 20 + self.nframes_per_point
         if not dynamic:
             DROP_LAST_N += 30
         MIN_DIST_M = 10

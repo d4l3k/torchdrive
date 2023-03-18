@@ -176,6 +176,7 @@ class BEVTaskVan(torch.nn.Module):
         self, batch: Batch, global_step: int, scaler: Optional[amp.GradScaler] = None
     ) -> Dict[str, torch.Tensor]:
         BS = len(batch.distances)
+        log_text: bool
         log_img, log_text = self.should_log(global_step, BS)
 
         last_cam_feats = {}
@@ -217,26 +218,48 @@ class BEVTaskVan(torch.nn.Module):
                 cam_feats=last_cam_feats,
             )
 
-            def _run_tasks(tasks: nn.ModuleDict, task_bev: torch.Tensor) -> None:
+            def _run_tasks(
+                task_type: str, tasks: nn.ModuleDict, task_bev: torch.Tensor
+            ) -> None:
                 for name, task in tasks.items():
                     with torch.autograd.profiler.record_function(name):
                         ctx.name = name
 
                         task_start = time.time()
-                        task_losses = task(ctx, batch, task_bev)
-                        ctx.backward(task_losses)
+                        with autograd_context(task_bev) as per_task_bev:
+                            task_losses = task(ctx, batch, per_task_bev)
+                            ctx.backward(task_losses)
+                            if log_text and (writer := self.writer) is not None:
+                                writer.add_scalars(
+                                    f"grad/norm/{task_type}",
+                                    {
+                                        name: torch.linalg.vector_norm(
+                                            per_task_bev.grad
+                                        ).float()
+                                    },
+                                    global_step=global_step,
+                                )
+
                         for k, v in task_losses.items():
                             losses[name + "-" + k] = v
 
                         task_times[name] = time.time() - task_start
 
-            _run_tasks(self.tasks, bev)
+            _run_tasks("bev", self.tasks, bev)
 
             if len(self.hr_tasks) > 0:
-                with autocast():
-                    hr_bev = self.upsample(bev)
-                with autograd_context(hr_bev) as hr_bev:
-                    _run_tasks(self.hr_tasks, hr_bev)
+                with autograd_context(bev) as bev:
+                    with autocast():
+                        hr_bev = self.upsample(bev)
+                    with autograd_context(hr_bev) as hr_bev:
+                        _run_tasks("hr_bev", self.hr_tasks, hr_bev)
+
+                    if log_text and (writer := self.writer) is not None:
+                        writer.add_scalars(
+                            "grad/norm/bev",
+                            {"hr_bev": torch.linalg.vector_norm(bev.grad).float()},
+                            global_step=global_step,
+                        )
 
             if log_text and (writer := self.writer) is not None:
                 writer.add_scalars(

@@ -173,6 +173,8 @@ class VoxelTask(BEVTask):
 
         with autocast():
             embedding = self.decoder(bev).unflatten(1, (self.num_elem, self.height))
+        # convert back to float so sigmoid works
+        embedding = embedding.float()
 
         grid = embedding[:, :1].sigmoid_()
         feat_grid = embedding[:, 1:]
@@ -303,7 +305,7 @@ class VoxelTask(BEVTask):
 
         for cam in self.cameras:
             volumes = Volumes(
-                densities=grid.permute(0, 1, 4, 3, 2).float(),
+                densities=grid.permute(0, 1, 4, 3, 2),
                 features=feat_grid.permute(0, 1, 4, 3, 2).float()
                 if feat_grid is not None
                 else None,
