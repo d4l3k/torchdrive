@@ -1,8 +1,9 @@
 import itertools
 from contextlib import contextmanager
-from typing import cast, Generator, List, overload, Tuple, Union, TypeVar
+from typing import cast, Generator, List, overload, Tuple, TypeVar, Union
 
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 
 def autograd_pause(tensor: torch.Tensor) -> torch.Tensor:
@@ -65,7 +66,9 @@ def autograd_context(
         yield paused_tensors
     autograd_resume(*paused_tensors)
 
-T = TypeVar('T')
+
+T = TypeVar("T")
+
 
 @contextmanager
 def autograd_optional(tensor: T) -> Generator[T, None, None]:
@@ -74,3 +77,18 @@ def autograd_optional(tensor: T) -> Generator[T, None, None]:
             yield tensor
     else:
         yield tensor
+
+
+def log_grad_norm(
+    t: torch.Tensor, writer: SummaryWriter, key: str, tag: str, global_step: int
+) -> torch.Tensor:
+    # soft clone without copying data
+    t = t.view_as(t)
+
+    def backward_hook(grad: torch.Tensor) -> None:
+        writer.add_scalars(
+            key, {tag: torch.linalg.vector_norm(grad)}, global_step=global_step
+        )
+
+    t.register_hook(backward_hook)
+    return t

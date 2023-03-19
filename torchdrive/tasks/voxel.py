@@ -176,7 +176,7 @@ class VoxelTask(BEVTask):
         # convert back to float so sigmoid works
         embedding = embedding.float()
 
-        grid = embedding[:, :1].sigmoid_()
+        grid = embedding[:, :1].sigmoid()
         feat_grid = embedding[:, 1:]
 
         grid = grid.permute(0, 1, 4, 3, 2)

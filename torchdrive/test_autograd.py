@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import MagicMock
 
 import torch
 
@@ -7,6 +8,7 @@ from torchdrive.autograd import (
     autograd_optional,
     autograd_pause,
     autograd_resume,
+    log_grad_norm,
 )
 
 
@@ -77,4 +79,14 @@ class TestAutograd(unittest.TestCase):
             self.assertIsNotNone(a_paused.grad)
             self.assertIsNone(a.grad)
 
+        self.assertIsNotNone(a.grad)
+
+    def test_log_grad_norm(self) -> None:
+        a = torch.rand(1, 2)
+        a.requires_grad = True
+
+        writer = MagicMock()
+        b = log_grad_norm(a, writer, key="key", tag="tag", global_step=10)
+        b.mean().backward()
+        self.assertEquals(writer.add_scalars.call_count, 1)
         self.assertIsNotNone(a.grad)
