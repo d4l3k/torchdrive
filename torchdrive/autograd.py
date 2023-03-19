@@ -86,6 +86,10 @@ def log_grad_norm(
     tag: str,
     global_step: int,
 ) -> torch.Tensor:
+    """
+    log_grad_norm returns a tensor where the backwards gradient norm will be
+    logged to Tensorboard.
+    """
     if writer is None:
         return t
     nonopt_writer: SummaryWriter = writer
