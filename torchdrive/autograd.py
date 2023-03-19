@@ -1,6 +1,6 @@
 import itertools
 from contextlib import contextmanager
-from typing import cast, Generator, List, overload, Tuple, TypeVar, Union
+from typing import cast, Generator, List, Optional, overload, Tuple, TypeVar, Union
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -80,13 +80,20 @@ def autograd_optional(tensor: T) -> Generator[T, None, None]:
 
 
 def log_grad_norm(
-    t: torch.Tensor, writer: SummaryWriter, key: str, tag: str, global_step: int
+    t: torch.Tensor,
+    writer: Optional[SummaryWriter],
+    key: str,
+    tag: str,
+    global_step: int,
 ) -> torch.Tensor:
+    if writer is None:
+        return t
+    nonopt_writer: SummaryWriter = writer
     # soft clone without copying data
     t = t.view_as(t)
 
     def backward_hook(grad: torch.Tensor) -> None:
-        writer.add_scalars(
+        nonopt_writer.add_scalars(
             key, {tag: torch.linalg.vector_norm(grad)}, global_step=global_step
         )
 

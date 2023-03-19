@@ -9,7 +9,7 @@ from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
 
 from torchdrive.amp import autocast
-from torchdrive.autograd import autograd_context, autograd_resume
+from torchdrive.autograd import autograd_context, autograd_resume, log_grad_norm
 from torchdrive.data import Batch
 from torchdrive.losses import losses_backward
 from torchdrive.models.bev import BEVMerger, BEVUpsampler, CamBEVEncoder
@@ -226,19 +226,17 @@ class BEVTaskVan(torch.nn.Module):
                         ctx.name = name
 
                         task_start = time.time()
-                        with autograd_context(task_bev) as per_task_bev:
-                            task_losses = task(ctx, batch, per_task_bev)
-                            ctx.backward(task_losses)
-                            if log_text and (writer := self.writer) is not None:
-                                writer.add_scalars(
-                                    f"grad/norm/{task_type}",
-                                    {
-                                        name: torch.linalg.vector_norm(
-                                            per_task_bev.grad
-                                        ).float()
-                                    },
-                                    global_step=global_step,
-                                )
+                        per_task_bev = task_bev
+                        if log_text:
+                            per_task_bev = log_grad_norm(
+                                per_task_bev,
+                                self.writer,
+                                f"grad/norm/{task_type}",
+                                name,
+                                global_step,
+                            )
+                        task_losses = task(ctx, batch, per_task_bev)
+                        ctx.backward(task_losses)
 
                         for k, v in task_losses.items():
                             losses[name + "-" + k] = v
@@ -251,15 +249,11 @@ class BEVTaskVan(torch.nn.Module):
                 with autograd_context(bev) as bev:
                     with autocast():
                         hr_bev = self.upsample(bev)
-                    with autograd_context(hr_bev) as hr_bev:
-                        _run_tasks("hr_bev", self.hr_tasks, hr_bev)
-
-                    if log_text and (writer := self.writer) is not None:
-                        writer.add_scalars(
-                            "grad/norm/bev",
-                            {"hr_bev": torch.linalg.vector_norm(bev.grad).float()},
-                            global_step=global_step,
+                    if log_text:
+                        hr_bev = log_grad_norm(
+                            hr_bev, self.writer, "grad/norm/bev", "hr_bev", global_step
                         )
+                    _run_tasks("hr_bev", self.hr_tasks, hr_bev)
 
             if log_text and (writer := self.writer) is not None:
                 writer.add_scalars(
