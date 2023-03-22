@@ -98,7 +98,7 @@ def log_grad_norm(
 
     def backward_hook(grad: torch.Tensor) -> None:
         nonopt_writer.add_scalars(
-            key, {tag: torch.linalg.vector_norm(grad)}, global_step=global_step
+            key, {tag: torch.linalg.vector_norm(grad).float()}, global_step=global_step
         )
 
     t.register_hook(backward_hook)

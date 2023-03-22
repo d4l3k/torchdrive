@@ -409,6 +409,7 @@ class VoxelTask(BEVTask):
                 ctx=ctx,
                 label="cam",
                 cam=cam,
+                cam_T=cam_T,
                 disp=cam_disp,
                 depth=cam_depth,
                 semantic_vel=cam_vel,
@@ -420,7 +421,7 @@ class VoxelTask(BEVTask):
                 frame_time=frame_time,
                 primary_color=primary_color,
                 primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights * 0.1,
+                per_pixel_weights=per_pixel_weights * 0.01,
             )
 
             del cam_vel
@@ -432,14 +433,15 @@ class VoxelTask(BEVTask):
                 max_depth=self.max_depth,
             )
 
-            cam_target_loss = F.l1_loss(voxel_disp, cam_disp.detach()) * primary_mask
-            losses[f"lossvoxel_cam_target/{cam}"] = (
-                cam_target_loss.mean(dim=(1, 2, 3)) * 4
-            )
+            # cam_target_loss = F.l1_loss(voxel_disp, cam_disp.detach()) * primary_mask
+            # losses[f"lossvoxel_cam_target/{cam}"] = (
+            #    cam_target_loss.mean(dim=(1, 2, 3)) * 4
+            # )
             self._depth_loss(
                 ctx=ctx,
                 label="voxel",
                 cam=cam,
+                cam_T=cam_T,
                 disp=voxel_disp,
                 depth=voxel_depth,
                 semantic_vel=semantic_vel,
@@ -465,6 +467,7 @@ class VoxelTask(BEVTask):
         ctx: Context,
         label: str,
         cam: str,
+        cam_T: torch.Tensor,
         disp: torch.Tensor,
         depth: torch.Tensor,
         semantic_vel: torch.Tensor,
@@ -499,7 +502,9 @@ class VoxelTask(BEVTask):
                 {"max": amax, "min": amin},
             )
 
-        losses[f"losssmooth/{label}/{cam}"] = smooth_loss(disp, primary_color)
+        losses[f"losssmooth/{label}/{cam}"] = (
+            smooth_loss(disp, primary_color) * per_pixel_weights.mean() * 100
+        )
 
         if ctx.log_img:
             ctx.add_image(
@@ -515,10 +520,16 @@ class VoxelTask(BEVTask):
         for offset in self.offsets:
             target_frame = frame + offset
             assert target_frame >= 0, (frame, offset)
-            T = batch.frame_T[:, target_frame]
+            T = cam_T[:, target_frame]
             if offset < 0:
                 T = T.pinverse()
             time = frame_time[:, target_frame]
+
+            if offset == 0:
+                # offset 0 is only used in tests
+                assert (time == 0).all()
+                eye = torch.eye(4, dtype=T.dtype, device=T.device).expand(T.shape)
+                torch.testing.assert_close(T, eye)
 
             projcolor, projmask = self.project(
                 batch,
@@ -541,12 +552,14 @@ class VoxelTask(BEVTask):
             proj_weights = per_pixel_weights
 
             proj_loss = self.projection_loss(projcolor, color, scales=3, mask=projmask)
-            identity_proj_loss = self.projection_loss(
-                color, primary_color, scales=3, mask=projmask
-            )
+            # identity_proj_loss = self.projection_loss(
+            #    color, primary_color, scales=3, mask=projmask
+            # )
+            # identity_proj_loss += torch.full_like(identity_proj_loss, 0.00001)
 
             # automask
-            min_proj_loss = torch.minimum(proj_loss, identity_proj_loss)
+            min_proj_loss = proj_loss
+            # min_proj_loss = torch.minimum(proj_loss, identity_proj_loss)
 
             min_proj_loss *= proj_weights
             losses[f"lossproj-{label}/{cam}/o{offset}"] = (
@@ -570,10 +583,10 @@ class VoxelTask(BEVTask):
                     f"{label}/{cam}/{offset}/min_proj_loss",
                     render_color(min_proj_loss[0, 0]),
                 )
-                ctx.add_image(
-                    f"{label}/{cam}/{offset}/automask",
-                    render_color(proj_loss[0, 0] < identity_proj_loss[0, 0]),
-                )
+                # ctx.add_image(
+                #    f"{label}/{cam}/{offset}/automask",
+                #    render_color(proj_loss[0, 0] < identity_proj_loss[0, 0]),
+                # )
 
         ctx.backward(losses)
 

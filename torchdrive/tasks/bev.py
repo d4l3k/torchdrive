@@ -193,14 +193,44 @@ class BEVTaskVan(torch.nn.Module):
                     bev_frames.append(bev_frame)
             for frame in range(first_backprop_frame, self.num_encode_frames):
                 cams = {cam: batch.color[cam, frame] for cam in self.cameras}
+                # pause the last cam encoder backprop for tasks with image
+                # space losses
+                pause = frame == (self.num_encode_frames - 1)
+                if pause and log_text:
+
+                    def cam_feat_fn(cam: str, feat: torch.Tensor) -> torch.Tensor:
+                        return log_grad_norm(
+                            feat,
+                            self.writer,
+                            f"grad/norm/encoder/{cam}",
+                            "bev",
+                            global_step,
+                        )
+
+                else:
+                    cam_feat_fn = None
+
                 last_cam_feats, bev_frame = self.frame_encoder(
                     cams,
-                    # pause the last cam encoder backprop for tasks with image
-                    # space losses
-                    pause=frame == (self.num_encode_frames - 1),
+                    pause=pause,
+                    cam_feat_fn=cam_feat_fn,
                 )
                 bev_frames.append(bev_frame)
             bev = self.frame_merger(bev_frames)
+
+        last_cam_feats_resume = last_cam_feats
+
+        if log_text:
+            last_cam_feats = {
+                cam: log_grad_norm(
+                    feat,
+                    self.writer,
+                    f"grad/norm/encoder/{cam}",
+                    "cam_feats",
+                    global_step,
+                )
+                for cam, feat in last_cam_feats.items()
+            }
 
         with autograd_context(bev) as bev:
             losses: Dict[str, torch.Tensor] = {}
@@ -263,6 +293,6 @@ class BEVTaskVan(torch.nn.Module):
                 )
 
         # resume autograd on cameras
-        autograd_resume(*last_cam_feats.values())
+        autograd_resume(*last_cam_feats_resume.values())
 
         return losses

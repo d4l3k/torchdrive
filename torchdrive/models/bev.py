@@ -1,4 +1,4 @@
-from typing import Dict, List, Mapping, Tuple, Type
+from typing import Callable, Dict, List, Mapping, Optional, Tuple, Type
 
 import torch
 from torch import nn
@@ -122,7 +122,10 @@ class CamBEVEncoder(nn.Module):
         )
 
     def forward(
-        self, camera_frames: Mapping[str, torch.Tensor], pause: bool = False
+        self,
+        camera_frames: Mapping[str, torch.Tensor],
+        pause: bool = False,
+        cam_feat_fn: Optional[Callable[[str, torch.Tensor], torch.Tensor]] = None,
     ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
         cam_feats = {
             cam: self.cam_encoders[cam](camera_frames[cam]) for cam in self.cameras
@@ -130,9 +133,12 @@ class CamBEVEncoder(nn.Module):
         if pause:
             for k, v in cam_feats.items():
                 cam_feats[k] = autograd_pause(v)
-        ordered_grids = [
-            self.cam_transformers[cam]([cam_feats[cam]]) for cam in self.cameras
-        ]
+        ordered_grids = []
+        for cam in self.cameras:
+            cam_feat = cam_feats[cam]
+            if cam_feat_fn is not None:
+                cam_feat = cam_feat_fn(cam, cam_feat)
+            ordered_grids.append(self.cam_transformers[cam]([cam_feat]))
         return cam_feats, self.conv(torch.cat(ordered_grids, dim=1))
 
 

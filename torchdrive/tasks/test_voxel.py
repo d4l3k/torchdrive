@@ -22,7 +22,7 @@ class TestVoxel(unittest.TestCase):
             device=device,
             render_batch_size=1,
             n_pts_per_ray=10,
-            offsets=(-1, 1),
+            offsets=(-1, 0, 1),
         ).to(device)
         batch = dummy_batch().to(device)
         ctx = Context(
@@ -45,18 +45,20 @@ class TestVoxel(unittest.TestCase):
                 "tvl1",
                 "lossproj-voxel/right/o1",
                 "lossproj-voxel/left/o1",
+                "lossproj-voxel/right/o0",
+                "lossproj-voxel/left/o0",
                 "lossproj-voxel/right/o-1",
                 "lossproj-voxel/left/o-1",
                 "lossproj-cam/right/o1",
                 "lossproj-cam/left/o1",
+                "lossproj-cam/right/o0",
+                "lossproj-cam/left/o0",
                 "lossproj-cam/right/o-1",
                 "lossproj-cam/left/o-1",
                 "losssmooth/voxel/left",
                 "losssmooth/voxel/right",
                 "losssmooth/cam/left",
                 "losssmooth/cam/right",
-                "lossvoxel_cam_target/left",
-                "lossvoxel_cam_target/right",
             ],
         )
 
@@ -71,7 +73,7 @@ class TestVoxel(unittest.TestCase):
             height=12,
             device=device,
             semantic=["left"],
-            offsets=(-1, 1),
+            offsets=(-1, 0, 1),
         )
         batch = dummy_batch()
         ctx = Context(
@@ -96,18 +98,20 @@ class TestVoxel(unittest.TestCase):
                 # "semantic/right",
                 "lossproj-voxel/right/o1",
                 "lossproj-voxel/left/o1",
+                "lossproj-voxel/right/o0",
+                "lossproj-voxel/left/o0",
                 "lossproj-voxel/right/o-1",
                 "lossproj-voxel/left/o-1",
                 "lossproj-cam/right/o1",
                 "lossproj-cam/left/o1",
+                "lossproj-cam/right/o0",
+                "lossproj-cam/left/o0",
                 "lossproj-cam/right/o-1",
                 "lossproj-cam/left/o-1",
                 "losssmooth/voxel/left",
                 "losssmooth/voxel/right",
                 "losssmooth/cam/left",
                 "losssmooth/cam/right",
-                "lossvoxel_cam_target/left",
-                "lossvoxel_cam_target/right",
             ],
         )
 
