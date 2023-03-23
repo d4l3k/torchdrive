@@ -421,7 +421,7 @@ class VoxelTask(BEVTask):
                 frame_time=frame_time,
                 primary_color=primary_color,
                 primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights * 0.01,
+                per_pixel_weights=per_pixel_weights * 0.1,
             )
 
             del cam_vel
@@ -502,8 +502,11 @@ class VoxelTask(BEVTask):
                 {"max": amax, "min": amin},
             )
 
-        losses[f"losssmooth/{label}/{cam}"] = (
-            smooth_loss(disp, primary_color) * per_pixel_weights.mean() * 100
+        losses[f"losssmooth/{label}/{cam}/color"] = (
+            smooth_loss(disp, primary_color) * per_pixel_weights.mean() * 20
+        )
+        losses[f"losssmooth/{label}/{cam}/vel"] = (
+            smooth_loss(disp, semantic_vel) * per_pixel_weights.mean() * 20
         )
 
         if ctx.log_img:
@@ -521,8 +524,6 @@ class VoxelTask(BEVTask):
             target_frame = frame + offset
             assert target_frame >= 0, (frame, offset)
             T = cam_T[:, target_frame]
-            if offset < 0:
-                T = T.pinverse()
             time = frame_time[:, target_frame]
 
             if offset == 0:
@@ -561,7 +562,7 @@ class VoxelTask(BEVTask):
             min_proj_loss = proj_loss
             # min_proj_loss = torch.minimum(proj_loss, identity_proj_loss)
 
-            min_proj_loss *= proj_weights
+            min_proj_loss = min_proj_loss * proj_weights
             losses[f"lossproj-{label}/{cam}/o{offset}"] = (
                 min_proj_loss.mean(dim=(1, 2, 3)) * 40
             )

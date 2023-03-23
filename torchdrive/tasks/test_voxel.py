@@ -8,6 +8,30 @@ from torchdrive.data import dummy_batch
 from torchdrive.tasks.bev import Context
 from torchdrive.tasks.voxel import axis_grid, VoxelTask
 
+SHARED_LOSSES = [
+    "tvl1",
+    "lossproj-voxel/right/o1",
+    "lossproj-voxel/left/o1",
+    "lossproj-voxel/right/o0",
+    "lossproj-voxel/left/o0",
+    "lossproj-voxel/right/o-1",
+    "lossproj-voxel/left/o-1",
+    "lossproj-cam/right/o1",
+    "lossproj-cam/left/o1",
+    "lossproj-cam/right/o0",
+    "lossproj-cam/left/o0",
+    "lossproj-cam/right/o-1",
+    "lossproj-cam/left/o-1",
+    "losssmooth/voxel/left/vel",
+    "losssmooth/voxel/left/color",
+    "losssmooth/voxel/right/vel",
+    "losssmooth/voxel/right/color",
+    "losssmooth/cam/left/vel",
+    "losssmooth/cam/left/color",
+    "losssmooth/cam/right/vel",
+    "losssmooth/cam/right/color",
+]
+
 
 class TestVoxel(unittest.TestCase):
     def test_voxel_task(self) -> None:
@@ -39,28 +63,7 @@ class TestVoxel(unittest.TestCase):
         )
         bev = torch.rand(2, 5, 4, 4, device=device)
         losses = m(ctx, batch, bev)
-        self.assertCountEqual(
-            losses.keys(),
-            [
-                "tvl1",
-                "lossproj-voxel/right/o1",
-                "lossproj-voxel/left/o1",
-                "lossproj-voxel/right/o0",
-                "lossproj-voxel/left/o0",
-                "lossproj-voxel/right/o-1",
-                "lossproj-voxel/left/o-1",
-                "lossproj-cam/right/o1",
-                "lossproj-cam/left/o1",
-                "lossproj-cam/right/o0",
-                "lossproj-cam/left/o0",
-                "lossproj-cam/right/o-1",
-                "lossproj-cam/left/o-1",
-                "losssmooth/voxel/left",
-                "losssmooth/voxel/right",
-                "losssmooth/cam/left",
-                "losssmooth/cam/right",
-            ],
-        )
+        self.assertCountEqual(losses.keys(), SHARED_LOSSES)
 
     def test_semantic_voxel_task(self) -> None:
         device = torch.device("cpu")
@@ -93,26 +96,10 @@ class TestVoxel(unittest.TestCase):
         self.assertCountEqual(
             losses.keys(),
             [
-                "tvl1",
                 # "semantic/left",
                 # "semantic/right",
-                "lossproj-voxel/right/o1",
-                "lossproj-voxel/left/o1",
-                "lossproj-voxel/right/o0",
-                "lossproj-voxel/left/o0",
-                "lossproj-voxel/right/o-1",
-                "lossproj-voxel/left/o-1",
-                "lossproj-cam/right/o1",
-                "lossproj-cam/left/o1",
-                "lossproj-cam/right/o0",
-                "lossproj-cam/left/o0",
-                "lossproj-cam/right/o-1",
-                "lossproj-cam/left/o-1",
-                "losssmooth/voxel/left",
-                "losssmooth/voxel/right",
-                "losssmooth/cam/left",
-                "losssmooth/cam/right",
-            ],
+            ]
+            + SHARED_LOSSES,
         )
 
     def test_axis_grid(self) -> None:
