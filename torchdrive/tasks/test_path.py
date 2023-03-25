@@ -13,7 +13,7 @@ class TestPath(unittest.TestCase):
     def test_path_task(self) -> None:
         m = PathTask(
             bev_shape=(4, 4),
-            bev_dim=5,
+            bev_dim=6,
             dim=8,
             num_heads=2,
             num_layers=1,
@@ -31,7 +31,7 @@ class TestPath(unittest.TestCase):
             output="/invalid",
             weights=batch.weight,
         )
-        bev = torch.rand(2, 5, 4, 4)
+        bev = torch.rand(2, 6, 4, 4)
         losses = m(ctx, batch, bev)
         self.assertCountEqual(
             losses.keys(),

@@ -134,7 +134,7 @@ class DetTask(BEVTask):
                     points3d, K, T, w, h
                 )
 
-                primary_color = batch.color[cam, frame]
+                primary_color = batch.color[cam][:, frame]
                 with torch.inference_mode():
                     target_preds = self.det(primary_color)
 

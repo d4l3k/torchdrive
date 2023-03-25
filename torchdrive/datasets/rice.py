@@ -524,7 +524,7 @@ class MultiCamDataset(Dataset):
 
         Ks: Dict[str, torch.Tensor] = {}
         Ts: Dict[str, torch.Tensor] = {}
-        colors: Dict[Tuple[str, int], torch.Tensor] = {}
+        colors: Dict[str, torch.Tensor] = {}
         masks: Dict[str, torch.Tensor] = {}
 
         def load(cam: str, frames: List[int]) -> None:
@@ -540,8 +540,7 @@ class MultiCamDataset(Dataset):
             Ks[label] = K
             # out["inv_K", label] = K.pinverse()
             Ts[label] = T
-            for i, c in enumerate(color):
-                colors[label, i] = c.to(self.dtype)
+            colors[label] = torch.stack(color).to(self.dtype)
             masks[label] = mask.to(self.dtype)
 
         for camera in self.cameras:

@@ -60,7 +60,7 @@ class AETask(BEVTask):
         num_frames = batch.distances.shape[1]
         losses = {}
         for cam in self.cameras:
-            target = batch.color[cam, ctx.start_frame]
+            target = batch.color[cam][:, ctx.start_frame]
             with autocast():
                 target = F.interpolate(
                     target, size=self.out_shape, mode="bilinear", align_corners=False

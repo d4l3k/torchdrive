@@ -31,8 +31,8 @@ class Batch:
     K: Dict[str, torch.Tensor]
     # car to camera local translation matrix, extrinsics
     T: Dict[str, torch.Tensor]
-    # per camera and frame color data
-    color: Dict[Tuple[str, int], torch.Tensor]
+    # per camera and frame color data [BS, N, 3, H, W]
+    color: Dict[str, torch.Tensor]
     # per camera mask
     mask: Dict[str, torch.Tensor]
     # sequential cam_T only aligned with the start frames extending into the
@@ -82,8 +82,7 @@ def dummy_item() -> Batch:
     color = {}
     cams = ["left", "right"]
     for cam in cams:
-        for i in range(N):
-            color[cam, i] = torch.rand(3, 48, 64)
+        color[cam] = torch.rand(N, 3, 48, 64)
     return Batch(
         weight=torch.rand(1)[0],
         distances=torch.rand(N),

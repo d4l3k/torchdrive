@@ -336,7 +336,7 @@ class VoxelTask(BEVTask):
 
             frame = ctx.start_frame
 
-            primary_color = batch.color[cam, frame]
+            primary_color = batch.color[cam][:, frame]
             primary_color = F.interpolate(
                 primary_color.float(),
                 [h // 2, w // 2],
@@ -421,7 +421,7 @@ class VoxelTask(BEVTask):
                 frame_time=frame_time,
                 primary_color=primary_color,
                 primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights,# * 0.1,
+                per_pixel_weights=per_pixel_weights,  # * 0.1,
             )
 
             del cam_vel
@@ -542,7 +542,7 @@ class VoxelTask(BEVTask):
                 semantic_vel * time.reshape(-1, 1, 1, 1),
             )
             projmask *= primary_mask
-            color = batch.color[cam, target_frame]
+            color = batch.color[cam][:, target_frame]
             half_color = F.interpolate(
                 color.float(),
                 [h // 2, w // 2],

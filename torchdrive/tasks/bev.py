@@ -166,7 +166,7 @@ class BEVTaskVan(torch.nn.Module):
         per_cam_set = set(per_cam_params)
         params = [p for p in self.parameters() if p not in per_cam_set]
         per_cam_lr = lr
-        per_cam_lr /= len (self.cameras)
+        per_cam_lr /= len(self.cameras)
         return [
             {"name": "default", "params": params, "lr": lr},
             {"name": "per_cam", "params": per_cam_params, "lr": per_cam_lr},
@@ -188,11 +188,11 @@ class BEVTaskVan(torch.nn.Module):
             )
             with torch.no_grad():
                 for frame in range(0, first_backprop_frame):
-                    cams = {cam: batch.color[cam, frame] for cam in self.cameras}
+                    cams = {cam: batch.color[cam][:, frame] for cam in self.cameras}
                     _, bev_frame = self.frame_encoder(cams)
                     bev_frames.append(bev_frame)
             for frame in range(first_backprop_frame, self.num_encode_frames):
-                cams = {cam: batch.color[cam, frame] for cam in self.cameras}
+                cams = {cam: batch.color[cam][:, frame] for cam in self.cameras}
                 # pause the last cam encoder backprop for tasks with image
                 # space losses
                 pause = frame == (self.num_encode_frames - 1)
