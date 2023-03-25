@@ -19,7 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
 from torchdrive.datasets.rice import MultiCamDataset
-from torchdrive.dist import run_ddp
+from torchdrive.dist import run_ddp_concat
 from torchdrive.tasks.ae import AETask
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 from torchdrive.tasks.det import DetTask
@@ -341,6 +341,8 @@ for epoch in range(NUM_EPOCHS):
         loss: torch.Tensor = cast(torch.Tensor, sum(losses.values()))
         assert not loss.requires_grad
 
+        run_ddp_concat(model.parameters())
+
         if scaler:
             scaler.unscale_(optimizer)
         if log_text and writer and args.grad_sizes:
@@ -367,8 +369,6 @@ for epoch in range(NUM_EPOCHS):
         if args.grad_clip > 0:
             # clip gradients to avoid loss explosion
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
-
-        run_ddp(model.parameters())
 
         if scaler:
             scaler.step(optimizer)
