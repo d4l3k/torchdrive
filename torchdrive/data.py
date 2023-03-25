@@ -10,6 +10,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from concurrent.futures import ThreadPoolExecutor
 
 import torch
 from torch.utils.data import DataLoader, default_collate
@@ -236,34 +237,36 @@ class TransferCollator:
         buffer_factor: int = 2,
     ) -> None:
         self.dataloader = dataloader
-        self.buf: List[Batch] = []
+        self.futures: List[Batch] = []
         self.device = device
         self.batch_size = batch_size
         self.buffer_factor = buffer_factor
         self.iter: Optional[Iterator[Batch]] = None
 
+        self.pool = ThreadPoolExecutor(max_workers=1)
+
     def __iter__(self) -> "TransferCollator":
         self.iter = iter(self.dataloader)
-        self.buf = []
+        self.futures = []
         return self
+
+    def _get_batch(self) -> Batch:
+        frames = []
+        while len(frames) < self.batch_size:
+            frame = next(self.iter)
+            if frame is None:
+                continue
+            frame = frame.to(self.device)
+            frames.append(frame)
+        return collate(frames)
 
     def __next__(self) -> Batch:
         it = self.iter
         assert it is not None
-        while len(self.buf) < (self.buffer_factor * self.batch_size):
-            try:
-                out: Batch = next(it)
-            except StopIteration:
-                break
-            if out is None:
-                continue
-            self.buf.append(out.to(self.device))
+        while len(self.futures) < self.buffer_factor:
+            self.futures.append(self.pool.submit(self._get_batch))
 
-        if len(self.buf) < self.batch_size:
-            raise StopIteration
-
-        batch = collate(self.buf[: self.batch_size])
-        self.buf = self.buf[self.batch_size :]
+        batch: Optional[Batch] = self.futures.pop(0).result()
 
         assert batch is not None, "collate returned None"
         return batch
