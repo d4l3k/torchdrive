@@ -22,6 +22,17 @@ def run_ddp(params: Iterable[nn.Parameter]) -> None:
         handle.wait()
 
 
+def _all_reduce_params(group_params: List[nn.Parameter]) -> Work:
+    grads = torch.cat([param.grad.view(-1) for param in group_params])
+    size = 0
+    for p in group_params:
+        grad_size = p.numel()
+        p.grad = grads[size : size + grad_size].view_as(p.grad)
+        size += grad_size
+
+    return dist.all_reduce(grads, async_op=True)
+
+
 def run_ddp_concat(
     params: Iterable[nn.Parameter], bucket_cap_elem: int = 6250000
 ) -> None:
@@ -39,29 +50,16 @@ def run_ddp_concat(
     group_size: int = 0
     group_params: List[nn.Parameter] = []
 
-    def flush() -> None:
-        nonlocal group_params
-        if len(group_params) == 0:
-            return
-        grads = torch.cat([param.grad.view(-1) for param in group_params])
-        size = 0
-        for p in group_params:
-            grad_size = p.numel()
-            p.grad = grads[size : size + grad_size].view_as(p.grad)
-            size += grad_size
-
-        handle = dist.all_reduce(grads, async_op=True)
-        handles.append(handle)
-        group_params = []
-        group_size = 0
-
     for param in params:
         if param.requires_grad and param.grad is not None:
             group_params.append(param)
             group_size += param.grad.numel()
             if group_size >= bucket_cap_elem:
-                flush()
-    flush()
+                handles.append(_all_reduce_params(group_params))
+                group_params = []
+                group_size = 0
+    if len(group_params) > 0:
+        handles.append(_all_reduce_params(group_params))
 
     for handle in handles:
         handle.wait()
