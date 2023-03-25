@@ -115,7 +115,7 @@ class VoxelTask(BEVTask):
             background += [0.0, 0.0, 0.0]
             self.num_elem += self.classes_elem + self.vel_elem
             self.segment: BDD100KSemSeg = BDD100KSemSeg(
-                device=device,  # compile_fn=compile_fn
+                device=device, compile_fn=compile_fn
             )
 
         h, w = cam_shape
