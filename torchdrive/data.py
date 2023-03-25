@@ -1,7 +1,10 @@
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, fields
 from typing import (
     Callable,
     Dict,
+    Generator,
     Iterator,
     List,
     Mapping,
@@ -10,8 +13,6 @@ from typing import (
     TypeVar,
     Union,
 )
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 
 import torch
 from torch.utils.data import DataLoader, default_collate
@@ -238,7 +239,7 @@ class TransferCollator:
         buffer_factor: int = 2,
     ) -> None:
         self.dataloader = dataloader
-        self.futures: List[Batch] = []
+        self.futures: List[Future[Optional[Batch]]] = []
         self.device = device
         self.batch_size = batch_size
         self.buffer_factor = buffer_factor
@@ -252,7 +253,7 @@ class TransferCollator:
         return self
 
     @contextmanager
-    def _stream_sync(self):
+    def _stream_sync(self) -> Generator[None, None, None]:
         """
         _stream_sync creates a new CUDA stream to run and then synchronizes at
         the end.
@@ -265,11 +266,14 @@ class TransferCollator:
         else:
             yield
 
-    def _get_batch(self) -> Batch:
+    def _get_batch(self) -> Optional[Batch]:
+        it = self.iter
+        assert it, "must have iterator"
+
         with self._stream_sync():
             frames = []
             while len(frames) < self.batch_size:
-                frame = next(self.iter)
+                frame = next(it)
                 if frame is None:
                     continue
                 frame = frame.to(self.device)
