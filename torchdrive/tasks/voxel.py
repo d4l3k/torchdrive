@@ -246,7 +246,7 @@ class VoxelTask(BEVTask):
             losses = {}
 
             # total variation loss to encourage sharp edges
-            losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 0.1
+            losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 1e-2
 
             mini_batches = batch.split(self.render_batch_size)
             mini_grids = torch.split(grid, self.render_batch_size)
@@ -421,7 +421,7 @@ class VoxelTask(BEVTask):
                 frame_time=frame_time,
                 primary_color=primary_color,
                 primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights * 0.1,
+                per_pixel_weights=per_pixel_weights,# * 0.1,
             )
 
             del cam_vel
@@ -453,7 +453,7 @@ class VoxelTask(BEVTask):
                 frame_time=frame_time,
                 primary_color=primary_color,
                 primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights,
+                per_pixel_weights=per_pixel_weights * 1e-2,
             )
             del voxel_depth
             del semantic_vel
