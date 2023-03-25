@@ -11,6 +11,7 @@ from typing import (
     Union,
 )
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
 import torch
 from torch.utils.data import DataLoader, default_collate
@@ -250,15 +251,30 @@ class TransferCollator:
         self.futures = []
         return self
 
+    @contextmanager
+    def _stream_sync(self):
+        """
+        _stream_sync creates a new CUDA stream to run and then synchronizes at
+        the end.
+        """
+        if self.device.type == "cuda":
+            s = torch.cuda.Stream()
+            with torch.cuda.stream(s):
+                yield
+            s.synchronize()
+        else:
+            yield
+
     def _get_batch(self) -> Batch:
-        frames = []
-        while len(frames) < self.batch_size:
-            frame = next(self.iter)
-            if frame is None:
-                continue
-            frame = frame.to(self.device)
-            frames.append(frame)
-        return collate(frames)
+        with self._stream_sync():
+            frames = []
+            while len(frames) < self.batch_size:
+                frame = next(self.iter)
+                if frame is None:
+                    continue
+                frame = frame.to(self.device)
+                frames.append(frame)
+            return collate(frames)
 
     def __next__(self) -> Batch:
         it = self.iter
