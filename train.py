@@ -10,7 +10,7 @@ import torch
 import torch.distributed as dist
 from torch import nn, optim
 from torch.cuda import amp
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel
 from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -19,6 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
 from torchdrive.datasets.rice import MultiCamDataset
+from torchdrive.dist import run_ddp
 from torchdrive.tasks.ae import AETask
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 from torchdrive.tasks.det import DetTask
@@ -141,7 +142,7 @@ dataloader = DataLoader[Batch](
     # drop_last=True,
     # collate_fn=nonstrict_collate,
     pin_memory=True,
-    # sampler=sampler,
+    sampler=sampler,
 )
 collator = TransferCollator(dataloader, batch_size=args.batch_size, device=device)
 
@@ -207,9 +208,12 @@ model = BEVTaskVan(
 )
 
 model = model.to(device)
-if world_size > 1:
-    ddp_model: torch.nn.Module = DDP(
-        model, device_ids=[device_id], find_unused_parameters=True
+if False and world_size > 1:
+    ddp_model: torch.nn.Module = DistributedDataParallel(
+        model,
+        device_ids=[device_id],
+        find_unused_parameters=False,
+        # static_graph=True,
     )
 else:
     ddp_model = model
@@ -277,6 +281,8 @@ def reset_metrics() -> None:
 
 
 def save(epoch: int) -> None:
+    if rank != 0:
+        return
     path = os.path.join(args.output, f"model_{epoch}.pt")
     torch.save(
         {
@@ -289,7 +295,7 @@ def save(epoch: int) -> None:
     print(f"saved to {path}, loss = {l}")
 
 
-if args.profile:
+if args.profile and rank == 0:
     prof: Optional[torch.profiler.profile] = torch.profiler.profile(
         schedule=torch.profiler.schedule(wait=10, warmup=1, active=1, repeat=1),
         on_trace_ready=torch.profiler.tensorboard_trace_handler(
@@ -299,6 +305,8 @@ if args.profile:
         profile_memory=True,
         with_stack=False,
     ).__enter__()
+else:
+    prof = None
 
 for epoch in range(NUM_EPOCHS):
 
@@ -359,6 +367,9 @@ for epoch in range(NUM_EPOCHS):
         if args.grad_clip > 0:
             # clip gradients to avoid loss explosion
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
+
+        run_ddp(model.parameters())
+
         if scaler:
             scaler.step(optimizer)
             scaler.update()
