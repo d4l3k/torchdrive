@@ -453,7 +453,7 @@ class VoxelTask(BEVTask):
                 frame_time=frame_time,
                 primary_color=primary_color,
                 primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights * 1e-2,
+                per_pixel_weights=per_pixel_weights, #* 1e-1,
             )
             del voxel_depth
             del semantic_vel

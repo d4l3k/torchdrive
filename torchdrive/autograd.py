@@ -29,6 +29,7 @@ def autograd_resume(*tensors: torch.Tensor) -> None:
     # pyre-ignore
     parents: List[torch.Tensor] = [t.parent for t in tensors]
     grad_tensors: List[torch.Tensor] = [cast(torch.Tensor, t.grad) for t in tensors]
+    # TODO: run in separate CUDA stream
     torch.autograd.backward(
         tensors=parents,
         grad_tensors=grad_tensors,
