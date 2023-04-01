@@ -88,6 +88,15 @@ else:
     world_size = 1
     rank = 0
 
+device_id: int = rank % torch.cuda.device_count()
+device = torch.device(device_id)
+torch.cuda.set_device(device)
+# pyre-fixme[16]: no attribute set_float32_matmul_precision
+torch.set_float32_matmul_precision("high")
+
+BS: int = args.batch_size
+NUM_EPOCHS: int = args.epochs
+
 if rank == 0:
     writer: Optional[SummaryWriter] = SummaryWriter(
         log_dir=os.path.join(args.output, "tb"),
@@ -105,14 +114,6 @@ if rank == 0:
 else:
     writer = None
 
-device_id: int = rank % torch.cuda.device_count()
-device = torch.device(device_id)
-torch.cuda.set_device(device)
-# pyre-fixme[16]: no attribute set_float32_matmul_precision
-torch.set_float32_matmul_precision("high")
-
-BS: int = args.batch_size
-NUM_EPOCHS: int = args.epochs
 
 dataset = MultiCamDataset(
     index_file=args.dataset,
@@ -295,7 +296,7 @@ def save(epoch: int) -> None:
     print(f"saved to {path}, loss = {l}")
 
 
-if args.profile and rank == 0:
+if args.profile:# and rank == 0:
     prof: Optional[torch.profiler.profile] = torch.profiler.profile(
         schedule=torch.profiler.schedule(wait=10, warmup=1, active=1, repeat=1),
         on_trace_ready=torch.profiler.tensorboard_trace_handler(
