@@ -296,7 +296,7 @@ def save(epoch: int) -> None:
     print(f"saved to {path}, loss = {l}")
 
 
-if args.profile:# and rank == 0:
+if args.profile:  # and rank == 0:
     prof: Optional[torch.profiler.profile] = torch.profiler.profile(
         schedule=torch.profiler.schedule(wait=10, warmup=1, active=1, repeat=1),
         on_trace_ready=torch.profiler.tensorboard_trace_handler(
