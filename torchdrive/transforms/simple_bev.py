@@ -10,7 +10,7 @@ def lift_cam_to_voxel(
     T: torch.Tensor,
     grid_shape: Tuple[int, int, int],
     eps: float = 1e-7,
-) -> torch.Tensor:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Lift the features from a camera to a Voxel volume.
 
@@ -51,7 +51,7 @@ def lift_cam_to_voxel(
     z = cam_points[:, 2, :]
 
     valid = z > 0
-    valid = valid.reshape(BS, *grid_shape)
+    valid = valid.reshape(BS, 1, *grid_shape)
 
     # grid_sample needs a 2d input so we add a dummy dimension
     pix_coords = pix_coords.permute(0, 2, 1).unsqueeze(1)
@@ -61,6 +61,6 @@ def lift_cam_to_voxel(
 
     # restore to grid shape
     values = values.squeeze(2).unflatten(-1, grid_shape)
-    values *= valid.unsqueeze(1)
+    values *= valid
 
-    return values
+    return values, valid
