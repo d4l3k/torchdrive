@@ -287,9 +287,7 @@ class Encoder_res50(nn.Module):
 class Segnet(nn.Module):
     def __init__(
         self,
-        Z: int,
-        Y: int,
-        X: int,
+        grid_shape: Tuple[int, int, int],
         use_radar: bool = False,
         use_lidar: bool = False,
         use_metaradar: bool = False,
@@ -298,12 +296,15 @@ class Segnet(nn.Module):
         latent_dim: int = 128,
         encoder_type: str = "res101",
     ) -> None:
+        """
+        Args:
+            grid_shape: tuple of (X, Y, Z) where Z is the vertical axis.
+        """
         super(Segnet, self).__init__()
         assert encoder_type in ["res101", "res50", "effb0", "effb4"]
 
-        self.X = X
-        self.Y = Y
-        self.Z = Z
+        X, Y, Z = grid_shape
+        self.grid_shape = grid_shape
         self.use_radar = use_radar
         self.use_lidar = use_lidar
         self.use_metaradar = use_metaradar
@@ -330,7 +331,7 @@ class Segnet(nn.Module):
             if self.use_metaradar:
                 self.bev_compressor: nn.Sequential = nn.Sequential(
                     nn.Conv2d(
-                        feat2d_dim * Y + 16 * Y,
+                        feat2d_dim * Z + 16 * Z,
                         feat2d_dim,
                         kernel_size=3,
                         padding=1,
@@ -343,7 +344,7 @@ class Segnet(nn.Module):
             else:
                 self.bev_compressor = nn.Sequential(
                     nn.Conv2d(
-                        feat2d_dim * Y + 1,
+                        feat2d_dim * Z + 1,
                         feat2d_dim,
                         kernel_size=3,
                         padding=1,
@@ -356,7 +357,7 @@ class Segnet(nn.Module):
         elif self.use_lidar:
             self.bev_compressor = nn.Sequential(
                 nn.Conv2d(
-                    feat2d_dim * Y + Y,
+                    feat2d_dim * Z + Z,
                     feat2d_dim,
                     kernel_size=3,
                     padding=1,
@@ -370,7 +371,7 @@ class Segnet(nn.Module):
             if self.do_rgbcompress:
                 self.bev_compressor = nn.Sequential(
                     nn.Conv2d(
-                        feat2d_dim * Y,
+                        feat2d_dim * Z,
                         feat2d_dim,
                         kernel_size=3,
                         padding=1,
@@ -393,14 +394,6 @@ class Segnet(nn.Module):
         self.ce_weight = nn.Parameter(torch.tensor(0.0), requires_grad=True)
         self.center_weight = nn.Parameter(torch.tensor(0.0), requires_grad=True)
         self.offset_weight = nn.Parameter(torch.tensor(0.0), requires_grad=True)
-
-        # set_bn_momentum(self, 0.1)
-
-        # if vox_util is not None:
-        #    xyz_memA = utils.basic.gridcloud3d(1, Z, Y, X, norm=False)
-        #    self.xyz_camA = vox_util.Mem2Ref(xyz_memA, Z, Y, X, assert_cube=False)
-        # else:
-        #    self.xyz_camA = None
 
     def forward(
         self,
@@ -432,13 +425,7 @@ class Segnet(nn.Module):
         """
         B, S, C, H, W = rgb_camXs.shape
         assert C == 3
-        # reshape tensors
-        # __p = lambda x: utils.basic.pack_seqdim(x, B)
-        # __u = lambda x: utils.basic.unpack_seqdim(x, B)
-        # rgb_camXs_ = __p(rgb_camXs)
-        # pix_T_cams_ = __p(pix_T_cams)
-        # cam0_T_camXs_ = __p(cam0_T_camXs)
-        # camXs_T_cam0_ = utils.geom.safe_inverse(cam0_T_camXs_)
+        X, Y, Z = self.grid_shape
 
         # rgb encoder
         device = rgb_camXs.device
@@ -453,25 +440,8 @@ class Segnet(nn.Module):
         feat_camXs_ = self.encoder(rgb_camXs_).unflatten(0, (B, S))
         if rand_flip:
             feat_camXs_[rgb_flip_index] = torch.flip(feat_camXs_[rgb_flip_index], [-1])
-        # _, C, Hf, Wf = feat_camXs_.shape
-
-        # sy = Hf/float(H)
-        # sx = Wf/float(W)
-        Z, Y, X = self.Z, self.Y, self.X
 
         # unproject image feature to 3d grid
-        # featpix_T_cams_ = utils.geom.scale_intrinsics(pix_T_cams_, sx, sy)
-        # if self.xyz_camA is not None:
-        #    xyz_camA = self.xyz_camA.to(feat_camXs_.device).repeat(B*S,1,1)
-        # else:
-        #    xyz_camA = None
-        # feat_mems_ = vox_util.unproject_image_to_mem(
-        #    feat_camXs_,
-        #    utils.basic.matmul2(featpix_T_cams_, camXs_T_cam0_),
-        #    camXs_T_cam0_, Z, Y, X,
-        #    xyz_camA=xyz_camA)
-        # feat_mems = __u(feat_mems_) # B, S, C, Z, Y, X
-
         feat_voxels, feat_valids = lift_cam_to_voxel(
             features=feat_camXs_.flatten(0, 1),
             K=pix_T_cams.flatten(0, 1),
@@ -529,9 +499,7 @@ class Segnet(nn.Module):
             feat_bev = self.bev_compressor(feat_bev_)
         else:  # rgb only
             if self.do_rgbcompress:
-                feat_bev_ = feat_mem.permute(0, 1, 3, 2, 4).reshape(
-                    B, self.feat2d_dim * Y, Z, X
-                )
+                feat_bev_ = feat_mem.permute(0, 1, 4, 2, 3).flatten(1, 2)
                 feat_bev = self.bev_compressor(feat_bev_)
             else:
                 feat_bev = torch.sum(feat_mem, dim=3)
@@ -548,3 +516,22 @@ class Segnet(nn.Module):
         offset_e = out_dict["instance_offset"]
 
         return raw_e, feat_e, seg_e, center_e, offset_e
+
+
+def segnet_rgb(grid_shape: Tuple[int, int, int], pretrained: bool = False) -> Segnet:
+    """
+    Instantiates a standard Segnet model with just RGB cameras.
+
+    Args:
+        grid_shape: tuple of (X, Y, Z) coordinates
+        pretrained: whether to load a pretrained version of the model
+    """
+    m = Segnet(grid_shape=grid_shape)
+    if pretrained:
+        assert grid_shape[2] == 8, "pretrained model requires height 8"
+        state_dict = torch.hub.load_state_dict_from_url(
+            "https://drive.google.com/uc?export=download&id=18N3NDoeT3Z6T5x6Y_Qqs__KOAoh4pZY7&confirm=yes",
+            map_location=torch.device("cpu"),
+        )
+        m.load_state_dict(state_dict["model_state_dict"])
+    return m

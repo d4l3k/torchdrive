@@ -1,9 +1,8 @@
-
 import unittest
 
 import torch
 
-from torchdrive.models.simple_bev import Segnet
+from torchdrive.models.simple_bev import Segnet, segnet_rgb
 
 
 class TestSimpleBEV(unittest.TestCase):
@@ -17,9 +16,7 @@ class TestSimpleBEV(unittest.TestCase):
         W = 16
         latent_dim = 7
         m = Segnet(
-            X=X,
-            Y=Y,
-            Z=Z,
+            grid_shape=(X, Y, Z),
             latent_dim=latent_dim,
         )
 
@@ -28,8 +25,12 @@ class TestSimpleBEV(unittest.TestCase):
             pix_T_cams=torch.rand(BS, S, 4, 4),
             cam0_T_camXs=torch.rand(BS, S, 4, 4),
         )
-        self.assertEqual(raw_feat.shape, (BS, latent_dim, Z, X))
-        self.assertEqual(feat.shape, (BS, latent_dim, Z, X))
-        self.assertEqual(segmentation.shape, (BS, 1, Z, X))
-        self.assertEqual(instance_center.shape, (BS, 1, Z, X))
-        self.assertEqual(instance_offset.shape, (BS, 2, Z, X))
+        self.assertEqual(raw_feat.shape, (BS, latent_dim, X, Y))
+        self.assertEqual(feat.shape, (BS, latent_dim, X, Y))
+        self.assertEqual(segmentation.shape, (BS, 1, X, Y))
+        self.assertEqual(instance_center.shape, (BS, 1, X, Y))
+        self.assertEqual(instance_offset.shape, (BS, 2, X, Y))
+
+    def test_segnet_pretrained(self) -> None:
+        m = segnet_rgb(grid_shape=(16, 16, 8), pretrained=True)
+        self.assertIsInstance(m, Segnet)
