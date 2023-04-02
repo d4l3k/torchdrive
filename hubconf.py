@@ -1,3 +1,3 @@
 dependencies = ["torch"]
 
-from torchdrive.models.simple_bef import segnet_rgb
+from torchdrive.models.simple_bev import segnet_rgb
