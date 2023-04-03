@@ -9,21 +9,20 @@ def normalize_img_cuda(src: torch.Tensor) -> torch.Tensor:
     """
     Normalizes the provided image range to lows P0.1 and highs P99 and returns
     the tensor.
+
+    Args:
+        src: [..., ch, h, w]
     """
-    has_bs = len(src.shape) == 4
-    bs = len(src) if has_bs else 1
     src = src.detach()
     # q = 0.999
-    flat = src.view((bs, 3, -1))
+    flat = src.flatten(-2, -1)
     quantiles = torch.quantile(
-        flat, torch.tensor((0.001, 0.99), device=src.device), dim=2
+        flat, torch.tensor((0.001, 0.99), device=src.device), dim=-1
     )
-    max = quantiles[1].view(bs, 3, 1, 1)
-    min = quantiles[0].view(bs, 3, 1, 1)
+    max = quantiles[1].unsqueeze(-1).unsqueeze(-1)
+    min = quantiles[0].unsqueeze(-1).unsqueeze(-1)
     new = (src - min).div_(max - min)
     new = new.clamp_(0, 1)
-    if not has_bs:
-        return new.squeeze(0)
     return new
 
 

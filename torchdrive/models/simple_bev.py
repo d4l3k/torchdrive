@@ -32,12 +32,12 @@ import numpy as np
 
 import torch
 import torchvision
+from pytorch3d.transforms.transform3d import Transform3d
 from torch import nn
 from torchvision import transforms
 from torchvision.models.resnet import resnet18
 
 from torchdrive.data import Batch
-
 from torchdrive.transforms.simple_bev import lift_cam_to_voxel
 
 EPS = 1e-4
@@ -70,7 +70,6 @@ class UpsamplingConcat(nn.Module):
 
     def forward(self, x_to_upsample: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         x_to_upsample = self.upsample(x_to_upsample)
-        print(x.shape, x_to_upsample.shape)
         x_to_upsample = torch.cat([x, x_to_upsample], dim=1)
         return self.conv(x_to_upsample)
 
@@ -90,7 +89,6 @@ class UpsamplingAdd(nn.Module):
 
     def forward(self, x: torch.Tensor, x_skip: torch.Tensor) -> torch.Tensor:
         x = self.upsample_layer(x)
-        print(x.shape, x_skip.shape)
         return x + x_skip
 
 
@@ -520,11 +518,17 @@ class Segnet(nn.Module):
         return raw_e, feat_e, seg_e, center_e, offset_e
 
     def forward_batch(
-        self, batch: Batch, frame: int
+        self,
+        batch: Batch,
+        frame: int,
+        center: Tuple[float, float, float] = (-0.5, -0.5, 0),
+        scale: float = 3,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Runs the model on a torchdrive Batch. See forward for information on the
         return values.
+
+        Positions the vehicle in the center of the grid.
 
         Args:
             batch: the batch of data
@@ -532,10 +536,22 @@ class Segnet(nn.Module):
         """
 
         cameras = list(batch.T.keys())
+        device = batch.weight.device
 
         rgb_camXs = torch.stack([batch.color[cam][:, frame] for cam in cameras], dim=1)
         pix_T_cams = torch.stack([batch.K[cam] for cam in cameras], dim=1)
         cam0_T_camXs = torch.stack([batch.T[cam] for cam in cameras], dim=1)
+
+        center = tuple(a * b for a, b in zip(self.grid_shape, center))
+        voxel_to_world = (
+            Transform3d(device=device)
+            .translate(*center)
+            .scale(1 / scale)
+            .get_matrix()
+            .permute(0, 2, 1)
+        )
+
+        cam0_T_camXs = cam0_T_camXs.pinverse().matmul(voxel_to_world).pinverse()
 
         return self.forward(
             rgb_camXs=rgb_camXs,

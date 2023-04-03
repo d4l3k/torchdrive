@@ -10,6 +10,10 @@ class TestDet(unittest.TestCase):
         out = normalize_img(torch.rand(3, 48, 64))
         self.assertEqual(out.shape, (3, 48, 64))
 
+    def test_normalize_img_multiple_batches(self) -> None:
+        out = normalize_img(torch.rand(3, 2, 48, 64))
+        self.assertEqual(out.shape, (3, 2, 48, 64))
+
     def test_normalize_img_cuda(self) -> None:
         out = normalize_img_cuda(torch.rand(3, 48, 64))
         self.assertEqual(out.shape, (3, 48, 64))
