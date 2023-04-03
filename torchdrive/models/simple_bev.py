@@ -36,6 +36,8 @@ from torch import nn
 from torchvision import transforms
 from torchvision.models.resnet import resnet18
 
+from torchdrive.data import Batch
+
 from torchdrive.transforms.simple_bev import lift_cam_to_voxel
 
 EPS = 1e-4
@@ -516,6 +518,30 @@ class Segnet(nn.Module):
         offset_e = out_dict["instance_offset"]
 
         return raw_e, feat_e, seg_e, center_e, offset_e
+
+    def forward_batch(
+        self, batch: Batch, frame: int
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Runs the model on a torchdrive Batch. See forward for information on the
+        return values.
+
+        Args:
+            batch: the batch of data
+            frame: the frame index in the batch to use for cameras
+        """
+
+        cameras = list(batch.T.keys())
+
+        rgb_camXs = torch.stack([batch.color[cam][:, frame] for cam in cameras], dim=1)
+        pix_T_cams = torch.stack([batch.K[cam] for cam in cameras], dim=1)
+        cam0_T_camXs = torch.stack([batch.T[cam] for cam in cameras], dim=1)
+
+        return self.forward(
+            rgb_camXs=rgb_camXs,
+            pix_T_cams=pix_T_cams,
+            cam0_T_camXs=cam0_T_camXs,
+        )
 
 
 def segnet_rgb(grid_shape: Tuple[int, int, int], pretrained: bool = False) -> Segnet:

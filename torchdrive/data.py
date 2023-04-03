@@ -30,9 +30,9 @@ class Batch:
     frame_T: torch.Tensor
     # time for each frame in seconds, monotonically increasing, can be starting at any point
     frame_time: torch.Tensor
-    # per camera intrinsics, normalized
+    # per camera intrinsics, normalized [BS, 4, 4]
     K: Dict[str, torch.Tensor]
-    # car to camera local translation matrix, extrinsics
+    # per cam, camera to car translation matrix, extrinsics [BS, 4, 4]
     T: Dict[str, torch.Tensor]
     # per camera and frame color data [BS, N, 3, H, W]
     color: Dict[str, torch.Tensor]

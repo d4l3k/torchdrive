@@ -1,7 +1,6 @@
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Callable, cast, Dict, List, Optional, Tuple
 
 import torch
 from torch import nn
@@ -11,16 +10,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context, autograd_resume, log_grad_norm
 from torchdrive.data import Batch
-from torchdrive.losses import losses_backward
 from torchdrive.models.bev import BEVMerger, BEVUpsampler, CamBEVEncoder
-
-
-def _cpu_float(
-    v: Union[torch.Tensor, int, float, bool]
-) -> Union[torch.Tensor, int, float, bool]:
-    if isinstance(v, torch.Tensor):
-        return v.detach().float().cpu()
-    return v
+from torchdrive.tasks.context import Context
 
 
 def _get_orig_mod(m: nn.Module) -> nn.Module:
@@ -28,56 +19,6 @@ def _get_orig_mod(m: nn.Module) -> nn.Module:
         # pyre-fixme[7]: Union[Module, Tensor]
         return m._orig_mod
     return m
-
-
-@dataclass
-class Context:
-    log_img: bool
-    log_text: bool
-    global_step: int
-    scaler: Optional[amp.GradScaler]
-    writer: Optional[SummaryWriter]
-    start_frame: int
-    output: str
-    weights: torch.Tensor
-    cam_feats: Mapping[str, torch.Tensor] = field(default_factory=dict)
-
-    name: str = "<unknown>"
-
-    def backward(self, losses: Dict[str, torch.Tensor]) -> None:
-        losses_backward(losses, scaler=self.scaler, weights=self.weights)
-
-    def add_scalars(self, name: str, scalars: Dict[str, torch.Tensor]) -> None:
-        if self.writer:
-            assert self.log_text
-            self.writer.add_scalars(
-                f"{self.name}-{name}",
-                {k: _cpu_float(v) for k, v in scalars.items()},
-                global_step=self.global_step,
-            )
-
-    def add_scalar(
-        self, name: str, scalar: Union[int, float, bool, torch.Tensor]
-    ) -> None:
-        if self.writer:
-            assert self.log_text
-            self.writer.add_scalar(
-                f"{self.name}-{name}", _cpu_float(scalar), global_step=self.global_step
-            )
-
-    def add_image(self, name: str, img: torch.Tensor) -> None:
-        if self.writer:
-            assert self.log_img
-            self.writer.add_image(
-                f"{self.name}-{name}", img, global_step=self.global_step
-            )
-
-    def add_figure(self, name: str, figure: object) -> None:
-        if self.writer:
-            assert self.log_img
-            self.writer.add_figure(
-                f"{self.name}-{name}", figure, global_step=self.global_step
-            )
 
 
 class BEVTask(torch.nn.Module, ABC):
