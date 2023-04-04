@@ -4,7 +4,7 @@ import torch
 
 from torchdrive.data import dummy_batch
 
-from torchdrive.models.simple_bev import FPN, Segnet, segnet_rgb
+from torchdrive.models.simple_bev import FPN, Segnet, segnet_rgb, SegnetBackbone
 
 
 class TestSimpleBEV(unittest.TestCase):
@@ -55,3 +55,23 @@ class TestSimpleBEV(unittest.TestCase):
         x, x4 = m(torch.rand(2, 3, 8, 16))
         self.assertEqual(x.shape, (2, 3, 8, 16))
         self.assertEqual(x4.shape, (2, 256, 1, 2))
+
+    def test_segnet_backbone(self) -> None:
+        batch = dummy_batch()
+        X = 8
+        Y = 16
+        Z = 24
+        latent_dim = 7
+        num_frames = 2
+        m = SegnetBackbone(
+            grid_shape=(X, Y, Z),
+            dim=latent_dim,
+            num_frames=num_frames,
+        )
+        camera_features = {
+            camera: [torch.rand(batch.batch_size(), latent_dim, 48, 64)] * num_frames
+            for camera in batch.cameras()
+        }
+        x, x4 = m(camera_features, batch)
+        self.assertEqual(x.shape, (batch.batch_size(), latent_dim, X, Y))
+        self.assertEqual(x4.shape, (batch.batch_size(), 256, X // 8, Y // 8))

@@ -4,7 +4,6 @@ import torch
 from torch import nn
 
 from torchdrive.attention import attention
-
 from torchdrive.autograd import autograd_pause
 from torchdrive.models.regnet import (
     ConvPEBlock,

@@ -47,6 +47,12 @@ class Batch:
     def batch_size(self) -> int:
         return self.weight.numel()
 
+    def device(self) -> torch.device:
+        return self.weight.device
+
+    def cameras(self) -> Tuple[str]:
+        return tuple(self.color.keys())
+
     def to(self, device: torch.device) -> "Batch":
         """
         returns a copy of batch that's been transferred to the specified device.

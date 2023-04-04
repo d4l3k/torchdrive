@@ -26,7 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 
@@ -37,7 +37,10 @@ from torch import nn
 from torchvision import transforms
 from torchvision.models.resnet import resnet18
 
+from torchdrive.amp import autocast
+
 from torchdrive.data import Batch
+from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.transforms.simple_bev import lift_cam_to_voxel
 
 EPS = 1e-4
@@ -607,3 +610,99 @@ def segnet_rgb(grid_shape: Tuple[int, int, int], pretrained: bool = False) -> Se
         )
         m.load_state_dict(state_dict["model_state_dict"])
     return m
+
+
+class SegnetBackbone(BEVBackbone):
+    """
+    A BEV backbone using the Segnet projections and decoder.
+
+    This extends Simple BEV to support multiple time frames.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        grid_shape: Tuple[int, int, int],
+        num_frames: int,
+        center: Tuple[float, float, float] = (-0.5, -0.5, 0),
+        scale: float = 3,
+    ) -> None:
+        super().__init__()
+
+        self.dim = dim
+        self.grid_shape = grid_shape
+        self.num_frames = num_frames
+        self.scale = scale
+        self.center: Tuple[int, int, int] = tuple(
+            a * b for a, b in zip(center, self.grid_shape)
+        )
+
+        self.project = nn.ModuleList(
+            [nn.Conv2d(dim, dim, 1) for i in range(num_frames)]
+        )
+        self.fpn = FPN(dim)
+
+        self.bev_compressor = nn.Sequential(
+            nn.Conv2d(
+                dim * grid_shape[-1],
+                dim,
+                kernel_size=3,
+                padding=1,
+                stride=1,
+                bias=False,
+            ),
+            nn.InstanceNorm2d(dim),
+            nn.GELU(),
+        )
+
+    def forward(
+        self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        BS = batch.batch_size()
+        S = len(camera_features) * self.num_frames
+        device = batch.device()
+
+        voxel_to_world = (
+            Transform3d(device=device)
+            .translate(*self.center)
+            .scale(1 / self.scale)
+            .get_matrix()
+            .permute(0, 2, 1)
+        )
+
+        # compute relative positions to the last encode frame
+        start_T = batch.cam_T[:, self.num_frames].unsqueeze(1)
+        cam_T = start_T.pinverse().matmul(batch.cam_T)
+
+        features = []
+        Ks = []
+        Ts = []
+        for cam, time_feats in camera_features.items():
+            for i, feats in enumerate(time_feats):
+                features.append(self.project[i](feats))
+                Ks.append(batch.K[cam])
+                T = batch.T[cam].pinverse()
+                T = T.matmul(cam_T[:, i])
+                T = T.matmul(voxel_to_world)
+                Ts.append(T)
+
+        feature = torch.stack(features, dim=1).flatten(0, 1)
+        K = torch.stack(Ks, dim=1).flatten(0, 1)
+        T = torch.stack(Ts, dim=1).flatten(0, 1)
+        feat_voxels, feat_valids = lift_cam_to_voxel(
+            features=feature, K=K, T=T, grid_shape=self.grid_shape
+        )
+
+        with autocast():
+            feat_voxels = feat_voxels.unflatten(0, (BS, S))
+            feat_valids = feat_valids.unflatten(0, (BS, S))
+
+            # merge voxel grids
+            feat_mem = feat_voxels.sum(dim=1) / feat_valids.sum(dim=1).clamp(min=1)
+
+            # flatten voxel grid to bev
+            feat_mem = feat_mem.permute(0, 1, 4, 2, 3).flatten(1, 2)
+            feat_mem = self.bev_compressor(feat_mem)
+
+            # run through FPN
+            return self.fpn(feat_mem)
