@@ -277,11 +277,10 @@ class Decoder(FPN):
         }
 
 
-class Encoder_res101(nn.Module):
-    def __init__(self, C: int) -> None:
+class ResNetEncoder(nn.Module):
+    def __init__(self, C: int, resnet: torchvision.models.ResNet) -> None:
         super().__init__()
         self.C = C
-        resnet = torchvision.models.resnet101(pretrained=True)
         self.backbone = nn.Sequential(*list(resnet.children())[:-4])
         self.layer3: nn.Module = resnet.layer3
 
@@ -297,16 +296,18 @@ class Encoder_res101(nn.Module):
         return x
 
 
-class Encoder_res50(nn.Module):
-    def __init__(self, C: int) -> None:
+class RegNetEncoder(nn.Module):
+    def __init__(self, C: int, regnet: torchvision.models.RegNet) -> None:
         super().__init__()
         self.C = C
-        resnet = torchvision.models.resnet50(pretrained=True)
-        self.backbone = nn.Sequential(*list(resnet.children())[:-4])
-        self.layer3: nn.Module = resnet.layer3
+        self.backbone = nn.Sequential(regnet.stem, regnet.trunk_output[:-2])
+        self.layer3: nn.Module = regnet.trunk_output[-2]
+
+        ch3 = regnet.trunk_output[-2][0].proj[0].in_channels
+        ch4 = regnet.trunk_output[-1][0].proj[0].in_channels
 
         self.depth_layer = nn.Conv2d(512, self.C, kernel_size=1, padding=0)
-        self.upsampling_layer = UpsamplingConcat(1536, 512)
+        self.upsampling_layer = UpsamplingConcat(ch3 + ch4, 512)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x1 = self.backbone(x)
@@ -353,9 +354,13 @@ class Segnet(nn.Module):
         # Encoder
         self.feat2d_dim = feat2d_dim = latent_dim
         if encoder_type == "res101":
-            self.encoder: nn.Module = Encoder_res101(feat2d_dim)
+            self.encoder: nn.Module = ResNetEncoder(
+                feat2d_dim, torchvision.models.resnet101(pretrained=True)
+            )
         elif encoder_type == "res50":
-            self.encoder = Encoder_res50(feat2d_dim)
+            self.encoder = ResNetEncoder(
+                feat2d_dim, torchvision.models.resnet50(pretrained=True)
+            )
         else:
             raise ValueError(f"invalid encoder type {encoder_type}")
 

@@ -1,10 +1,17 @@
 import unittest
 
 import torch
+from torchvision import models
 
 from torchdrive.data import dummy_batch
-
-from torchdrive.models.simple_bev import FPN, Segnet, segnet_rgb, SegnetBackbone
+from torchdrive.models.simple_bev import (
+    FPN,
+    RegNetEncoder,
+    ResNetEncoder,
+    Segnet,
+    segnet_rgb,
+    SegnetBackbone,
+)
 
 
 class TestSimpleBEV(unittest.TestCase):
@@ -75,3 +82,23 @@ class TestSimpleBEV(unittest.TestCase):
         x, x4 = m(camera_features, batch)
         self.assertEqual(x.shape, (batch.batch_size(), latent_dim, X, Y))
         self.assertEqual(x4.shape, (batch.batch_size(), 256, X // 8, Y // 8))
+
+    def test_resnet_50(self) -> None:
+        m = ResNetEncoder(8, models.resnet50())
+        out = m(torch.rand(2, 3, 48, 64))
+        self.assertEqual(out.shape, (2, 8, 6, 8))
+
+    def test_resnet_101(self) -> None:
+        m = ResNetEncoder(8, models.resnet101())
+        out = m(torch.rand(2, 3, 48, 64))
+        self.assertEqual(out.shape, (2, 8, 6, 8))
+
+    def test_regnet_x_400mf(self) -> None:
+        m = RegNetEncoder(8, models.regnet_x_400mf())
+        out = m(torch.rand(2, 3, 48, 64))
+        self.assertEqual(out.shape, (2, 8, 6, 8))
+
+    def test_regnet_x_800mf(self) -> None:
+        m = RegNetEncoder(8, models.regnet_x_800mf())
+        out = m(torch.rand(2, 3, 48, 64))
+        self.assertEqual(out.shape, (2, 8, 6, 8))
