@@ -677,6 +677,7 @@ class SegnetBackbone(BEVBackbone):
         features = []
         Ks = []
         Ts = []
+        # camera order doesn't matter for segnet
         for cam, time_feats in camera_features.items():
             for i, feats in enumerate(time_feats):
                 features.append(self.project[i](feats))

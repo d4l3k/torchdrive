@@ -7,6 +7,7 @@ from torchdrive.models.bev import (
     BEVUpsampler,
     CamBEVEncoder,
     GridTransformer,
+    RiceBackbone,
 )
 from torchdrive.testing import skipIfNoCUDA
 
@@ -42,11 +43,13 @@ class TestBEVTransformer(unittest.TestCase):
         self.assertEqual(out.shape, (2, 16, 4, 4))
 
     def test_cam_bev_encoder(self) -> None:
-        device = torch.device('cpu')
+        device = torch.device("cpu")
         m = CamBEVEncoder(
-            cameras=["left", "right"], bev_shape=(4, 4), cam_shape=(48, 64),
+            cameras=["left", "right"],
+            bev_shape=(4, 4),
+            cam_shape=(48, 64),
             dim=8,
-            #compile_fn=torch.compile,
+            # compile_fn=torch.compile,
         ).to(device)
         img = torch.rand(2, 3, 48, 64, device=device)
         camera_frames = {
@@ -67,3 +70,21 @@ class TestBEVTransformer(unittest.TestCase):
         m = BEVUpsampler(num_upsamples=2, bev_shape=(4, 4), dim=5, output_dim=3)
         out = m(torch.rand(2, 5, 4, 4))
         self.assertEqual(out.shape, (2, 3, 16, 16))
+
+    def test_rice_backbone(self) -> None:
+        cameras = ["left", "right"]
+        num_frames = 2
+        m = RiceBackbone(
+            dim=16,
+            bev_shape=(4, 4),
+            cam_shape=(4, 6),
+            hr_dim=4,
+            num_upsamples=1,
+            num_frames=num_frames,
+            cameras=cameras,
+        )
+        x, x4 = m(
+            {cam: [torch.rand(2, 16, 4, 6)] * num_frames for cam in cameras}, None
+        )
+        self.assertEqual(x.shape, (2, 4, 8, 8))
+        self.assertEqual(x4.shape, (2, 16, 4, 4))

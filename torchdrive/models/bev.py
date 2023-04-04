@@ -5,6 +5,8 @@ from torch import nn
 
 from torchdrive.attention import attention
 from torchdrive.autograd import autograd_pause
+from torchdrive.data import Batch
+from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.models.regnet import (
     ConvPEBlock,
     RegNetEncoder,
@@ -202,3 +204,72 @@ class BEVUpsampler(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.upsample(x)
+
+
+class RiceBackbone(BEVBackbone):
+    """
+    A BEV backbone using the custom Rice transformer and bev merger.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        hr_dim: int,
+        bev_shape: Tuple[int, int],
+        cam_shape: Tuple[int, int],
+        num_frames: int,
+        cameras: List[str],
+        num_upsamples: int,
+    ) -> None:
+        super().__init__()
+
+        self.num_frames = num_frames
+
+        self.cam_transformers = nn.ModuleDict(
+            {
+                cam: GridTransformer(
+                    output_shape=bev_shape,
+                    input_shape=cam_shape,
+                    dim=dim,
+                    num_inputs=1,
+                )
+                for cam in cameras
+            }
+        )
+        resnet_init(self.cam_transformers)
+
+        self.conv: nn.Module = ConvPEBlock(
+            len(cameras) * dim,
+            dim,
+            input_shape=bev_shape,
+        )
+        resnet_init(self.conv)
+
+        self.frame_merger = BEVMerger(
+            num_frames=num_frames, bev_shape=bev_shape, dim=dim
+        )
+
+        self.upsample = BEVUpsampler(
+            num_upsamples=num_upsamples,
+            bev_shape=bev_shape,
+            dim=dim,
+            output_dim=hr_dim,
+        )
+
+    def forward(
+        self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        bev_grids = []
+
+        for i in range(self.num_frames):
+            ordered_grids = []
+            for cam, time_feats in camera_features.items():
+                cam_feat = time_feats[i]
+                ordered_grids.append(self.cam_transformers[cam]([cam_feat]))
+            bev_grids.append(self.conv(torch.cat(ordered_grids, dim=1)))
+
+        bev = self.frame_merger(bev_grids)
+
+        hr_bev = self.upsample(bev)
+
+        return hr_bev, bev
