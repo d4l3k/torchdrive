@@ -20,6 +20,7 @@ from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
 from torchdrive.datasets.rice import MultiCamDataset
 from torchdrive.dist import run_ddp_concat
+from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.ae import AETask
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 from torchdrive.tasks.det import DetTask
@@ -164,7 +165,7 @@ if args.backbone == "rice":
     h: int
     w: int
     h, w = args.cam_shape
-    backbone = RiceBackbone(
+    backbone: BEVBackbone = RiceBackbone(
         dim=args.dim,
         bev_shape=args.bev_shape,
         input_shape=(h // 16, w // 16),
@@ -173,16 +174,33 @@ if args.backbone == "rice":
         cameras=args.cameras,
         num_upsamples=4,
     )
+elif args.backbone == "simple_bev":
+    from torchdrive.models.simple_bev import SegnetBackbone
+
+    backbone = SegnetBackbone(
+        grid_shape=(256, 256, 8),
+        dim=args.dim,
+        num_frames=3,
+    )
 else:
     raise ValueError(f"unknown backbone {args.backbone}")
 
 if args.cam_encoder == "regnet":
     from torchdrive.models.regnet import RegNetEncoder
 
-    cam_encoder = RegNetEncoder(
-        cam_shape=args.cam_shape,
-        dim=args.dim,
-    )
+    def cam_encoder() -> RegNetEncoder:
+        return RegNetEncoder(
+            cam_shape=args.cam_shape,
+            dim=args.dim,
+        )
+
+elif args.cam_encoder == "simple_regnet":
+    from torchdrive.models.simple_bev import RegNetEncoder
+    from torchvision import models
+
+    def cam_encoder() -> RegNetEncoder:
+        return RegNetEncoder(C=args.dim, regnet=models.regnet_x_800mf(pretrained=True))
+
 else:
     raise ValueError(f"unknown cam encoder {args.cam_encoder}")
 
