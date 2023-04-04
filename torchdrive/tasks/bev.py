@@ -1,6 +1,6 @@
 import time
 from abc import ABC, abstractmethod
-from typing import Callable, cast, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
 from torch import nn
@@ -8,9 +8,14 @@ from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
 
 from torchdrive.amp import autocast
-from torchdrive.autograd import autograd_context, autograd_resume, log_grad_norm
+from torchdrive.autograd import (
+    autograd_context,
+    autograd_pause,
+    autograd_resume,
+    log_grad_norm,
+)
 from torchdrive.data import Batch
-from torchdrive.models.bev import BEVMerger, BEVUpsampler, CamBEVEncoder
+from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.context import Context
 
 
@@ -32,6 +37,8 @@ class BEVTask(torch.nn.Module, ABC):
 class BEVTaskVan(torch.nn.Module):
     def __init__(
         self,
+        backbone: BEVBackbone,
+        cam_encoder: Callable[[], nn.Module],
         tasks: Dict[str, BEVTask],
         hr_tasks: Dict[str, BEVTask],
         cam_shape: Tuple[int, int],
@@ -42,7 +49,6 @@ class BEVTaskVan(torch.nn.Module):
         writer: Optional[SummaryWriter] = None,
         output: str = "out",
         num_encode_frames: int = 3,
-        num_upsamples: int = 4,
         num_backprop_frames: int = 2,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
@@ -62,16 +68,9 @@ class BEVTaskVan(torch.nn.Module):
         self.cameras = cameras
         self.num_encode_frames = num_encode_frames
         self.num_backprop_frames = num_backprop_frames
-        self.frame_encoder: nn.Module = compile_fn(
-            CamBEVEncoder(
-                cameras,
-                cam_shape=cam_shape,
-                bev_shape=bev_shape,
-                dim=dim,
-            )
-        )
-        self.frame_merger: nn.Module = compile_fn(
-            BEVMerger(num_frames=self.num_encode_frames, bev_shape=bev_shape, dim=dim)
+        self.backbone: nn.Module = compile_fn(backbone)
+        self.camera_encoders = nn.ModuleDict(
+            {cam: compile_fn(cam_encoder()) for cam in cameras}
         )
 
         self.cam_shape = cam_shape
@@ -81,14 +80,6 @@ class BEVTaskVan(torch.nn.Module):
         self.hr_tasks = nn.ModuleDict(hr_tasks)
         if len(hr_tasks) > 0:
             assert hr_dim is not None, "must specify hr_dim for hr_tasks"
-            self.upsample: nn.Module = compile_fn(
-                BEVUpsampler(
-                    num_upsamples=num_upsamples,
-                    bev_shape=bev_shape,
-                    dim=dim,
-                    output_dim=hr_dim,
-                )
-            )
 
     def should_log(self, global_step: int, BS: int) -> Tuple[bool, bool]:
         if self.writer is None:
@@ -102,8 +93,7 @@ class BEVTaskVan(torch.nn.Module):
         return should_log, log_text
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
-        frame_encoder = cast(CamBEVEncoder, _get_orig_mod(self.frame_encoder))
-        per_cam_params = frame_encoder.per_cam_parameters()
+        per_cam_params = list(self.camera_encoders.parameters())
         per_cam_set = set(per_cam_params)
         params = [p for p in self.parameters() if p not in per_cam_set]
         per_cam_lr = lr
@@ -123,41 +113,38 @@ class BEVTaskVan(torch.nn.Module):
         last_cam_feats = {}
 
         with autocast():
-            bev_frames = []
             first_backprop_frame = max(
                 self.num_encode_frames - self.num_backprop_frames, 0
             )
+            camera_feats = {cam: [] for cam in self.cameras}
             with torch.no_grad():
                 for frame in range(0, first_backprop_frame):
-                    cams = {cam: batch.color[cam][:, frame] for cam in self.cameras}
-                    _, bev_frame = self.frame_encoder(cams)
-                    bev_frames.append(bev_frame)
-            for frame in range(first_backprop_frame, self.num_encode_frames):
-                cams = {cam: batch.color[cam][:, frame] for cam in self.cameras}
-                # pause the last cam encoder backprop for tasks with image
-                # space losses
-                pause = frame == (self.num_encode_frames - 1)
-                if pause and log_text:
-
-                    def cam_feat_fn(cam: str, feat: torch.Tensor) -> torch.Tensor:
-                        return log_grad_norm(
-                            feat,
-                            self.writer,
-                            f"grad/norm/encoder/{cam}",
-                            "bev",
-                            global_step,
+                    for cam in self.cameras:
+                        camera_feats[cam].append(
+                            self.camera_encoders[cam](batch.color[cam][:, frame])
                         )
+            for frame in range(first_backprop_frame, self.num_encode_frames):
+                pause = frame == (self.num_encode_frames - 1)
+                for cam in self.cameras:
+                    feat = self.camera_encoders[cam](batch.color[cam][:, frame])
 
-                else:
-                    cam_feat_fn = None
+                    # pause the last cam encoder backprop for tasks with image
+                    # space losses
+                    if pause:
+                        feat = autograd_pause(feat)
+                        last_cam_feats[cam] = feat
 
-                last_cam_feats, bev_frame = self.frame_encoder(
-                    cams,
-                    pause=pause,
-                    cam_feat_fn=cam_feat_fn,
-                )
-                bev_frames.append(bev_frame)
-            bev = self.frame_merger(bev_frames)
+                        if log_text:
+                            feat = log_grad_norm(
+                                feat,
+                                self.writer,
+                                f"grad/norm/encoder/{cam}",
+                                "bev",
+                                global_step,
+                            )
+                    camera_feats[cam].append(feat)
+
+        hr_bev, bev = self.backbone(camera_feats, batch)
 
         last_cam_feats_resume = last_cam_feats
 
@@ -173,7 +160,7 @@ class BEVTaskVan(torch.nn.Module):
                 for cam, feat in last_cam_feats.items()
             }
 
-        with autograd_context(bev) as bev:
+        with autograd_context(bev, hr_bev) as (bev, hr_bev):
             losses: Dict[str, torch.Tensor] = {}
             task_times: Dict[str, float] = {}
 
@@ -217,14 +204,11 @@ class BEVTaskVan(torch.nn.Module):
             _run_tasks("bev", self.tasks, bev)
 
             if len(self.hr_tasks) > 0:
-                with autograd_context(bev) as bev:
-                    with autocast():
-                        hr_bev = self.upsample(bev)
-                    if log_text:
-                        hr_bev = log_grad_norm(
-                            hr_bev, self.writer, "grad/norm/bev", "hr_bev", global_step
-                        )
-                    _run_tasks("hr_bev", self.hr_tasks, hr_bev)
+                if log_text:
+                    hr_bev = log_grad_norm(
+                        hr_bev, self.writer, "grad/norm/bev", "hr_bev", global_step
+                    )
+                _run_tasks("hr_bev", self.hr_tasks, hr_bev)
 
             if log_text and (writer := self.writer) is not None:
                 writer.add_scalars(

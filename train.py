@@ -55,6 +55,8 @@ parser.add_argument("--dim", type=int, required=True)
 parser.add_argument("--hr_dim", type=int)
 parser.add_argument("--bev_shape", type=tuple_int, required=True)
 parser.add_argument("--cam_shape", type=tuple_int, required=True)
+parser.add_argument("--backbone", type=str, required=True)
+parser.add_argument("--cam_encoder", type=str, required=True)
 parser.add_argument("--skip_load_optim", default=False, action="store_true")
 parser.add_argument("--anomaly-detection", default=False, action="store_true")
 parser.add_argument("--limit_size", type=int)
@@ -156,6 +158,34 @@ if args.compile:
     # pyre-fixme[16]: no attribute compile
     compile_fn = torch.compile
 
+if args.backbone == "rice":
+    from torchdrive.models.bev import RiceBackbone
+
+    h: int
+    w: int
+    h, w = args.cam_shape
+    backbone = RiceBackbone(
+        dim=args.dim,
+        bev_shape=args.bev_shape,
+        input_shape=(h // 16, w // 16),
+        hr_dim=args.hr_dim,
+        num_frames=3,
+        cameras=args.cameras,
+        num_upsamples=4,
+    )
+else:
+    raise ValueError(f"unknown backbone {args.backbone}")
+
+if args.cam_encoder == "regnet":
+    from torchdrive.models.regnet import RegNetEncoder
+
+    cam_encoder = RegNetEncoder(
+        cam_shape=args.cam_shape,
+        dim=args.dim,
+    )
+else:
+    raise ValueError(f"unknown cam encoder {args.cam_encoder}")
+
 tasks: Dict[str, BEVTask] = {}
 hr_tasks: Dict[str, BEVTask] = {}
 if args.path:
@@ -206,6 +236,8 @@ model = BEVTaskVan(
     output=args.output,
     compile_fn=compile_fn,
     num_encode_frames=args.num_encode_frames,
+    backbone=backbone,
+    cam_encoder=cam_encoder,
 )
 
 model = model.to(device)

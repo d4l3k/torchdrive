@@ -3,6 +3,8 @@ from typing import Callable, Dict, List, Mapping, Optional, Tuple, Type
 import torch
 from torch import nn
 
+from torchdrive.amp import autocast
+
 from torchdrive.attention import attention
 from torchdrive.autograd import autograd_pause
 from torchdrive.data import Batch
@@ -216,7 +218,7 @@ class RiceBackbone(BEVBackbone):
         dim: int,
         hr_dim: int,
         bev_shape: Tuple[int, int],
-        cam_shape: Tuple[int, int],
+        input_shape: Tuple[int, int],
         num_frames: int,
         cameras: List[str],
         num_upsamples: int,
@@ -229,7 +231,7 @@ class RiceBackbone(BEVBackbone):
             {
                 cam: GridTransformer(
                     output_shape=bev_shape,
-                    input_shape=cam_shape,
+                    input_shape=input_shape,
                     dim=dim,
                     num_inputs=1,
                 )
@@ -259,17 +261,19 @@ class RiceBackbone(BEVBackbone):
     def forward(
         self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        bev_grids = []
 
-        for i in range(self.num_frames):
-            ordered_grids = []
-            for cam, time_feats in camera_features.items():
-                cam_feat = time_feats[i]
-                ordered_grids.append(self.cam_transformers[cam]([cam_feat]))
-            bev_grids.append(self.conv(torch.cat(ordered_grids, dim=1)))
+        with autocast():
+            bev_grids = []
 
-        bev = self.frame_merger(bev_grids)
+            for i in range(self.num_frames):
+                ordered_grids = []
+                for cam, time_feats in camera_features.items():
+                    cam_feat = time_feats[i]
+                    ordered_grids.append(self.cam_transformers[cam]([cam_feat]))
+                bev_grids.append(self.conv(torch.cat(ordered_grids, dim=1)))
 
-        hr_bev = self.upsample(bev)
+            bev = self.frame_merger(bev_grids)
 
-        return hr_bev, bev
+            hr_bev = self.upsample(bev)
+
+            return hr_bev, bev

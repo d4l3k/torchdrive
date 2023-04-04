@@ -77,7 +77,7 @@ class TestBEVTransformer(unittest.TestCase):
         m = RiceBackbone(
             dim=16,
             bev_shape=(4, 4),
-            cam_shape=(4, 6),
+            input_shape=(4, 6),
             hr_dim=4,
             num_upsamples=1,
             num_frames=num_frames,
