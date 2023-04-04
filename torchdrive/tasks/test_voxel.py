@@ -40,8 +40,10 @@ class TestVoxel(unittest.TestCase):
         m = VoxelTask(
             cameras=cameras,
             cam_shape=(320, 240),
+            cam_feats_shape=(320 // 16, 240 // 16),
             dim=4,
             hr_dim=5,
+            cam_dim=6,
             height=12,
             device=device,
             render_batch_size=1,
@@ -59,7 +61,7 @@ class TestVoxel(unittest.TestCase):
             name="det",
             output="",
             weights=batch.weight,
-            cam_feats={cam: torch.rand(2, 4, 320 // 16, 240 // 16) for cam in cameras},
+            cam_feats={cam: torch.rand(2, 6, 320 // 16, 240 // 16) for cam in cameras},
         )
         bev = torch.rand(2, 5, 4, 4, device=device)
         losses = m(ctx, batch, bev)
@@ -71,7 +73,9 @@ class TestVoxel(unittest.TestCase):
         m = VoxelTask(
             cameras=cameras,
             cam_shape=(320, 240),
+            cam_feats_shape=(320 // 16, 240 // 16),
             dim=4,
+            cam_dim=4,
             hr_dim=5,
             height=12,
             device=device,

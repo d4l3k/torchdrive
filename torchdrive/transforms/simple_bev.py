@@ -57,7 +57,7 @@ def lift_cam_to_voxel(
     pix_coords = pix_coords.permute(0, 2, 1).unsqueeze(1)
     pix_coords = (pix_coords - 0.5) * 2
     # features = features.permute(0, 1, 3, 2)
-    values = F.grid_sample(features, pix_coords, align_corners=False)
+    values = F.grid_sample(features.float(), pix_coords, align_corners=False)
 
     # restore to grid shape
     values = values.squeeze(2).unflatten(-1, grid_shape)

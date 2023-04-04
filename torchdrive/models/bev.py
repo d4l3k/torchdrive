@@ -33,6 +33,7 @@ class GridTransformer(nn.Module):
         self,
         input_shape: Tuple[int, int],
         output_shape: Tuple[int, int],
+        input_dim: int,
         dim: int,
         num_inputs: int,
         num_heads: int = 12,
@@ -44,7 +45,7 @@ class GridTransformer(nn.Module):
         self.num_heads = num_heads
 
         self.context_encoder = nn.Sequential(
-            nn.Conv2d(dim * num_inputs, dim, 1),
+            nn.Conv2d(input_dim * num_inputs, dim, 1),
             nn.MaxPool2d(input_shape),
         )
 
@@ -53,7 +54,7 @@ class GridTransformer(nn.Module):
         )
 
         self.kv_encoder = nn.Sequential(
-            nn.Conv1d(dim, 2 * dim, 1),
+            nn.Conv1d(input_dim, 2 * dim, 1),
         )
         self.pos_encoding = apply_sin_cos_enc2d
 
@@ -104,6 +105,7 @@ class CamBEVEncoder(nn.Module):
                 cam: transformer(
                     output_shape=bev_shape,
                     input_shape=self.cam_encoders[cameras[0]].output_shape,
+                    input_dim=dim,
                     dim=dim,
                     num_inputs=1,
                 )
@@ -217,6 +219,7 @@ class RiceBackbone(BEVBackbone):
         self,
         dim: int,
         hr_dim: int,
+        cam_dim: int,
         bev_shape: Tuple[int, int],
         input_shape: Tuple[int, int],
         num_frames: int,
@@ -233,6 +236,7 @@ class RiceBackbone(BEVBackbone):
                     output_shape=bev_shape,
                     input_shape=input_shape,
                     dim=dim,
+                    input_dim=cam_dim,
                     num_inputs=1,
                 )
                 for cam in cameras

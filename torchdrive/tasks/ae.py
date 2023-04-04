@@ -40,6 +40,7 @@ class AETask(BEVTask):
                     GridTransformer(
                         input_shape=bev_shape,
                         output_shape=transformer_shape,
+                        input_dim=dim,
                         dim=dim,
                         num_inputs=1,
                     ),

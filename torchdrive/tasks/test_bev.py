@@ -42,6 +42,7 @@ class TestBEV(unittest.TestCase):
             writer=MagicMock(),
             backbone=RiceBackbone(
                 dim=dim,
+                cam_dim=dim,
                 hr_dim=hr_dim,
                 bev_shape=bev_shape,
                 input_shape=(48 // 16, 64 // 16),

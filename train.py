@@ -8,6 +8,7 @@ from typing import Callable, cast, Dict, Iterator, List, Optional, Set, Tuple, U
 
 import torch
 import torch.distributed as dist
+import torchinfo
 from torch import nn, optim
 from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel
@@ -53,6 +54,7 @@ parser.add_argument(
     type=tuple_str,
 )
 parser.add_argument("--dim", type=int, required=True)
+parser.add_argument("--cam_dim", type=int, required=True)
 parser.add_argument("--hr_dim", type=int)
 parser.add_argument("--bev_shape", type=tuple_int, required=True)
 parser.add_argument("--cam_shape", type=tuple_int, required=True)
@@ -167,6 +169,7 @@ if args.backbone == "rice":
     h, w = args.cam_shape
     backbone: BEVBackbone = RiceBackbone(
         dim=args.dim,
+        cam_dim=args.cam_dim,
         bev_shape=args.bev_shape,
         input_shape=(h // 16, w // 16),
         hr_dim=args.hr_dim,
@@ -177,10 +180,17 @@ if args.backbone == "rice":
 elif args.backbone == "simple_bev":
     from torchdrive.models.simple_bev import SegnetBackbone
 
+    num_upsamples: int = 1
+    adjust: int = 2**num_upsamples
+
     backbone = SegnetBackbone(
-        grid_shape=(256, 256, 8),
+        grid_shape=(256 // adjust, 256 // adjust, 8 // adjust),
         dim=args.dim,
+        hr_dim=args.hr_dim,
+        cam_dim=args.cam_dim,
         num_frames=3,
+        scale=3 / adjust,
+        num_upsamples=num_upsamples,
     )
 else:
     raise ValueError(f"unknown backbone {args.backbone}")
@@ -188,18 +198,32 @@ else:
 if args.cam_encoder == "regnet":
     from torchdrive.models.regnet import RegNetEncoder
 
+    h: int
+    w: int
+    h, w = args.cam_shape
+
+    cam_feats_shape: Tuple[int, int] = (h // 16, w // 16)
+
     def cam_encoder() -> RegNetEncoder:
         return RegNetEncoder(
             cam_shape=args.cam_shape,
-            dim=args.dim,
+            dim=args.cam_dim,
         )
 
 elif args.cam_encoder == "simple_regnet":
     from torchdrive.models.simple_bev import RegNetEncoder
     from torchvision import models
 
+    h: int
+    w: int
+    h, w = args.cam_shape
+
+    cam_feats_shape = (h // 8, w // 8)
+
     def cam_encoder() -> RegNetEncoder:
-        return RegNetEncoder(C=args.dim, regnet=models.regnet_x_800mf(pretrained=True))
+        return RegNetEncoder(
+            C=args.cam_dim, regnet=models.regnet_x_800mf(pretrained=True)
+        )
 
 else:
     raise ValueError(f"unknown cam encoder {args.cam_encoder}")
@@ -235,6 +259,8 @@ if args.voxel:
         cam_shape=args.cam_shape,
         dim=args.dim,
         hr_dim=args.hr_dim,
+        cam_dim=args.cam_dim,
+        cam_feats_shape=cam_feats_shape,
         height=16,
         z_offset=0.4,
         device=device,
@@ -270,7 +296,7 @@ else:
     ddp_model = model
 
 if rank == 0:
-    print(model)
+    print(torchinfo.summary(model))
 
 params: List[Dict[str, Union[object, List[object]]]] = model.param_opts(args.lr)
 lr_groups: List[float] = [p["lr"] if "lr" in p else args.lr for p in params]

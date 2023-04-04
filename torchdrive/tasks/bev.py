@@ -160,7 +160,8 @@ class BEVTaskVan(torch.nn.Module):
                 for cam, feat in last_cam_feats.items()
             }
 
-        with autograd_context(bev, hr_bev) as (bev, hr_bev):
+        # TODO: handle bev
+        with autograd_context(hr_bev) as (hr_bev):
             losses: Dict[str, torch.Tensor] = {}
             task_times: Dict[str, float] = {}
 
@@ -201,7 +202,8 @@ class BEVTaskVan(torch.nn.Module):
 
                         task_times[name] = time.time() - task_start
 
-            _run_tasks("bev", self.tasks, bev)
+            if len(self.tasks) > 0:
+                _run_tasks("bev", self.tasks, bev)
 
             if len(self.hr_tasks) > 0:
                 if log_text:

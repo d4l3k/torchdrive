@@ -17,6 +17,7 @@ class TestBEVTransformer(unittest.TestCase):
         m = GridTransformer(
             output_shape=(4, 4),
             input_shape=(4, 6),
+            input_dim=8,
             dim=8,
             num_inputs=3,
             num_heads=2,
@@ -31,6 +32,7 @@ class TestBEVTransformer(unittest.TestCase):
             GridTransformer(
                 output_shape=(4, 4),
                 input_shape=(4, 6),
+                input_dim=16,
                 dim=16,
                 num_inputs=3,
                 num_heads=2,
@@ -75,6 +77,7 @@ class TestBEVTransformer(unittest.TestCase):
         cameras = ["left", "right"]
         num_frames = 2
         m = RiceBackbone(
+            cam_dim=15,
             dim=16,
             bev_shape=(4, 4),
             input_shape=(4, 6),
@@ -84,7 +87,7 @@ class TestBEVTransformer(unittest.TestCase):
             cameras=cameras,
         )
         x, x4 = m(
-            {cam: [torch.rand(2, 16, 4, 6)] * num_frames for cam in cameras}, None
+            {cam: [torch.rand(2, 15, 4, 6)] * num_frames for cam in cameras}, None
         )
         self.assertEqual(x.shape, (2, 4, 8, 8))
         self.assertEqual(x4.shape, (2, 16, 4, 4))

@@ -78,8 +78,10 @@ class VoxelTask(BEVTask):
         self,
         cameras: List[str],
         cam_shape: Tuple[int, int],
+        cam_feats_shape: Tuple[int, int],
         dim: int,
         hr_dim: int,
+        cam_dim: int,
         height: int,
         device: torch.device,
         scale: int = 3,
@@ -152,8 +154,8 @@ class VoxelTask(BEVTask):
         self.depth_decoder: nn.Module = compile_fn(
             DepthDecoder(
                 num_upsamples=2,
-                cam_shape=(h // 16, w // 16),
-                dim=dim,
+                cam_shape=cam_feats_shape,
+                dim=cam_dim,
             )
         )
         # pyre-fixme[6]: nn.Module
@@ -453,7 +455,7 @@ class VoxelTask(BEVTask):
                 frame_time=frame_time,
                 primary_color=primary_color,
                 primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights, #* 1e-1,
+                per_pixel_weights=per_pixel_weights,  # * 1e-1,
             )
             del voxel_depth
             del semantic_vel

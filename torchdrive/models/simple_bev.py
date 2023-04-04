@@ -40,6 +40,7 @@ from torchvision.models.resnet import resnet18
 from torchdrive.amp import autocast
 
 from torchdrive.data import Batch
+from torchdrive.models.bev import BEVUpsampler
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.transforms.simple_bev import lift_cam_to_voxel
 
@@ -72,6 +73,8 @@ class UpsamplingConcat(nn.Module):
         )
 
     def forward(self, x_to_upsample: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        # upsample doesn't support bfloat16 -- explicit cast
+        x_to_upsample = x_to_upsample.float()
         x_to_upsample = self.upsample(x_to_upsample)
         x_to_upsample = torch.cat([x, x_to_upsample], dim=1)
         return self.conv(x_to_upsample)
@@ -91,6 +94,8 @@ class UpsamplingAdd(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, x_skip: torch.Tensor) -> torch.Tensor:
+        # upsample doesn't support bfloat16 -- explicit cast
+        x = x.float()
         x = self.upsample_layer(x)
         return x + x_skip
 
@@ -626,14 +631,18 @@ class SegnetBackbone(BEVBackbone):
 
     def __init__(
         self,
+        cam_dim: int,
         dim: int,
+        hr_dim: int,
         grid_shape: Tuple[int, int, int],
         num_frames: int,
+        scale: float,
         center: Tuple[float, float, float] = (-0.5, -0.5, 0),
-        scale: float = 3,
+        num_upsamples: int = 0,
     ) -> None:
         super().__init__()
 
+        assert dim == 256, "dim must equal intermediate"
         self.dim = dim
         self.grid_shape = grid_shape
         self.num_frames = num_frames
@@ -643,13 +652,13 @@ class SegnetBackbone(BEVBackbone):
         )
 
         self.project = nn.ModuleList(
-            [nn.Conv2d(dim, dim, 1) for i in range(num_frames)]
+            [nn.Conv2d(cam_dim, cam_dim, 1) for i in range(num_frames)]
         )
         self.fpn = FPN(dim)
 
         self.bev_compressor = nn.Sequential(
             nn.Conv2d(
-                dim * grid_shape[-1],
+                cam_dim * grid_shape[-1],
                 dim,
                 kernel_size=3,
                 padding=1,
@@ -658,6 +667,12 @@ class SegnetBackbone(BEVBackbone):
             ),
             nn.InstanceNorm2d(dim),
             nn.GELU(),
+        )
+        self.upsample = BEVUpsampler(
+            num_upsamples=num_upsamples,
+            bev_shape=grid_shape[:2],
+            dim=dim,
+            output_dim=hr_dim,
         )
 
     def forward(
@@ -685,7 +700,8 @@ class SegnetBackbone(BEVBackbone):
         # camera order doesn't matter for segnet
         for cam, time_feats in camera_features.items():
             for i, feats in enumerate(time_feats):
-                features.append(self.project[i](feats))
+                with autocast():
+                    features.append(self.project[i](feats))
                 Ks.append(batch.K[cam])
                 T = batch.T[cam].pinverse()
                 T = T.matmul(cam_T[:, i])
@@ -711,4 +727,6 @@ class SegnetBackbone(BEVBackbone):
             feat_mem = self.bev_compressor(feat_mem)
 
             # run through FPN
-            return self.fpn(feat_mem)
+            x, x4 = self.fpn(feat_mem)
+            x = self.upsample(x)
+            return x, x4

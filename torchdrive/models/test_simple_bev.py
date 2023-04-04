@@ -68,20 +68,26 @@ class TestSimpleBEV(unittest.TestCase):
         X = 8
         Y = 16
         Z = 24
-        latent_dim = 7
+        cam_dim = 6
+        hr_dim = 5
+        latent_dim = 256
         num_frames = 2
         m = SegnetBackbone(
             grid_shape=(X, Y, Z),
             dim=latent_dim,
+            cam_dim=cam_dim,
+            hr_dim=hr_dim,
             num_frames=num_frames,
+            scale=3,
+            num_upsamples=1,
         )
         camera_features = {
-            camera: [torch.rand(batch.batch_size(), latent_dim, 48, 64)] * num_frames
+            camera: [torch.rand(batch.batch_size(), cam_dim, 48, 64)] * num_frames
             for camera in batch.cameras()
         }
         x, x4 = m(camera_features, batch)
-        self.assertEqual(x.shape, (batch.batch_size(), latent_dim, X, Y))
-        self.assertEqual(x4.shape, (batch.batch_size(), 256, X // 8, Y // 8))
+        self.assertEqual(x.shape, (batch.batch_size(), hr_dim, X * 2, Y * 2))
+        self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X // 8, Y // 8))
 
     def test_resnet_50(self) -> None:
         m = ResNetEncoder(8, models.resnet50())
