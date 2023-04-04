@@ -92,11 +92,14 @@ class UpsamplingAdd(nn.Module):
         return x + x_skip
 
 
-class Decoder(nn.Module):
-    def __init__(
-        self, in_channels: int, n_classes: int, predict_future_flow: bool
-    ) -> None:
+class FPN(nn.Module):
+    """
+    Implements the FPN used in the Simple BEV segnet decoder.
+    """
+
+    def __init__(self, in_channels: int) -> None:
         super().__init__()
+
         backbone = resnet18(pretrained=False, zero_init_residual=True)
         self.first_conv = nn.Conv2d(
             in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False
@@ -107,12 +110,60 @@ class Decoder(nn.Module):
         self.layer1: nn.Module = backbone.layer1
         self.layer2: nn.Module = backbone.layer2
         self.layer3: nn.Module = backbone.layer3
+
+        self.up3_skip = UpsamplingAdd(256, 128, scale_factor=2)
+        self.up2_skip = UpsamplingAdd(128, 64, scale_factor=2)
+        self.up1_skip = UpsamplingAdd(64, in_channels, scale_factor=2)
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            x: [BS, in_channels, H, W]
+        Returns:
+            * [BS, in_channels, H, W]
+            * [BS, 256, H/8, W/8]
+        """
+        # (H, W)
+        skip_x = {"1": x}
+        x = self.first_conv(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        # (H/4, W/4)
+        x = self.layer1(x)
+        skip_x["2"] = x
+        x = self.layer2(x)
+        skip_x["3"] = x
+
+        # (H/8, W/8)
+        x4 = self.layer3(x)
+
+        # First upsample to (H/4, W/4)
+        x = self.up3_skip(x4, skip_x["3"])
+
+        # Second upsample to (H/2, W/2)
+        x = self.up2_skip(x, skip_x["2"])
+
+        # Third upsample to (H, W)
+        x = self.up1_skip(x, skip_x["1"])
+
+        return x, x4
+
+
+# extends FPN to preserve state_dict keys
+class Decoder(FPN):
+    """
+    Decoder implements the decoder for Simple BEV Segnet. This consumes the
+    compressed BEV grid.
+    """
+
+    def __init__(
+        self, in_channels: int, n_classes: int, predict_future_flow: bool
+    ) -> None:
+        super().__init__(in_channels=in_channels)
         self.predict_future_flow = predict_future_flow
 
         shared_out_channels = in_channels
-        self.up3_skip = UpsamplingAdd(256, 128, scale_factor=2)
-        self.up2_skip = UpsamplingAdd(128, 64, scale_factor=2)
-        self.up1_skip = UpsamplingAdd(64, shared_out_channels, scale_factor=2)
 
         self.feat_head = nn.Sequential(
             nn.Conv2d(
@@ -180,6 +231,7 @@ class Decoder(nn.Module):
                 nn.Conv2d(shared_out_channels, 2, kernel_size=1, padding=0),
             )
 
+    # pyre-ignore[15]: inconsistent override
     def forward(
         self,
         x: torch.Tensor,
@@ -187,29 +239,7 @@ class Decoder(nn.Module):
     ) -> Dict[str, torch.Tensor]:
         b, c, h, w = x.shape
 
-        # (H, W)
-        skip_x = {"1": x}
-        x = self.first_conv(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-
-        # (H/4, W/4)
-        x = self.layer1(x)
-        skip_x["2"] = x
-        x = self.layer2(x)
-        skip_x["3"] = x
-
-        # (H/8, W/8)
-        x = self.layer3(x)
-
-        # First upsample to (H/4, W/4)
-        x = self.up3_skip(x, skip_x["3"])
-
-        # Second upsample to (H/2, W/2)
-        x = self.up2_skip(x, skip_x["2"])
-
-        # Third upsample to (H, W)
-        x = self.up1_skip(x, skip_x["1"])
+        x, _ = super().forward(x)
 
         if bev_flip_indices is not None:
             bev_flip1_index, bev_flip2_index = bev_flip_indices
