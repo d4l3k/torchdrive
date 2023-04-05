@@ -63,7 +63,7 @@ class BEVTaskVan(torch.nn.Module):
         self.cameras = cameras
         self.num_encode_frames = num_encode_frames
         self.num_backprop_frames = num_backprop_frames
-        self.backbone: nn.Module = compile_fn(backbone)
+        self.backbone: nn.Module = backbone
         self.camera_encoders = nn.ModuleDict(
             {cam: compile_fn(cam_encoder()) for cam in cameras}
         )

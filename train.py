@@ -197,6 +197,7 @@ elif args.backbone == "simple_bev":
         num_frames=3,
         scale=3 / adjust,
         num_upsamples=num_upsamples,
+        compile_fn=compile_fn,
     )
 else:
     raise ValueError(f"unknown backbone {args.backbone}")

@@ -26,7 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 
@@ -640,6 +640,7 @@ class SegnetBackbone(BEVBackbone):
         scale: float,
         center: Tuple[float, float, float] = (-0.5, -0.5, 0),
         num_upsamples: int = 0,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
 
@@ -653,27 +654,31 @@ class SegnetBackbone(BEVBackbone):
         )
 
         self.project = nn.ModuleList(
-            [nn.Conv2d(cam_dim, cam_dim, 1) for i in range(num_frames)]
+            [compile_fn(nn.Conv2d(cam_dim, cam_dim, 1)) for i in range(num_frames)]
         )
-        self.fpn = FPN(dim)
+        self.fpn: nn.Module = compile_fn(FPN(dim))
 
-        self.bev_compressor = nn.Sequential(
-            nn.Conv2d(
-                cam_dim * grid_shape[-1],
-                dim,
-                kernel_size=3,
-                padding=1,
-                stride=1,
-                bias=False,
-            ),
-            nn.InstanceNorm2d(dim),
-            nn.GELU(),
+        self.bev_compressor: nn.Module = compile_fn(
+            nn.Sequential(
+                nn.Conv2d(
+                    cam_dim * grid_shape[-1],
+                    dim,
+                    kernel_size=3,
+                    padding=1,
+                    stride=1,
+                    bias=False,
+                ),
+                nn.InstanceNorm2d(dim),
+                nn.GELU(),
+            )
         )
-        self.upsample = BEVUpsampler(
-            num_upsamples=num_upsamples,
-            bev_shape=grid_shape[:2],
-            dim=dim,
-            output_dim=hr_dim,
+        self.upsample: nn.Module = compile_fn(
+            BEVUpsampler(
+                num_upsamples=num_upsamples,
+                bev_shape=grid_shape[:2],
+                dim=dim,
+                output_dim=hr_dim,
+            )
         )
 
     def forward(
