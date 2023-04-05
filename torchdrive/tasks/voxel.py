@@ -389,45 +389,49 @@ class VoxelTask(BEVTask):
                 dynamic_mask = torch.zeros_like(primary_color)
                 semantic_vel = torch.zeros_like(primary_color)
 
-            with torch.autograd.profiler.record_function("depth_decoder"), autocast():
-                cam_disp, cam_vel = self.depth_decoder(ctx.cam_feats[cam])
+            if cam in ctx.cam_feats:
+                with torch.autograd.profiler.record_function(
+                    "depth_decoder"
+                ), autocast():
+                    cam_disp, cam_vel = self.depth_decoder(ctx.cam_feats[cam])
 
-            cam_vel = F.interpolate(
-                cam_vel.float(),
-                [h // 2, w // 2],
-                mode="bilinear",
-                align_corners=False,
-            )
-            cam_vel *= dynamic_mask
-            cam_vel *= primary_mask
-            cam_disp = cam_disp.float().sigmoid()
-            cam_depth = disp_to_depth(
-                cam_disp,
-                min_depth=self.min_depth,
-                max_depth=self.max_depth,
-            )
+                cam_vel = F.interpolate(
+                    cam_vel.float(),
+                    [h // 2, w // 2],
+                    mode="bilinear",
+                    align_corners=False,
+                )
+                cam_vel *= dynamic_mask
+                cam_vel *= primary_mask
+                cam_disp = cam_disp.float().sigmoid()
+                cam_depth = disp_to_depth(
+                    cam_disp,
+                    min_depth=self.min_depth,
+                    max_depth=self.max_depth,
+                )
 
-            self._depth_loss(
-                ctx=ctx,
-                label="cam",
-                cam=cam,
-                cam_T=cam_T,
-                disp=cam_disp,
-                depth=cam_depth,
-                semantic_vel=cam_vel,
-                losses=losses,
-                h=h,
-                w=w,
-                batch=batch,
-                frame=frame,
-                frame_time=frame_time,
-                primary_color=primary_color,
-                primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights,  # * 0.1,
-            )
+                self._depth_loss(
+                    ctx=ctx,
+                    label="cam",
+                    cam=cam,
+                    cam_T=cam_T,
+                    disp=cam_disp,
+                    depth=cam_depth,
+                    semantic_vel=cam_vel,
+                    losses=losses,
+                    h=h,
+                    w=w,
+                    batch=batch,
+                    frame=frame,
+                    frame_time=frame_time,
+                    primary_color=primary_color,
+                    primary_mask=primary_mask,
+                    per_pixel_weights=per_pixel_weights,  # * 0.1,
+                )
 
-            del cam_vel
-            del cam_depth
+                del cam_vel
+                del cam_depth
+                del cam_disp
 
             voxel_disp = depth_to_disp(
                 voxel_depth,
@@ -460,7 +464,6 @@ class VoxelTask(BEVTask):
             del voxel_depth
             del semantic_vel
             del semantic_img
-            del cam_disp
 
         return losses
 

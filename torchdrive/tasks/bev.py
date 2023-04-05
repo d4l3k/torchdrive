@@ -1,3 +1,4 @@
+import random
 import time
 from abc import ABC, abstractmethod
 from typing import Callable, Dict, List, Optional, Tuple
@@ -107,20 +108,23 @@ class BEVTaskVan(torch.nn.Module):
 
         last_cam_feats = {}
 
+        drop_camera = random.choice(self.cameras)
+        dropout_cameras = set(self.cameras) - {drop_camera}
+
         with autocast():
             first_backprop_frame = max(
                 self.num_encode_frames - self.num_backprop_frames, 0
             )
-            camera_feats = {cam: [] for cam in self.cameras}
+            camera_feats = {cam: [] for cam in dropout_cameras}
             with torch.no_grad():
                 for frame in range(0, first_backprop_frame):
-                    for cam in self.cameras:
+                    for cam in dropout_cameras:
                         camera_feats[cam].append(
                             self.camera_encoders[cam](batch.color[cam][:, frame])
                         )
             for frame in range(first_backprop_frame, self.num_encode_frames):
                 pause = frame == (self.num_encode_frames - 1)
-                for cam in self.cameras:
+                for cam in dropout_cameras:
                     feat = self.camera_encoders[cam](batch.color[cam][:, frame])
 
                     # pause the last cam encoder backprop for tasks with image

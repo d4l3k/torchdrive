@@ -244,13 +244,6 @@ class RiceBackbone(BEVBackbone):
         )
         resnet_init(self.cam_transformers)
 
-        self.conv: nn.Module = ConvPEBlock(
-            len(cameras) * dim,
-            dim,
-            input_shape=bev_shape,
-        )
-        resnet_init(self.conv)
-
         self.frame_merger = BEVMerger(
             num_frames=num_frames, bev_shape=bev_shape, dim=dim
         )
@@ -274,7 +267,7 @@ class RiceBackbone(BEVBackbone):
                 for cam, time_feats in camera_features.items():
                     cam_feat = time_feats[i]
                     ordered_grids.append(self.cam_transformers[cam]([cam_feat]))
-                bev_grids.append(self.conv(torch.cat(ordered_grids, dim=1)))
+                bev_grids.append(torch.stack(ordered_grids, dim=0).mean(dim=0))
 
             bev = self.frame_merger(bev_grids)
 
