@@ -6,6 +6,10 @@ import os.path
 from collections import defaultdict
 from typing import Callable, cast, Dict, Iterator, List, Optional, Set, Tuple, Union
 
+# set device before loading CUDA/PyTorch
+LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
+os.environ["CUDA_VISIBLE_DEVICES"] = str(LOCAL_RANK)
+
 import torch
 import torch.distributed as dist
 import torchinfo
@@ -87,22 +91,24 @@ os.makedirs(args.output, exist_ok=True)
 
 if "RANK" in os.environ:
     dist.init_process_group("nccl")
-    world_size: int = dist.get_world_size()
-    rank: int = dist.get_rank()
+    WORLD_SIZE: int = dist.get_world_size()
+    RANK: int = dist.get_rank()
 else:
-    world_size = 1
-    rank = 0
+    WORLD_SIZE = 1
+    RANK = 0
 
-device_id: int = rank % torch.cuda.device_count()
+# since we set CUDA_VISIBLE_DEVICES there should only be max 1 device
+assert torch.cuda.device_count() <= 1
+device_id = 0
 device = torch.device(device_id)
-torch.cuda.set_device(device)
+
 # pyre-fixme[16]: no attribute set_float32_matmul_precision
 torch.set_float32_matmul_precision("high")
 
 BS: int = args.batch_size
 NUM_EPOCHS: int = args.epochs
 
-if rank == 0:
+if RANK == 0:
     writer: Optional[SummaryWriter] = SummaryWriter(
         log_dir=os.path.join(args.output, "tb"),
         max_queue=500,
@@ -130,13 +136,13 @@ dataset = MultiCamDataset(
     nframes_per_point=args.num_encode_frames + 2,
     limit_size=args.limit_size,
 )
-if rank == 0:
+if RANK == 0:
     print(f"trainset size {len(dataset)}")
 
 sampler: DistributedSampler[MultiCamDataset] = DistributedSampler(
     dataset,
-    num_replicas=world_size,
-    rank=rank,
+    num_replicas=WORLD_SIZE,
+    rank=RANK,
     shuffle=True,
     drop_last=True,
     seed=binascii.crc32((args.load or args.output).encode("utf-8")),
@@ -285,7 +291,7 @@ model = BEVTaskVan(
 )
 
 model = model.to(device)
-if False and world_size > 1:
+if False and WORLD_SIZE > 1:
     ddp_model: torch.nn.Module = DistributedDataParallel(
         model,
         device_ids=[device_id],
@@ -295,7 +301,7 @@ if False and world_size > 1:
 else:
     ddp_model = model
 
-if rank == 0:
+if RANK == 0:
     print(torchinfo.summary(model))
 
 params: List[Dict[str, Union[object, List[object]]]] = model.param_opts(args.lr)
@@ -358,7 +364,7 @@ def reset_metrics() -> None:
 
 
 def save(epoch: int) -> None:
-    if rank != 0:
+    if RANK != 0:
         return
     path = os.path.join(args.output, f"model_{epoch}.pt")
     torch.save(
