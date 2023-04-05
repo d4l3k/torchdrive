@@ -34,6 +34,7 @@ import torch
 import torchvision
 from pytorch3d.transforms.transform3d import Transform3d
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 from torchvision import transforms
 from torchvision.models.resnet import resnet18
 
@@ -708,25 +709,54 @@ class SegnetBackbone(BEVBackbone):
                 T = T.matmul(voxel_to_world)
                 Ts.append(T)
 
-        feature = torch.stack(features, dim=1).flatten(0, 1)
-        K = torch.stack(Ks, dim=1).flatten(0, 1)
-        T = torch.stack(Ts, dim=1).flatten(0, 1)
-        feat_voxels, feat_valids = lift_cam_to_voxel(
-            features=feature, K=K, T=T, grid_shape=self.grid_shape
-        )
+        feature = torch.stack(features, dim=1)
+        K = torch.stack(Ks, dim=1)
+        T = torch.stack(Ts, dim=1)
+        feat_mem = checkpoint(lift_cam_to_voxel_mean, feature, K, T, self.grid_shape)
 
         with autocast():
-            feat_voxels = feat_voxels.unflatten(0, (BS, S))
-            feat_valids = feat_valids.unflatten(0, (BS, S))
-
-            # merge voxel grids
-            feat_mem = feat_voxels.sum(dim=1) / feat_valids.sum(dim=1).clamp(min=1)
-
             # flatten voxel grid to bev
-            feat_mem = feat_mem.permute(0, 1, 4, 2, 3).flatten(1, 2)
+            feat_mem = feat_mem.flatten(1, 2)
             feat_mem = self.bev_compressor(feat_mem)
 
             # run through FPN
             x, x4 = self.fpn(feat_mem)
             x = self.upsample(x)
             return x, x4
+
+
+def lift_cam_to_voxel_mean(
+    features: torch.Tensor,
+    K: torch.Tensor,
+    T: torch.Tensor,
+    grid_shape: Tuple[int, int, int],
+    eps: float = 1e-7,
+) -> torch.Tensor:
+    """
+    Runs lift_cam_to_voxel and takes the weighted mean of the features along the
+    second batch dimension.
+
+    Args:
+       features: [batch_size, S, channels, height, width]
+       K: [batch_size, S, 4, 4]
+       T: [batch_size, S, 4, 4]
+    Returns: the merged grids [batch_size, channels, z, x, y]
+    """
+
+    BS, S, _, _ = K.shape
+
+    feat_voxels, feat_valids = lift_cam_to_voxel(
+        features=features.flatten(0, 1),
+        K=K.flatten(0, 1),
+        T=T.flatten(0, 1),
+        grid_shape=grid_shape,
+    )
+
+    with autocast():
+        feat_voxels = feat_voxels.unflatten(0, (BS, S))
+        feat_valids = feat_valids.unflatten(0, (BS, S))
+
+        # merge voxel grids
+        feat_mem = feat_voxels.sum(dim=1) / feat_valids.sum(dim=1).clamp(min=1)
+        feat_mem = feat_mem.permute(0, 1, 4, 2, 3)
+    return feat_mem

@@ -88,6 +88,7 @@ class TestSimpleBEV(unittest.TestCase):
         x, x4 = m(camera_features, batch)
         self.assertEqual(x.shape, (batch.batch_size(), hr_dim, X * 2, Y * 2))
         self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X // 8, Y // 8))
+        (x.mean() + x4.mean()).backward()
 
     def test_resnet_50(self) -> None:
         m = ResNetEncoder(8, models.resnet50())
