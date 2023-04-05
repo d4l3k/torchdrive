@@ -8,12 +8,7 @@ from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
 
 from torchdrive.amp import autocast
-from torchdrive.autograd import (
-    autograd_context,
-    autograd_pause,
-    autograd_resume,
-    log_grad_norm,
-)
+from torchdrive.autograd import autograd_pause, autograd_resume, log_grad_norm
 from torchdrive.data import Batch
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.context import Context
@@ -160,64 +155,71 @@ class BEVTaskVan(torch.nn.Module):
                 for cam, feat in last_cam_feats.items()
             }
 
-        # TODO: handle bev
-        with autograd_context(hr_bev) as (hr_bev):
-            losses: Dict[str, torch.Tensor] = {}
-            task_times: Dict[str, float] = {}
+        hr_bev = autograd_pause(hr_bev)
+        bev = autograd_pause(bev)
 
-            ctx: Context = Context(
-                log_img=log_img,
-                log_text=log_text,
+        losses: Dict[str, torch.Tensor] = {}
+        task_times: Dict[str, float] = {}
+
+        ctx: Context = Context(
+            log_img=log_img,
+            log_text=log_text,
+            global_step=global_step,
+            scaler=scaler,
+            writer=self.writer,
+            output=self.output,
+            start_frame=self.num_encode_frames - 1,
+            weights=batch.weight,
+            cam_feats=last_cam_feats,
+        )
+
+        def _run_tasks(
+            task_type: str, tasks: nn.ModuleDict, task_bev: torch.Tensor
+        ) -> None:
+            for name, task in tasks.items():
+                with torch.autograd.profiler.record_function(name):
+                    ctx.name = name
+
+                    task_start = time.time()
+                    per_task_bev = task_bev
+                    if log_text:
+                        per_task_bev = log_grad_norm(
+                            per_task_bev,
+                            self.writer,
+                            f"grad/norm/{task_type}",
+                            name,
+                            global_step,
+                        )
+                    task_losses = task(ctx, batch, per_task_bev)
+                    ctx.backward(task_losses)
+
+                    for k, v in task_losses.items():
+                        losses[name + "-" + k] = v
+
+                    task_times[name] = time.time() - task_start
+
+        if len(self.tasks) > 0:
+            _run_tasks("bev", self.tasks, bev)
+
+        if len(self.hr_tasks) > 0:
+            _run_tasks("hr_bev", self.hr_tasks, hr_bev)
+
+        if log_text and (writer := self.writer) is not None:
+            writer.add_scalars(
+                "task_times",
+                task_times,
                 global_step=global_step,
-                scaler=scaler,
-                writer=self.writer,
-                output=self.output,
-                start_frame=self.num_encode_frames - 1,
-                weights=batch.weight,
-                cam_feats=last_cam_feats,
             )
 
-            def _run_tasks(
-                task_type: str, tasks: nn.ModuleDict, task_bev: torch.Tensor
-            ) -> None:
-                for name, task in tasks.items():
-                    with torch.autograd.profiler.record_function(name):
-                        ctx.name = name
+        # resume grad
+        to_resume = []
+        if len(self.tasks) > 0:
+            to_resume.append(bev)
+        if len(self.hr_tasks) > 0:
+            to_resume.append(hr_bev)
 
-                        task_start = time.time()
-                        per_task_bev = task_bev
-                        if log_text:
-                            per_task_bev = log_grad_norm(
-                                per_task_bev,
-                                self.writer,
-                                f"grad/norm/{task_type}",
-                                name,
-                                global_step,
-                            )
-                        task_losses = task(ctx, batch, per_task_bev)
-                        ctx.backward(task_losses)
-
-                        for k, v in task_losses.items():
-                            losses[name + "-" + k] = v
-
-                        task_times[name] = time.time() - task_start
-
-            if len(self.tasks) > 0:
-                _run_tasks("bev", self.tasks, bev)
-
-            if len(self.hr_tasks) > 0:
-                if log_text:
-                    hr_bev = log_grad_norm(
-                        hr_bev, self.writer, "grad/norm/bev", "hr_bev", global_step
-                    )
-                _run_tasks("hr_bev", self.hr_tasks, hr_bev)
-
-            if log_text and (writer := self.writer) is not None:
-                writer.add_scalars(
-                    "task_times",
-                    task_times,
-                    global_step=global_step,
-                )
+        assert len(to_resume) > 0, "no bev grids requiring grad"
+        autograd_resume(*to_resume)
 
         # resume autograd on cameras
         autograd_resume(*last_cam_feats_resume.values())
