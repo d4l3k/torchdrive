@@ -13,6 +13,7 @@ def autograd_pause(tensor: torch.Tensor) -> torch.Tensor:
 
     See autograd_resume.
     """
+    assert tensor.requires_grad, f"tensor does not require grad {tensor}"
     detatched = tensor.detach()
     detatched.requires_grad = True
     detatched.parent = tensor

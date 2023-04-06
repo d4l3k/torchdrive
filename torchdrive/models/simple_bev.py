@@ -34,7 +34,6 @@ import torch
 import torchvision
 from pytorch3d.transforms.transform3d import Transform3d
 from torch import nn
-from torch.utils.checkpoint import checkpoint
 from torchvision import transforms
 from torchvision.models.resnet import resnet18
 
@@ -680,6 +679,8 @@ class SegnetBackbone(BEVBackbone):
                 output_dim=hr_dim,
             )
         )
+        # pyre-fixme[6]: invalid parameter type
+        self.lift_cam_to_voxel_mean: nn.Module = compile_fn(lift_cam_to_voxel_mean)
 
     def forward(
         self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
@@ -717,7 +718,7 @@ class SegnetBackbone(BEVBackbone):
         feature = torch.stack(features, dim=1)
         K = torch.stack(Ks, dim=1)
         T = torch.stack(Ts, dim=1)
-        feat_mem = checkpoint(lift_cam_to_voxel_mean, feature, K, T, self.grid_shape)
+        feat_mem = self.lift_cam_to_voxel_mean(feature, K, T, self.grid_shape)
 
         with autocast():
             # flatten voxel grid to bev

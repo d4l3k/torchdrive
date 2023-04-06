@@ -116,12 +116,11 @@ class BEVTaskVan(torch.nn.Module):
                 self.num_encode_frames - self.num_backprop_frames, 0
             )
             camera_feats = {cam: [] for cam in dropout_cameras}
-            with torch.no_grad():
-                for frame in range(0, first_backprop_frame):
-                    for cam in dropout_cameras:
-                        camera_feats[cam].append(
-                            self.camera_encoders[cam](batch.color[cam][:, frame])
-                        )
+            for frame in range(0, first_backprop_frame):
+                for cam in dropout_cameras:
+                    out = self.camera_encoders[cam](batch.color[cam][:, frame]).detach()
+                    assert not out.requires_grad
+                    camera_feats[cam].append(out)
             for frame in range(first_backprop_frame, self.num_encode_frames):
                 pause = frame == (self.num_encode_frames - 1)
                 for cam in dropout_cameras:

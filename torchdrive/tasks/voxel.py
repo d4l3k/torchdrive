@@ -248,7 +248,7 @@ class VoxelTask(BEVTask):
             losses = {}
 
             # total variation loss to encourage sharp edges
-            losses["tvl1"] = tvl1_loss(grid.squeeze(1)) * 1e-2
+            losses["tvl1"] = tvl1_loss(grid.squeeze(1))
 
             mini_batches = batch.split(self.render_batch_size)
             mini_grids = torch.split(grid, self.render_batch_size)
