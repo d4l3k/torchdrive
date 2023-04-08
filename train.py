@@ -326,7 +326,7 @@ lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, ga
 scaler: Optional[amp.GradScaler] = None
 
 if args.load:
-    state_dict: Dict[str, torch.Tensor] = torch.load(args.load, map_location=device)
+    state_dict: Dict[str, torch.Tensor] = torch.load(args.load, map_location=device, weights_only=True)
 
     # new save format
     if "optim" in state_dict:
