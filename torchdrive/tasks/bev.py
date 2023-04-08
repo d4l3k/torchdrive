@@ -14,6 +14,7 @@ from torchdrive.autograd import autograd_pause, autograd_resume, log_grad_norm
 from torchdrive.data import Batch
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.context import Context
+from torchdrive.transforms.img import render_color
 
 
 def _get_orig_mod(m: nn.Module) -> nn.Module:
@@ -167,6 +168,16 @@ class BEVTaskVan(torch.nn.Module):
                 )
                 for cam, feat in last_cam_feats.items()
             }
+
+        if log_img and (writer := self.writer):
+            writer.add_image(
+                "bev/bev", render_color(bev[0].sum(dim=0)), global_step=global_step
+            )
+            writer.add_image(
+                "bev/hr_bev",
+                render_color(hr_bev[0].sum(dim=0)),
+                global_step=global_step,
+            )
 
         hr_bev = autograd_pause(hr_bev)
         bev = autograd_pause(bev)
