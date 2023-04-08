@@ -80,7 +80,11 @@ class UpsamplingConcat(nn.Module):
         return self.conv(x_to_upsample)
 
 
-class UpsamplingAdd(nn.Module):
+class UpsamplingAdd2d(nn.Module):
+    """
+    Upsamples a 2d input and adds it to the skip connection value.
+    """
+
     def __init__(
         self, in_channels: int, out_channels: int, scale_factor: int = 2
     ) -> None:
@@ -94,6 +98,40 @@ class UpsamplingAdd(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, x_skip: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: [batch_size, in_channels, h, w]
+            x_skip: [batch_size, out_channels, h*2, w*2]
+        """
+        # upsample doesn't support bfloat16 -- explicit cast
+        x = x.float()
+        x = self.upsample_layer(x)
+        return x + x_skip
+
+
+class UpsamplingAdd3d(nn.Module):
+    """
+    Upsamples a 3d input and adds it to the skip connection value.
+    """
+
+    def __init__(
+        self, in_channels: int, out_channels: int, scale_factor: int = 2
+    ) -> None:
+        super().__init__()
+        self.upsample_layer = nn.Sequential(
+            nn.Upsample(
+                scale_factor=scale_factor, mode="trilinear", align_corners=False
+            ),
+            nn.Conv3d(in_channels, out_channels, kernel_size=1, padding=0, bias=False),
+            nn.InstanceNorm3d(out_channels),
+        )
+
+    def forward(self, x: torch.Tensor, x_skip: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: [batch_size, in_channels, h, w, d]
+            x_skip: [batch_size, out_channels, h*2, w*2, d*2]
+        """
         # upsample doesn't support bfloat16 -- explicit cast
         x = x.float()
         x = self.upsample_layer(x)
@@ -119,9 +157,9 @@ class FPN(nn.Module):
         self.layer2: nn.Module = backbone.layer2
         self.layer3: nn.Module = backbone.layer3
 
-        self.up3_skip = UpsamplingAdd(256, 128, scale_factor=2)
-        self.up2_skip = UpsamplingAdd(128, 64, scale_factor=2)
-        self.up1_skip = UpsamplingAdd(64, in_channels, scale_factor=2)
+        self.up3_skip = UpsamplingAdd2d(256, 128, scale_factor=2)
+        self.up2_skip = UpsamplingAdd2d(128, 64, scale_factor=2)
+        self.up1_skip = UpsamplingAdd2d(64, in_channels, scale_factor=2)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """

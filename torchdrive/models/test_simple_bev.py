@@ -11,6 +11,8 @@ from torchdrive.models.simple_bev import (
     Segnet,
     segnet_rgb,
     SegnetBackbone,
+    UpsamplingAdd2d,
+    UpsamplingAdd3d,
 )
 
 
@@ -116,3 +118,19 @@ class TestSimpleBEV(unittest.TestCase):
         m = RegNetEncoder(8, models.regnet_x_800mf())
         out = m(torch.rand(2, 3, 48, 64))
         self.assertEqual(out.shape, (2, 8, 6, 8))
+
+    def test_upsampling_add_2d(self) -> None:
+        m = UpsamplingAdd2d(3, 4)
+        out = m(
+            x=torch.rand(2, 3, 5, 6),
+            x_skip=torch.rand(2, 4, 10, 12),
+        )
+        self.assertEqual(out.shape, (2, 4, 10, 12))
+
+    def test_upsampling_add_3d(self) -> None:
+        m = UpsamplingAdd3d(3, 4)
+        out = m(
+            x=torch.rand(2, 3, 5, 6, 7),
+            x_skip=torch.rand(2, 4, 10, 12, 14),
+        )
+        self.assertEqual(out.shape, (2, 4, 10, 12, 14))
