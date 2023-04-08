@@ -5,9 +5,10 @@ from torchvision import models
 
 from torchdrive.data import dummy_batch
 from torchdrive.models.simple_bev import (
-    FPN,
     RegNetEncoder,
     ResNetEncoder,
+    ResnetFPN2d,
+    ResnetFPN3d,
     Segnet,
     segnet_rgb,
     SegnetBackbone,
@@ -59,11 +60,17 @@ class TestSimpleBEV(unittest.TestCase):
         raw_feat, *_ = m.forward_batch(batch, frame=0)
         self.assertEqual(raw_feat.shape, (batch.batch_size(), latent_dim, X, Y))
 
-    def test_fpn(self) -> None:
-        m = FPN(3)
+    def test_resnet_fpn_2d(self) -> None:
+        m = ResnetFPN2d(3)
         x, x4 = m(torch.rand(2, 3, 8, 16))
         self.assertEqual(x.shape, (2, 3, 8, 16))
         self.assertEqual(x4.shape, (2, 256, 1, 2))
+
+    def test_resnet_fpn_3d(self) -> None:
+        m = ResnetFPN3d(3, 16)
+        x, x4 = m(torch.rand(2, 3, 8, 16, 24))
+        self.assertEqual(x.shape, (2, 3, 8, 16, 24))
+        self.assertEqual(x4.shape, (2, 16, 1, 2, 3))
 
     def test_segnet_backbone(self) -> None:
         batch = dummy_batch()

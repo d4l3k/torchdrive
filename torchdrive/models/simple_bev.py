@@ -38,10 +38,10 @@ from torchvision import transforms
 from torchvision.models.resnet import resnet18
 
 from torchdrive.amp import autocast
-
 from torchdrive.data import Batch
 from torchdrive.models.bev import BEVUpsampler
 from torchdrive.models.bev_backbone import BEVBackbone
+from torchdrive.models.resnet_3d import resnet3d18
 from torchdrive.transforms.simple_bev import lift_cam_to_voxel
 
 EPS = 1e-4
@@ -138,7 +138,7 @@ class UpsamplingAdd3d(nn.Module):
         return x + x_skip
 
 
-class FPN(nn.Module):
+class ResnetFPN2d(nn.Module):
     """
     Implements the FPN used in the Simple BEV segnet decoder.
     """
@@ -196,8 +196,79 @@ class FPN(nn.Module):
         return x, x4
 
 
+class ResnetFPN3d(nn.Module):
+    """
+    Implements a resnet FPN based off of resnet18 but in 3d.
+    """
+
+    def __init__(self, in_channels: int, final_channels: int) -> None:
+        super().__init__()
+
+        backbone = resnet3d18(
+            zero_init_residual=True, final_channels=final_channels * 2
+        )
+        self.first_conv = nn.Conv3d(
+            in_channels,
+            final_channels // 4,
+            kernel_size=7,
+            stride=2,
+            padding=3,
+            bias=False,
+        )
+        self.bn1: nn.Module = backbone.bn1
+        self.relu: nn.Module = backbone.relu
+
+        self.layer1: nn.Module = backbone.layer1
+        self.layer2: nn.Module = backbone.layer2
+        self.layer3: nn.Module = backbone.layer3
+
+        self.up3_skip = UpsamplingAdd3d(
+            final_channels, final_channels // 2, scale_factor=2
+        )
+        self.up2_skip = UpsamplingAdd3d(
+            final_channels // 2, final_channels // 4, scale_factor=2
+        )
+        self.up1_skip = UpsamplingAdd3d(
+            final_channels // 4, in_channels, scale_factor=2
+        )
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            x: [BS, in_channels, H, W]
+        Returns:
+            * [BS, in_channels, H, W]
+            * [BS, 256, H/8, W/8]
+        """
+        # (H, W)
+        skip_x = {"1": x}
+        x = self.first_conv(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        # (H/4, W/4)
+        x = self.layer1(x)
+        skip_x["2"] = x
+        x = self.layer2(x)
+        skip_x["3"] = x
+
+        # (H/8, W/8)
+        x4 = self.layer3(x)
+
+        # First upsample to (H/4, W/4)
+        x = self.up3_skip(x4, skip_x["3"])
+
+        # Second upsample to (H/2, W/2)
+        x = self.up2_skip(x, skip_x["2"])
+
+        # Third upsample to (H, W)
+        x = self.up1_skip(x, skip_x["1"])
+
+        return x, x4
+
+
 # extends FPN to preserve state_dict keys
-class Decoder(FPN):
+class Decoder(ResnetFPN2d):
     """
     Decoder implements the decoder for Simple BEV Segnet. This consumes the
     compressed BEV grid.
@@ -693,7 +764,7 @@ class SegnetBackbone(BEVBackbone):
         self.project = nn.ModuleList(
             [compile_fn(nn.Conv2d(cam_dim, cam_dim, 1)) for i in range(num_frames)]
         )
-        self.fpn: nn.Module = compile_fn(FPN(dim))
+        self.fpn: nn.Module = compile_fn(ResnetFPN2d(dim))
 
         self.bev_compressor: nn.Module = compile_fn(
             nn.Sequential(
