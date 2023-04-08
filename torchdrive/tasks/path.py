@@ -44,14 +44,12 @@ class PathTask(BEVTask):
         BS = len(batch.distances)
         device = bev.device
 
-        start_T = batch.cam_T[:, ctx.start_frame]
         long_cam_T, mask, lengths = batch.long_cam_T
-        cam_T = start_T.unsqueeze(1).pinverse().matmul(long_cam_T)
 
         zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
         zero_coord[:, -1] = 1
 
-        positions = torch.matmul(cam_T, zero_coord.T)[..., :3, 0].permute(0, 2, 1)
+        positions = torch.matmul(long_cam_T, zero_coord.T)[..., :3, 0].permute(0, 2, 1)
 
         # used for direction bucket
         final_pos = positions[torch.arange(BS), :, lengths - 1]

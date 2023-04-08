@@ -167,8 +167,6 @@ class VoxelTask(BEVTask):
         BS = len(batch.distances)
         frames = batch.distances.shape[1]
         start_frame = ctx.start_frame
-        start_T = batch.cam_T[:, ctx.start_frame]
-        cam_T = start_T.unsqueeze(1).pinverse().matmul(batch.cam_T)
         device = bev.device
 
         bev_shape = bev.shape[2:]
@@ -211,7 +209,7 @@ class VoxelTask(BEVTask):
             zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
             zero_coord[:, -1] = 1
             for frame in range(0, frames):
-                T = cam_T[:, frame]
+                T = batch.cam_T[:, frame]
                 cam_coords = torch.matmul(T, zero_coord.T)
                 coord = cam_coords[0, :3, 0]
                 x, y, z = (coord * self.scale + voxel_center).int()
@@ -294,8 +292,6 @@ class VoxelTask(BEVTask):
         BS = len(batch.distances)
         frames = batch.distances.shape[1]
         start_frame = ctx.start_frame
-        start_T = batch.cam_T[:, ctx.start_frame]
-        cam_T = start_T.unsqueeze(1).pinverse().matmul(batch.cam_T)
         frame_time = batch.frame_time - batch.frame_time[:, ctx.start_frame].unsqueeze(
             1
         )
@@ -414,7 +410,7 @@ class VoxelTask(BEVTask):
                     ctx=ctx,
                     label="cam",
                     cam=cam,
-                    cam_T=cam_T,
+                    cam_T=batch.cam_T,
                     disp=cam_disp,
                     depth=cam_depth,
                     semantic_vel=cam_vel,
@@ -447,7 +443,7 @@ class VoxelTask(BEVTask):
                 ctx=ctx,
                 label="voxel",
                 cam=cam,
-                cam_T=cam_T,
+                cam_T=batch.cam_T,
                 disp=voxel_disp,
                 depth=voxel_depth,
                 semantic_vel=semantic_vel,
@@ -530,12 +526,6 @@ class VoxelTask(BEVTask):
             assert target_frame >= 0, (frame, offset)
             T = cam_T[:, target_frame]
             time = frame_time[:, target_frame]
-
-            if offset == 0:
-                # offset 0 is only used in tests
-                assert (time == 0).all()
-                eye = torch.eye(4, dtype=T.dtype, device=T.device).expand(T.shape)
-                torch.testing.assert_close(T, eye)
 
             projcolor, projmask = self.project(
                 batch,

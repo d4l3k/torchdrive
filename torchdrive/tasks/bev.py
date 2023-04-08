@@ -1,6 +1,7 @@
 import random
 import time
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -106,6 +107,15 @@ class BEVTaskVan(torch.nn.Module):
         log_text: bool
         log_img, log_text = self.should_log(global_step, BS)
 
+        start_frame = self.num_encode_frames - 1
+
+        # compute relative positions to the start frame
+        start_T = batch.cam_T[:, start_frame]
+        inv_start_T = start_T.unsqueeze(1).pinverse()
+        cam_T = inv_start_T.matmul(batch.cam_T)
+        long_cam_T = inv_start_T.matmul(batch.cam_T)
+        batch = replace(batch, cam_T=cam_T, long_cam_T=long_cam_T)
+
         last_cam_feats = {}
 
         drop_camera = random.choice(self.cameras)
@@ -171,7 +181,7 @@ class BEVTaskVan(torch.nn.Module):
             scaler=scaler,
             writer=self.writer,
             output=self.output,
-            start_frame=self.num_encode_frames - 1,
+            start_frame=start_frame,
             weights=batch.weight,
             cam_feats=last_cam_feats,
         )

@@ -806,10 +806,6 @@ class SegnetBackbone(BEVBackbone):
             .permute(0, 2, 1)
         )
 
-        # compute relative positions to the last encode frame
-        start_T = batch.cam_T[:, self.num_frames].unsqueeze(1)
-        cam_T = start_T.pinverse().matmul(batch.cam_T)
-
         features = []
         Ks = []
         Ts = []
@@ -820,7 +816,7 @@ class SegnetBackbone(BEVBackbone):
                     features.append(self.project[i](feats))
                 Ks.append(batch.K[cam])
                 T = batch.T[cam].pinverse()
-                T = T.matmul(cam_T[:, i])
+                T = T.matmul(batch.cam_T[:, i])
                 T = T.matmul(voxel_to_world)
                 Ts.append(T)
 

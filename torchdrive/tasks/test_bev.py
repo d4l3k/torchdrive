@@ -17,6 +17,20 @@ class DummyBEVTask(BEVTask):
     ) -> Dict[str, torch.Tensor]:
         bev.mean().backward()
         ctx.add_scalar("test", bev.shape[-1])
+
+        # check that start position is at zero
+        cam_T = batch.cam_T[:, ctx.start_frame]
+        zero = (
+            cam_T.new_tensor([0.0, 0.0, 0.0, 1.0])
+            .expand(cam_T.size(0), -1)
+            .unsqueeze(-1)
+        )
+        long_cam_T = batch.long_cam_T
+        assert isinstance(long_cam_T, torch.Tensor)
+        long_cam_T = long_cam_T[:, ctx.start_frame]
+        torch.testing.assert_allclose(cam_T.matmul(zero), zero)
+        torch.testing.assert_allclose(long_cam_T.matmul(zero), zero)
+
         return {
             "foo": torch.tensor(5.0),
         }
