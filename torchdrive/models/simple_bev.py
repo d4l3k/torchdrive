@@ -42,6 +42,7 @@ from torchdrive.data import Batch
 from torchdrive.models.bev import BEVUpsampler
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.models.resnet_3d import resnet3d18
+from torchdrive.transforms.mat import voxel_to_world
 from torchdrive.transforms.simple_bev import lift_cam_to_voxel
 
 EPS = 1e-4
@@ -695,15 +696,9 @@ class Segnet(nn.Module):
         cam0_T_camXs = torch.stack([batch.T[cam] for cam in cameras], dim=1)
 
         center = tuple(a * b for a, b in zip(self.grid_shape, center))
-        voxel_to_world = (
-            Transform3d(device=device)
-            .translate(*center)
-            .scale(1 / scale)
-            .get_matrix()
-            .permute(0, 2, 1)
-        )
+        vtw = voxel_to_world(center, scale, device)
 
-        cam0_T_camXs = cam0_T_camXs.pinverse().matmul(voxel_to_world).pinverse()
+        cam0_T_camXs = cam0_T_camXs.pinverse().matmul(vtw).pinverse()
 
         return self.forward(
             rgb_camXs=rgb_camXs,

@@ -25,6 +25,7 @@ from torchdrive.transforms.depth import (
     Project3D,
 )
 from torchdrive.transforms.img import normalize_img, render_color
+from torchdrive.transforms.mat import voxel_to_world
 
 
 def axis_grid(grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -200,19 +201,23 @@ class VoxelTask(BEVTask):
 
             gz = render_color(grid[0, 0].sum(dim=2))
 
-            voxel_center = torch.tensor(
-                (bev_shape[0] / 2, bev_shape[1] / 2, 0),
+            vtw = voxel_to_world(
+                center=(-bev_shape[0] // 2, -bev_shape[1] // 2, 0),
+                scale=self.scale,
                 device=device,
-                dtype=torch.float32,
             )
 
-            zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
-            zero_coord[:, -1] = 1
+            zero_coord = torch.tensor([[0, 0, 0, 1]], device=device, dtype=torch.float)
             for frame in range(0, frames):
+                # create car to voxel transform
                 T = batch.cam_T[:, frame]
-                cam_coords = torch.matmul(T, zero_coord.T)
-                coord = cam_coords[0, :3, 0]
-                x, y, z = (coord * self.scale + voxel_center).int()
+                T = T.matmul(vtw)
+                T = T.pinverse()
+
+                cam_coords = T.matmul(zero_coord.T).squeeze(-1)
+                cam_coords /= cam_coords[:, 3:].clamp(min=1e-8)
+                coord = cam_coords[0, :3]
+                x, y, z = coord.int()
                 _, d, w = gz.shape
                 if x >= d or y >= w or x < 0 or y < 0:
                     continue

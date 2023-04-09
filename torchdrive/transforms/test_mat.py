@@ -2,7 +2,11 @@ import unittest
 
 import torch
 
-from torchdrive.transforms.mat import random_z_rotation, transformation_from_parameters
+from torchdrive.transforms.mat import (
+    random_z_rotation,
+    transformation_from_parameters,
+    voxel_to_world,
+)
 
 
 class TestMat(unittest.TestCase):
@@ -13,3 +17,7 @@ class TestMat(unittest.TestCase):
     def test_random_z_rotation(self) -> None:
         out = random_z_rotation(2, torch.device("cpu"))
         self.assertEqual(out.shape, (2, 4, 4))
+
+    def test_voxel_to_world(self) -> None:
+        out = voxel_to_world((-128, -128, 0), 3, torch.device("cpu"))
+        self.assertEqual(out.shape, (1, 4, 4))

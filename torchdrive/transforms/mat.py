@@ -1,4 +1,5 @@
 import math
+from typing import Tuple
 
 import torch
 from pytorch3d.transforms import euler_angles_to_matrix, Transform3d
@@ -103,3 +104,16 @@ def random_z_rotation(batch_size: int, device: torch.device) -> torch.Tensor:
     return (
         Transform3d(device=device).rotate(rotation_matrix).get_matrix().permute(0, 2, 1)
     )
+
+
+def voxel_to_world(
+    center: Tuple[int, int, int], scale: float, device: torch.device
+) -> torch.Tensor:
+    voxel_to_world = (
+        Transform3d(device=device)
+        .translate(*center)
+        .scale(1 / scale)
+        .get_matrix()
+        .permute(0, 2, 1)
+    )
+    return voxel_to_world
