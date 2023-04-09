@@ -524,13 +524,15 @@ class VoxelTask(BEVTask):
         for offset in self.offsets:
             target_frame = frame + offset
             assert target_frame >= 0, (frame, offset)
-            T = cam_T[:, target_frame]
+            start_T = cam_T[:, frame]
+            target_T = cam_T[:, target_frame]
             time = frame_time[:, target_frame]
 
             projcolor, projmask = self.project(
                 batch,
                 cam,
-                T,
+                start_T,
+                target_T,
                 depth,
                 primary_color,
                 primary_mask,
@@ -656,7 +658,8 @@ class VoxelTask(BEVTask):
         self,
         batch: Batch,
         cam: str,
-        cam_T: torch.Tensor,
+        start_T: torch.Tensor,
+        target_T: torch.Tensor,
         depth: torch.Tensor,
         color: torch.Tensor,
         mask: torch.Tensor,
@@ -673,13 +676,16 @@ class VoxelTask(BEVTask):
         target_K[:, 1] *= self.backproject_depth.height
         target_inv_K = target_K.pinverse()
 
-        world_points = self.backproject_depth(depth, target_inv_K, batch.T[cam]).clone()
+        backproject_T = batch.T[cam].pinverse().matmul(start_T).pinverse()
+        world_points = self.backproject_depth(
+            depth, target_inv_K, backproject_T
+        ).clone()
 
         # add velocity to points
         world_points[:, :3] += vel.flatten(-2, -1)
 
         # (world to cam) * camera motion
-        T = batch.T[cam].pinverse().matmul(cam_T)
+        T = batch.T[cam].pinverse().matmul(target_T)
         pix_coords = self.project_3d(world_points, src_K, T)
 
         color = F.grid_sample(
