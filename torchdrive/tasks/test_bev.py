@@ -25,7 +25,7 @@ class DummyBEVTask(BEVTask):
             .expand(cam_T.size(0), -1)
             .unsqueeze(-1)
         )
-        long_cam_T = batch.long_cam_T
+        long_cam_T, mask, lengths = batch.long_cam_T
         assert isinstance(long_cam_T, torch.Tensor)
         long_cam_T = long_cam_T[:, ctx.start_frame]
         torch.testing.assert_allclose(cam_T.matmul(zero), zero)

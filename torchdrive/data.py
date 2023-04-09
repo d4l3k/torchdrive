@@ -39,7 +39,7 @@ class Batch:
     # per camera mask
     mask: Dict[str, torch.Tensor]
     # sequential cam_T only aligned with the start frames extending into the
-    # future
+    # future (out, mask, lens)
     long_cam_T: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
 
     global_batch_size: int = 1
@@ -92,11 +92,13 @@ def dummy_item() -> Batch:
     cams = ["left", "right"]
     for cam in cams:
         color[cam] = torch.rand(N, 3, 48, 64)
+
+    long_cam_T = torch.rand(9 * 3, 4, 4)
     return Batch(
         weight=torch.rand(1)[0],
         distances=torch.rand(N),
-        cam_T=torch.rand(N, 4, 4),
-        long_cam_T=torch.rand(9 * 3, 4, 4),
+        cam_T=long_cam_T[:N],
+        long_cam_T=long_cam_T,
         frame_T=torch.rand(N, 4, 4),
         frame_time=torch.arange(N, dtype=torch.float),
         K={cam: torch.rand(4, 4) for cam in cams},

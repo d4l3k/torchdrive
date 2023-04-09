@@ -15,6 +15,7 @@ from torchdrive.data import Batch
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.context import Context
 from torchdrive.transforms.img import render_color
+from torchdrive.transforms.mat import random_z_rotation
 
 
 def _get_orig_mod(m: nn.Module) -> nn.Module:
@@ -48,6 +49,7 @@ class BEVTaskVan(torch.nn.Module):
         output: str = "out",
         num_encode_frames: int = 3,
         num_backprop_frames: int = 2,
+        random_rotation: bool = True,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         """
@@ -62,10 +64,11 @@ class BEVTaskVan(torch.nn.Module):
 
         self.writer = writer
         self.output = output
-
         self.cameras = cameras
         self.num_encode_frames = num_encode_frames
         self.num_backprop_frames = num_backprop_frames
+        self.random_rotation = random_rotation
+
         self.backbone: nn.Module = backbone
         self.camera_encoders = nn.ModuleDict(
             {cam: compile_fn(cam_encoder()) for cam in cameras}
@@ -114,8 +117,19 @@ class BEVTaskVan(torch.nn.Module):
         start_T = batch.cam_T[:, start_frame]
         inv_start_T = start_T.unsqueeze(1).pinverse()
         cam_T = inv_start_T.matmul(batch.cam_T)
-        long_cam_T = inv_start_T.matmul(batch.cam_T)
-        batch = replace(batch, cam_T=cam_T, long_cam_T=long_cam_T)
+        long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
+        long_cam_T = inv_start_T.matmul(long_cam_T)
+
+        if self.random_rotation:
+            rot = random_z_rotation(BS, cam_T.device).unsqueeze(1)
+            cam_T = cam_T.matmul(rot)
+            long_cam_T = long_cam_T.matmul(rot)
+
+        batch = replace(
+            batch,
+            cam_T=cam_T,
+            long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
+        )
 
         last_cam_feats = {}
 

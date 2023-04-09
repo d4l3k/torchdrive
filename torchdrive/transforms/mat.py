@@ -1,4 +1,7 @@
+import math
+
 import torch
+from pytorch3d.transforms import euler_angles_to_matrix, Transform3d
 
 
 def transformation_from_parameters(
@@ -77,3 +80,26 @@ def get_translation_matrix(translation_vector: torch.Tensor) -> torch.Tensor:
     T[:, :3, 3, None] = t
 
     return T
+
+
+def random_z_rotation(batch_size: int, device: torch.device) -> torch.Tensor:
+    """
+    Returns a transformation matrix that will randomly rotate around the z
+    plane.
+
+    Args:
+        batch_size: the batch size
+        device: device to place the transformation matrix onto
+    Returns:
+        transformation matrix [batch_size, 4, 4]
+    """
+
+    angles = torch.zeros((batch_size, 3), device=device)
+    angles[:, 2] = torch.rand(batch_size, device=device) * (math.pi * 2)
+    rotation_matrix = euler_angles_to_matrix(
+        angles,
+        "XYZ",
+    )
+    return (
+        Transform3d(device=device).rotate(rotation_matrix).get_matrix().permute(0, 2, 1)
+    )
