@@ -42,3 +42,4 @@ RUN pip install \
 RUN conda install -c fvcore -c iopath -c conda-forge fvcore iopath
 # From https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md#building--installing-from-source
 RUN pip install "git+https://github.com/facebookresearch/pytorch3d.git"
+RUN pip install openmim && mim install mmcv mmengine mmdet
