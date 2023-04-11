@@ -37,10 +37,10 @@ jobs:
           SHORT_PY="py$(echo ${{ matrix.python-version }} | sed 's/\.//')"
 
           pip install --upgrade wheel pip
-          pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
-          pip install -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/${SHORT_PY}_cu116_pyt1131/download.html pytorch3d
+          pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu118
+          pip install -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/${SHORT_PY}_cu118_pyt200/download.html pytorch3d
           pip install -U openmim
-          mim install mmcv-full
+          mim install 'mmcv-full<2.0.0'
           pip install -r requirements.txt
           pip install -e .
       - name: Run tests
