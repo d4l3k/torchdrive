@@ -7,6 +7,12 @@ from torchvision import transforms
 
 from torchdrive.transforms.img import normalize_img_cuda
 
+TS_MODELS = {
+    "upernet_convnext-t_fp16_512x1024_80k_sem_seg_bdd100k.py": (
+        "https://drive.google.com/uc?export=download&id=1iXRlXZNc1B3OmI9wbyMrVA1y0IC-qFTO&confirm=yes",
+    ),
+}
+
 
 class BDD100KSemSeg:
     """
@@ -78,39 +84,47 @@ class BDD100KSemSeg:
         device: torch.device,
         half: bool = True,
         config: str = "upernet_convnext-t_fp16_512x1024_80k_sem_seg_bdd100k.py",
+        mmlab: bool = False,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
-        import mmcv
-        from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
-        from mmcv.runner import load_checkpoint
-        from mmseg.models import build_segmentor
-
-        cfg_file = os.path.join(
-            os.path.dirname(__file__),
-            "../../third-party/bdd100k-models/sem_seg/configs/sem_seg/",
-            config,
-        )
-
         if device == torch.device("cpu"):
             # half not supported on CPU
             half = False
         self.half = half
 
-        cfg = mmcv.Config.fromfile(cfg_file)
-        cfg.model.pretrained = None
-        cfg.model.train_cfg = None
-        model = build_segmentor(cfg.model, test_cfg=cfg.get("test_cfg"))
+        if not mmlab:
+            path = TS_MODELS[config]
+            model: nn.Module = torch.hub.load_state_dict_from_url(
+                path, map_location=device, file_name=config
+            )
+        else:
+            import mmcv
+            from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
+            from mmcv.runner import load_checkpoint
+            from mmseg.models import build_segmentor
 
-        # pyre-fixme[6]: map_location device
-        checkpoint = load_checkpoint(model, cfg.load_from, map_location=device)
-        model = revert_sync_batchnorm(model)
+            cfg_file = os.path.join(
+                os.path.dirname(__file__),
+                "../../third-party/bdd100k-models/sem_seg/configs/sem_seg/",
+                config,
+            )
+
+            cfg = mmcv.Config.fromfile(cfg_file)
+            cfg.model.pretrained = None
+            cfg.model.train_cfg = None
+            model = build_segmentor(cfg.model, test_cfg=cfg.get("test_cfg"))
+
+            # pyre-fixme[6]: map_location device
+            checkpoint = load_checkpoint(model, cfg.load_from, map_location=device)
+            model = revert_sync_batchnorm(model)
+            # pyre-fixme[8]: attribute used as type
+            model.forward = model.forward_dummy
+
         model = model.eval()
         if half:
             model = model.half()
-
         model = model.to(device)
-        # pyre-fixme[6]: nn.Module
-        self.model: nn.Module = compile_fn(model.encode_decode)
+        self.model: nn.Module = compile_fn(model)
         self.transform: nn.Module = compile_fn(
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         )
@@ -123,4 +137,4 @@ class BDD100KSemSeg:
             if self.half:
                 img = img.half()
             img = self.transform(img)
-            return self.model(img, img_metas=[])
+            return self.model(img)
