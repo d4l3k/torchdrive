@@ -1,13 +1,7 @@
 import os.path
 from typing import Callable, Dict, List, Tuple, Union
 
-import mmcv
-
 import torch
-from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
-from mmcv.runner import load_checkpoint, wrap_fp16_model
-from mmdet.models import build_detector
-from mmdet.models.detectors import TwoStageDetector
 from torch import nn
 from torchvision import transforms
 
@@ -47,6 +41,12 @@ class BDD100KDet:
         config: str = "cascade_rcnn_convnext-t_fpn_fp16_3x_det_bdd100k.py",
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
+        import mmcv
+        from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
+        from mmcv.runner import load_checkpoint, wrap_fp16_model
+        from mmdet.models import build_detector
+        from mmdet.models.detectors import TwoStageDetector
+
         cfg_file = os.path.join(
             os.path.dirname(__file__),
             "../../third-party/bdd100k-models/det/configs/det/",

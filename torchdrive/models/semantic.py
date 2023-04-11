@@ -1,11 +1,7 @@
 import os.path
 from typing import Callable
 
-import mmcv
 import torch
-from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
-from mmcv.runner import load_checkpoint
-from mmseg.models import build_segmentor
 from torch import nn
 from torchvision import transforms
 
@@ -84,6 +80,11 @@ class BDD100KSemSeg:
         config: str = "upernet_convnext-t_fp16_512x1024_80k_sem_seg_bdd100k.py",
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
+        import mmcv
+        from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
+        from mmcv.runner import load_checkpoint
+        from mmseg.models import build_segmentor
+
         cfg_file = os.path.join(
             os.path.dirname(__file__),
             "../../third-party/bdd100k-models/sem_seg/configs/sem_seg/",
