@@ -241,3 +241,27 @@ class UperNet(nn.Module):
 
         x = F.interpolate(x, size=input_size, mode="bilinear")
         return x
+
+
+class ConvNeXtEncoder(nn.Module):
+    def __init__(self, model: models.ConvNeXt) -> None:
+        super().__init__()
+        self.features: nn.Sequential = model.features
+
+    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
+        feats = []
+
+        for i, layer in enumerate(self.features):
+            x = layer(x)
+            if i % 2 == 1:
+                feats.append(x)
+
+        return feats
+
+
+def upernet_convnext_t(num_classes: int, pretrained: bool = True) -> nn.Module:
+    backbone = ConvNeXtEncoder(
+        models.convnext_tiny(models.ConvNeXt_Tiny_Weights if pretrained else None)
+    )
+    feature_channels = (96, 192, 384, 768)
+    return UperNet(num_classes, backbone, feature_channels, fpn_out=feature_channels[0])
