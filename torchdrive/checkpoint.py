@@ -15,7 +15,7 @@ def similarity(a: str, b: str) -> float:
 
 
 def remap_state_dict(
-    state_dict: Dict[str, torch.Tensor], m: nn.Module
+    state_dict: Dict[str, torch.Tensor], m: nn.Module, check_suffix: bool = True
 ) -> typing.OrderedDict[str, torch.Tensor]:
     """
     remap_state_dict maps the parameters from provided state_dict to best match
@@ -38,7 +38,7 @@ def remap_state_dict(
         found_score = None
         for k2, v2 in state_dict.items():
             _, _, k2suffix = k2.rpartition(".")
-            if ksuffix != k2suffix:
+            if ksuffix != k2suffix and check_suffix:
                 continue
             if v.shape == v2.shape:
                 score = similarity(k2, k)

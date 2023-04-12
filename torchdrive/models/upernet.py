@@ -228,16 +228,16 @@ class UperNet(nn.Module):
         super(UperNet, self).__init__()
 
         self.backbone = backbone
-        self.PPN = PSPModule(feature_channels[-1])
-        self.FPN = FPN_fuse(feature_channels, fpn_out=fpn_out)
+        self.psp = PSPModule(feature_channels[-1])
+        self.fpn = FPN_fuse(feature_channels, fpn_out=fpn_out)
         self.head = nn.Conv2d(fpn_out, num_classes, kernel_size=3, padding=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         input_size = (x.size()[2], x.size()[3])
 
         features = self.backbone(x)
-        features[-1] = self.PPN(features[-1])
-        x = self.head(self.FPN(features))
+        features[-1] = self.psp(features[-1])
+        x = self.head(self.fpn(features))
 
         x = F.interpolate(x, size=input_size, mode="bilinear")
         return x
