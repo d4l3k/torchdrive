@@ -124,7 +124,9 @@ class BDD100KSemSeg:
         if half:
             model = model.half()
         model = model.to(device)
-        self.model: nn.Module = compile_fn(model)
+        if mmlab:
+            model = compile_fn(model)
+        self.model: nn.Module = model
         self.transform: nn.Module = compile_fn(
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         )
