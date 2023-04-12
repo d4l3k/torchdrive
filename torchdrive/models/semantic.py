@@ -9,7 +9,7 @@ from torchdrive.transforms.img import normalize_img_cuda
 
 TS_MODELS = {
     "upernet_convnext-t_fp16_512x1024_80k_sem_seg_bdd100k.py": (
-        "https://drive.google.com/uc?export=download&id=1iXRlXZNc1B3OmI9wbyMrVA1y0IC-qFTO&confirm=yes",
+        "https://drive.google.com/uc?export=download&id=1iXRlXZNc1B3OmI9wbyMrVA1y0IC-qFTO&confirm=yes"
     ),
 }
 
