@@ -9,7 +9,7 @@ from torchdrive.transforms.img import normalize_img_cuda
 
 TS_MODELS = {
     "upernet_convnext-t_fp16_512x1024_80k_sem_seg_bdd100k.py": (
-        "https://drive.google.com/uc?export=download&id=1iXRlXZNc1B3OmI9wbyMrVA1y0IC-qFTO&confirm=yes",
+        "https://drive.google.com/uc?export=download&id=1iXRlXZNc1B3OmI9wbyMrVA1y0IC-qFTO&confirm=yes"
     ),
 }
 
@@ -84,7 +84,7 @@ class BDD100KSemSeg:
         device: torch.device,
         half: bool = True,
         config: str = "upernet_convnext-t_fp16_512x1024_80k_sem_seg_bdd100k.py",
-        mmlab: bool = False,
+        mmlab: bool = True,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         if device == torch.device("cpu"):
@@ -124,7 +124,9 @@ class BDD100KSemSeg:
         if half:
             model = model.half()
         model = model.to(device)
-        self.model: nn.Module = compile_fn(model)
+        if mmlab:
+            model = compile_fn(model)
+        self.model: nn.Module = model
         self.transform: nn.Module = compile_fn(
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         )
