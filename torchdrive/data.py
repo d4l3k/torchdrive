@@ -20,15 +20,16 @@ from torch.utils.data import DataLoader, default_collate
 
 @dataclass(frozen=True)
 class Batch:
-    # example weight
+    # example weight [BS]
     weight: torch.Tensor
-    # per frame distance traveled in meters
+    # per frame distance traveled in meters  [BS, num_frames]
     distances: torch.Tensor
-    # per frame world to car translation matrix
+    # per frame world to car translation matrix  [BS, num_frames, 4, 4]
     cam_T: torch.Tensor
-    # per frame car relative translation matrix
+    # per frame car relative translation matrix [BS, num_frames, 4, 4]
     frame_T: torch.Tensor
-    # time for each frame in seconds, monotonically increasing, can be starting at any point
+    # time for each frame in seconds, monotonically increasing, can be starting
+    # at any point [BS, num_frames]
     frame_time: torch.Tensor
     # per camera intrinsics, normalized [BS, 4, 4]
     K: Dict[str, torch.Tensor]
@@ -36,10 +37,10 @@ class Batch:
     T: Dict[str, torch.Tensor]
     # per camera and frame color data [BS, N, 3, H, W]
     color: Dict[str, torch.Tensor]
-    # per camera mask
+    # per camera mask [BS, 1, h, w]
     mask: Dict[str, torch.Tensor]
     # sequential cam_T only aligned with the start frames extending into the
-    # future (out, mask, lens)
+    # future (out, mask, lens) [BS, long_num_frames, 4, 4]
     long_cam_T: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
 
     global_batch_size: int = 1
