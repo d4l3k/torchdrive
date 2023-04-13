@@ -40,7 +40,8 @@ def axis_grid(grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
 
     w, d, h = grid.shape[2:]
 
-    grid = torch.zeros_like(grid)
+    # preserve grad connection
+    grid = grid * 0
     grid[:, :, 0, :, :] = 1
     grid[:, :, -1, :, :] = 1
     grid[:, :, :, 0, :] = 1
@@ -182,7 +183,7 @@ class VoxelTask(BEVTask):
 
         grid = grid.permute(0, 1, 4, 3, 2)
         feat_grid = feat_grid.permute(0, 1, 4, 3, 2)
-        # grid, color_grid = axis_grid(grid)
+        # grid, _ = axis_grid(grid)
 
         if ctx.log_text:
             ctx.add_scalars(
@@ -319,7 +320,7 @@ class VoxelTask(BEVTask):
             )
 
             K = batch.K[cam]
-            T = batch.T[cam]
+            T = batch.T[cam].pinverse().matmul(batch.cam_T[:, start_frame]).pinverse()
             cameras = CustomPerspectiveCameras(
                 T=T,
                 K=K,
