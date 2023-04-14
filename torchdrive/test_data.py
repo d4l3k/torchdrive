@@ -4,7 +4,14 @@ from dataclasses import replace
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from torchdrive.data import Batch, collate, dummy_batch, dummy_item, nonstrict_collate, TransferCollator
+from torchdrive.data import (
+    Batch,
+    collate,
+    dummy_batch,
+    dummy_item,
+    nonstrict_collate,
+    TransferCollator,
+)
 
 
 class DummyDataset(Dataset[Batch]):
@@ -16,6 +23,7 @@ class DummyDataset(Dataset[Batch]):
 
     def __getitem__(self, i: int) -> Batch:
         return dummy_item()
+
 
 class TestData(unittest.TestCase):
     def test_dummy_batch(self) -> None:
@@ -79,7 +87,7 @@ class TestData(unittest.TestCase):
     def test_transfer_collator(self) -> None:
         dataset = DummyDataset(5)
         dataloader = DataLoader(dataset, batch_size=None)
-        device = torch.device('cpu')
+        device = torch.device("cpu")
         batch_size = 2
         collator = TransferCollator(dataloader, batch_size=batch_size, device=device)
 
@@ -90,3 +98,26 @@ class TestData(unittest.TestCase):
         for batch in out:
             self.assertEqual(batch.batch_size(), batch_size)
 
+    def test_world_to_car(self) -> None:
+        batch = dummy_batch()
+        out = batch.world_to_car(1)
+        self.assertEqual(out.shape, (2, 4, 4))
+        torch.testing.assert_allclose(out, batch.cam_T[:, 1])
+
+    def test_world_to_cam(self) -> None:
+        batch = dummy_batch()
+        cam = "left"
+        frame = 1
+        target = batch.T[cam].pinverse().matmul(batch.cam_T[:, frame])
+        out = batch.world_to_cam(cam, frame)
+        self.assertEqual(out.shape, (2, 4, 4))
+        torch.testing.assert_allclose(out, target)
+
+    def test_cam_to_world(self) -> None:
+        batch = dummy_batch()
+        cam = "left"
+        frame = 1
+        target = batch.T[cam].pinverse().matmul(batch.cam_T[:, frame]).pinverse()
+        out = batch.cam_to_world(cam, frame)
+        self.assertEqual(out.shape, (2, 4, 4))
+        torch.testing.assert_allclose(out, target)

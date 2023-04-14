@@ -86,6 +86,27 @@ class Batch:
                 out[i][name] = p
         return [Batch(**g) for g in out]
 
+    def world_to_car(self, frame: int) -> torch.Tensor:
+        """
+        Get the world space to car transformation matrix.
+        [batch_size, 4, 4]
+        """
+        return self.cam_T[:, frame]
+
+    def world_to_cam(self, cam: str, frame: int) -> torch.Tensor:
+        """
+        Get the world space to camera space transformation matrix.
+        [batch_size, 4, 4]
+        """
+        return self.T[cam].pinverse().matmul(self.cam_T[:, frame])
+
+    def cam_to_world(self, cam: str, frame: int) -> torch.Tensor:
+        """
+        Get the camera space to world space transformation matrix.
+        [batch_size, 4, 4]
+        """
+        return self.world_to_cam(cam, frame).pinverse()
+
 
 def dummy_item() -> Batch:
     N = 3

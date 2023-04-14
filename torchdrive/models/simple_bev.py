@@ -810,8 +810,9 @@ class SegnetBackbone(BEVBackbone):
                 with autocast():
                     features.append(self.project[i](feats))
                 Ks.append(batch.K[cam])
-                T = batch.T[cam].pinverse()
-                T = T.matmul(batch.cam_T[:, i])
+
+                # calculate voxel to camera space transformation matrix
+                T = batch.world_to_cam(cam, i)
                 T = T.matmul(voxel_to_world)
                 Ts.append(T)
 

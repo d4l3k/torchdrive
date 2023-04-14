@@ -211,7 +211,7 @@ class VoxelTask(BEVTask):
             zero_coord = torch.tensor([[0, 0, 0, 1]], device=device, dtype=torch.float)
             for frame in range(0, frames):
                 # create car to voxel transform
-                T = batch.cam_T[:, frame]
+                T = batch.world_to_car(frame)
                 T = T.matmul(vtw)
                 T = T.pinverse()
 
@@ -320,7 +320,8 @@ class VoxelTask(BEVTask):
             )
 
             K = batch.K[cam]
-            T = batch.T[cam].pinverse().matmul(batch.cam_T[:, start_frame]).pinverse()
+            # create camera to world transformation matrix
+            T = batch.cam_to_world(cam, start_frame)
             cameras = CustomPerspectiveCameras(
                 T=T,
                 K=K,
@@ -416,7 +417,6 @@ class VoxelTask(BEVTask):
                     ctx=ctx,
                     label="cam",
                     cam=cam,
-                    cam_T=batch.cam_T,
                     disp=cam_disp,
                     depth=cam_depth,
                     semantic_vel=cam_vel,
@@ -449,7 +449,6 @@ class VoxelTask(BEVTask):
                 ctx=ctx,
                 label="voxel",
                 cam=cam,
-                cam_T=batch.cam_T,
                 disp=voxel_disp,
                 depth=voxel_depth,
                 semantic_vel=semantic_vel,
@@ -474,7 +473,6 @@ class VoxelTask(BEVTask):
         ctx: Context,
         label: str,
         cam: str,
-        cam_T: torch.Tensor,
         disp: torch.Tensor,
         depth: torch.Tensor,
         semantic_vel: torch.Tensor,
@@ -530,19 +528,19 @@ class VoxelTask(BEVTask):
         for offset in self.offsets:
             target_frame = frame + offset
             assert target_frame >= 0, (frame, offset)
-            start_T = cam_T[:, frame]
-            target_T = cam_T[:, target_frame]
+            backproject_T = batch.cam_to_world(cam, frame)
+            project_T = batch.world_to_cam(cam, target_frame)
             time = frame_time[:, target_frame]
 
             projcolor, projmask = self.project(
-                batch,
-                cam,
-                start_T,
-                target_T,
-                depth,
-                primary_color,
-                primary_mask,
-                semantic_vel * time.reshape(-1, 1, 1, 1),
+                batch=batch,
+                cam=cam,
+                backproject_T=backproject_T,
+                project_T=project_T,
+                depth=depth,
+                color=primary_color,
+                mask=primary_mask,
+                vel=semantic_vel * time.reshape(-1, 1, 1, 1),
             )
             projmask *= primary_mask
             color = batch.color[cam][:, target_frame]
@@ -664,8 +662,8 @@ class VoxelTask(BEVTask):
         self,
         batch: Batch,
         cam: str,
-        start_T: torch.Tensor,
-        target_T: torch.Tensor,
+        backproject_T: torch.Tensor,
+        project_T: torch.Tensor,
         depth: torch.Tensor,
         color: torch.Tensor,
         mask: torch.Tensor,
@@ -682,7 +680,6 @@ class VoxelTask(BEVTask):
         target_K[:, 1] *= self.backproject_depth.height
         target_inv_K = target_K.pinverse()
 
-        backproject_T = batch.T[cam].pinverse().matmul(start_T).pinverse()
         world_points = self.backproject_depth(
             depth, target_inv_K, backproject_T
         ).clone()
@@ -691,8 +688,7 @@ class VoxelTask(BEVTask):
         world_points[:, :3] += vel.flatten(-2, -1)
 
         # (world to cam) * camera motion
-        T = batch.T[cam].pinverse().matmul(target_T)
-        pix_coords = self.project_3d(world_points, src_K, T)
+        pix_coords = self.project_3d(world_points, src_K, project_T)
 
         color = F.grid_sample(
             color,
