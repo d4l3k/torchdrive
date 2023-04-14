@@ -1,0 +1,16 @@
+FROM python:3.10-bullseye
+
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+RUN pip install ninja
+RUN pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
+
+RUN pip install -U openmim
+RUN mim install 'mmcv-full==1.7.1'
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+RUN pip install -e .
