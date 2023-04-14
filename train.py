@@ -31,6 +31,7 @@ from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 from torchdrive.tasks.det import DetTask
 from torchdrive.tasks.path import PathTask
 from torchdrive.tasks.voxel import VoxelTask
+from torchdrive.transforms.batch import Compose, NormalizeCarPosition, RandomRotation
 from tqdm import tqdm
 
 
@@ -289,6 +290,10 @@ model = BEVTaskVan(
     num_encode_frames=args.num_encode_frames,
     backbone=backbone,
     cam_encoder=cam_encoder,
+    transform=Compose(
+        NormalizeCarPosition(start_frame=args.num_encode_frames - 1),
+        RandomRotation(),
+    ),
 )
 
 model = model.to(device)

@@ -7,6 +7,7 @@ from torchdrive.data import Batch, dummy_batch
 from torchdrive.transforms.batch import (
     BatchTransform,
     Compose,
+    Identity,
     NormalizeCarPosition,
     RandomRotation,
 )
@@ -26,6 +27,12 @@ class TestBatchTransforms(unittest.TestCase):
         batch = dummy_batch()
         out = transform(batch)
         torch.testing.assert_close(out.weight, batch.weight + 2)
+
+    def test_identity(self) -> None:
+        transform = Identity()
+        batch = dummy_batch()
+        out = transform(batch)
+        self.assertIs(batch, out)
 
     def test_normalize_car_position(self) -> None:
         transform = NormalizeCarPosition(start_frame=1)

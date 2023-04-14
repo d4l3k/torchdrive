@@ -9,6 +9,7 @@ from torchdrive.data import Batch, dummy_batch
 from torchdrive.models.bev import RiceBackbone
 from torchdrive.models.regnet import RegNetEncoder
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan, Context
+from torchdrive.transforms.batch import Compose, NormalizeCarPosition, RandomRotation
 
 
 class DummyBEVTask(BEVTask):
@@ -66,6 +67,10 @@ class TestBEV(unittest.TestCase):
             ),
             cam_encoder=lambda: RegNetEncoder(
                 cam_shape=cam_shape, dim=dim, trunk=models.regnet_x_400mf
+            ),
+            transform=Compose(
+                NormalizeCarPosition(start_frame=1),
+                RandomRotation(),
             ),
         )
         losses = m(dummy_batch(), global_step=500)

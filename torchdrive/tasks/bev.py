@@ -1,7 +1,6 @@
 import random
 import time
 from abc import ABC, abstractmethod
-from dataclasses import replace
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -14,8 +13,8 @@ from torchdrive.autograd import autograd_pause, autograd_resume, log_grad_norm
 from torchdrive.data import Batch
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.context import Context
+from torchdrive.transforms.batch import BatchTransform, Identity
 from torchdrive.transforms.img import render_color
-from torchdrive.transforms.mat import random_z_rotation
 
 
 def _get_orig_mod(m: nn.Module) -> nn.Module:
@@ -49,7 +48,8 @@ class BEVTaskVan(torch.nn.Module):
         output: str = "out",
         num_encode_frames: int = 3,
         num_backprop_frames: int = 2,
-        random_rotation: bool = True,
+        num_drop_encode_cameras: int = 0,
+        transform: BatchTransform = Identity(),
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         """
@@ -58,6 +58,7 @@ class BEVTaskVan(torch.nn.Module):
             hr_tasks: tasks that consume the fine BEV grid
             num_encode_frames: number of frames to merge for the encoders
             num_backprop_frames: number of frames to run backprop for
+            num_drop_encode_cameras: drop input camera features
         """
 
         super().__init__()
@@ -67,7 +68,8 @@ class BEVTaskVan(torch.nn.Module):
         self.cameras = cameras
         self.num_encode_frames = num_encode_frames
         self.num_backprop_frames = num_backprop_frames
-        self.random_rotation = random_rotation
+        self.transform = transform
+        self.num_drop_encode_cameras = num_drop_encode_cameras
 
         self.backbone: nn.Module = backbone
         self.camera_encoders = nn.ModuleDict(
@@ -113,28 +115,13 @@ class BEVTaskVan(torch.nn.Module):
 
         start_frame = self.num_encode_frames - 1
 
-        # compute relative positions to the start frame
-        start_T = batch.cam_T[:, start_frame]
-        inv_start_T = start_T.unsqueeze(1).pinverse()
-        cam_T = inv_start_T.matmul(batch.cam_T)
-        long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
-        long_cam_T = inv_start_T.matmul(long_cam_T)
-
-        if self.random_rotation:
-            rot = random_z_rotation(BS, cam_T.device).unsqueeze(1)
-            cam_T = cam_T.matmul(rot)
-            long_cam_T = long_cam_T.matmul(rot)
-
-        batch = replace(
-            batch,
-            cam_T=cam_T,
-            long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
-        )
+        batch = self.transform(batch)
 
         last_cam_feats = {}
 
-        drop_camera = random.choice(self.cameras)
-        dropout_cameras = set(self.cameras) - {drop_camera}
+        # optionally dropout a camera to prevent overfitting
+        drop_cameras = random.choices(self.cameras, k=self.num_drop_encode_cameras)
+        dropout_cameras = set(self.cameras) - set(drop_cameras)
 
         with autocast():
             first_backprop_frame = max(

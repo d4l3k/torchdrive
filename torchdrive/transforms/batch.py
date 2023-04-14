@@ -16,7 +16,20 @@ class BatchTransform(ABC):
         ...
 
 
+class Identity(BatchTransform):
+    """
+    Returns the original batch.
+    """
+
+    def __call__(self, batch: Batch) -> Batch:
+        return batch
+
+
 class Compose(BatchTransform):
+    """
+    Compose multiple BatchTransforms together.
+    """
+
     def __init__(self, *transforms: BatchTransform) -> None:
         self.transforms: Tuple[BatchTransform] = transforms
 
