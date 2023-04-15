@@ -57,8 +57,8 @@ class BDD100KSemSeg:
         18,
     )
 
-    # interesting is non-road, non-sky objects
-    INTERESTING = (
+    NON_SKY = (
+        0,
         1,
         2,
         3,
