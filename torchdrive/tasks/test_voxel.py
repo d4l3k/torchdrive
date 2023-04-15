@@ -100,8 +100,8 @@ class TestVoxel(unittest.TestCase):
         self.assertCountEqual(
             losses.keys(),
             [
-                # "semantic/left",
-                # "semantic/right",
+                "semantic/left",
+                "semantic/right",
             ]
             + SHARED_LOSSES,
         )

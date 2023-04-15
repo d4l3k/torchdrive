@@ -113,8 +113,8 @@ class VoxelTask(BEVTask):
         self.num_elem: int = 1
         background: List[float] = []
         if semantic:
-            self.classes_elem: int = len(BDD100KSemSeg.INTERESTING)
-            background += [-10.0] * self.classes_elem
+            self.classes_elem: int = len(BDD100KSemSeg.NON_SKY)
+            background += [-100.0] * self.classes_elem
             self.vel_elem: int = 3
             background += [0.0, 0.0, 0.0]
             self.num_elem += self.classes_elem + self.vel_elem
@@ -362,7 +362,6 @@ class VoxelTask(BEVTask):
                 semantic_loss, dynamic_mask = self._semantic_loss(
                     ctx, cam, semantic_img, primary_color, primary_mask
                 )
-                # losses[f"semantic/{cam}"] = semantic_loss * 100
 
                 semantic_vel = semantic_img[:, self.classes_elem :]
                 semantic_vel = F.interpolate(
@@ -388,9 +387,44 @@ class VoxelTask(BEVTask):
                 per_pixel_weights += dynamic_mask
                 # normalize mean
                 per_pixel_weights /= per_pixel_weights.mean()
+
+                semantic_loss = semantic_loss * F.avg_pool2d(per_pixel_weights, 2)
+                if ctx.log_img:
+                    ctx.add_image(
+                        f"semantic/{cam}/loss",
+                        render_color(semantic_loss[0].mean(dim=0)),
+                    )
+                losses[f"semantic/{cam}"] = semantic_loss.mean(dim=(1, 2, 3))
             else:
                 dynamic_mask = torch.zeros_like(primary_color)
                 semantic_vel = torch.zeros_like(primary_color)
+
+            voxel_disp = depth_to_disp(
+                voxel_depth,
+                min_depth=self.min_depth,
+                max_depth=self.max_depth,
+            )
+
+            self._depth_loss(
+                ctx=ctx,
+                label="voxel",
+                cam=cam,
+                disp=voxel_disp,
+                depth=voxel_depth,
+                semantic_vel=semantic_vel,
+                losses=losses,
+                h=h,
+                w=w,
+                batch=batch,
+                frame=frame,
+                frame_time=frame_time,
+                primary_color=primary_color,
+                primary_mask=primary_mask,
+                per_pixel_weights=per_pixel_weights,  # * 1e-1,
+            )
+            del voxel_depth
+            del semantic_vel
+            del semantic_img
 
             if cam in ctx.cam_feats:
                 with torch.autograd.profiler.record_function(
@@ -434,37 +468,6 @@ class VoxelTask(BEVTask):
                 del cam_vel
                 del cam_depth
                 del cam_disp
-
-            voxel_disp = depth_to_disp(
-                voxel_depth,
-                min_depth=self.min_depth,
-                max_depth=self.max_depth,
-            )
-
-            # cam_target_loss = F.l1_loss(voxel_disp, cam_disp.detach()) * primary_mask
-            # losses[f"lossvoxel_cam_target/{cam}"] = (
-            #    cam_target_loss.mean(dim=(1, 2, 3)) * 4
-            # )
-            self._depth_loss(
-                ctx=ctx,
-                label="voxel",
-                cam=cam,
-                disp=voxel_disp,
-                depth=voxel_depth,
-                semantic_vel=semantic_vel,
-                losses=losses,
-                h=h,
-                w=w,
-                batch=batch,
-                frame=frame,
-                frame_time=frame_time,
-                primary_color=primary_color,
-                primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights,  # * 1e-1,
-            )
-            del voxel_depth
-            del semantic_vel
-            del semantic_img
 
         return losses
 
@@ -607,7 +610,7 @@ class VoxelTask(BEVTask):
 
         segmentation_target = self.segment(color)
         # select interesting classes and convert to probabilities
-        semantic_target = segmentation_target[:, BDD100KSemSeg.INTERESTING]
+        semantic_target = segmentation_target[:, BDD100KSemSeg.NON_SKY]
         semantic_target = F.avg_pool2d(semantic_target, 2).sigmoid()
 
         sem_loss = F.huber_loss(
@@ -645,16 +648,12 @@ class VoxelTask(BEVTask):
                     )
                 ),
             )
-            ctx.add_image(
-                f"semantic/{cam}/loss",
-                render_color(sem_loss[0].mean(dim=0)),
-            )
 
         dynamic_mask = segmentation_target[:, BDD100KSemSeg.DYNAMIC]
         dynamic_mask = dynamic_mask.sigmoid().amax(dim=1).round()
 
         return (
-            sem_loss.mean(dim=(1, 2, 3)),
+            sem_loss,
             dynamic_mask,
         )
 
