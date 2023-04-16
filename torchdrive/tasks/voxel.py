@@ -394,7 +394,7 @@ class VoxelTask(BEVTask):
                         f"semantic/{cam}/loss",
                         render_color(semantic_loss[0].mean(dim=0)),
                     )
-                losses[f"semantic/{cam}"] = semantic_loss.mean(dim=(1, 2, 3))
+                losses[f"semantic/{cam}"] = semantic_loss.mean(dim=(1, 2, 3)) * 100
             else:
                 dynamic_mask = torch.zeros_like(primary_color)
                 semantic_vel = torch.zeros_like(primary_color)
