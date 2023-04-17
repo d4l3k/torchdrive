@@ -306,6 +306,38 @@ class VoxelTask(BEVTask):
         losses = {}
 
         h, w = self.cam_shape
+        frame = ctx.start_frame
+
+        primary_colors = {}
+        primary_masks = {}
+        for cam in self.cameras:
+            primary_color = batch.color[cam][:, frame]
+            primary_color = F.interpolate(
+                primary_color.float(),
+                [h // 2, w // 2],
+                mode="bilinear",
+                align_corners=False,
+            )
+            primary_colors[cam] = primary_color
+            primary_mask = batch.mask[cam]
+            primary_mask = F.interpolate(
+                primary_mask.float(),
+                [h // 2, w // 2],
+                mode="bilinear",
+                align_corners=False,
+            )
+            primary_masks[cam] = primary_mask
+
+        semantic_targets = {}
+        dynamic_masks = {}
+        if self.semantic:
+            for cam in self.cameras:
+                semantic_target = self.segment(primary_colors[cam]).sigmoid()
+                semantic_targets[cam] = semantic_target
+
+                dynamic_mask = semantic_target[:, BDD100KSemSeg.DYNAMIC]
+                dynamic_mask = dynamic_mask.amax(dim=1).round()
+                dynamic_masks[cam] = dynamic_mask
 
         for cam in self.cameras:
             volumes = Volumes(
@@ -339,28 +371,19 @@ class VoxelTask(BEVTask):
             if semantic_img is not None:
                 semantic_img = semantic_img.permute(0, 3, 1, 2)
 
-            frame = ctx.start_frame
-
-            primary_color = batch.color[cam][:, frame]
-            primary_color = F.interpolate(
-                primary_color.float(),
-                [h // 2, w // 2],
-                mode="bilinear",
-                align_corners=False,
-            )
-            primary_mask = batch.mask[cam]
-            primary_mask = F.interpolate(
-                primary_mask.float(),
-                [h // 2, w // 2],
-                mode="bilinear",
-                align_corners=False,
-            )
-
+            primary_color = primary_colors[cam]
+            primary_mask = primary_masks[cam]
             per_pixel_weights = torch.ones_like(primary_color).mean(dim=1, keepdim=True)
 
             if self.semantic:
-                semantic_loss, dynamic_mask = self._semantic_loss(
-                    ctx, cam, semantic_img, primary_color, primary_mask
+                dynamic_mask = dynamic_masks[cam]
+                semantic_loss = self._semantic_loss(
+                    ctx=ctx,
+                    cam=cam,
+                    semantic_img=semantic_img,
+                    semantic_target=semantic_targets[cam],
+                    color=primary_color,
+                    mask=primary_mask,
                 )
 
                 semantic_vel = semantic_img[:, self.classes_elem :]
@@ -604,18 +627,18 @@ class VoxelTask(BEVTask):
         ctx: Context,
         cam: str,
         semantic_img: torch.Tensor,
+        semantic_target: torch.Tensor,
         color: torch.Tensor,
         mask: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         """
         _semantic_loss computes the semantic class probability loss.
         """
         semantic_classes = semantic_img[:, : self.classes_elem].sigmoid()
 
-        segmentation_target = self.segment(color)
         # select interesting classes and convert to probabilities
-        semantic_target = segmentation_target[:, BDD100KSemSeg.NON_SKY]
-        semantic_target = F.avg_pool2d(semantic_target, 2).sigmoid()
+        semantic_target = semantic_target[:, BDD100KSemSeg.NON_SKY]
+        semantic_target = F.avg_pool2d(semantic_target, 2)
 
         sem_loss = F.huber_loss(
             semantic_classes.float(), semantic_target.float(), reduction="none"
@@ -653,13 +676,7 @@ class VoxelTask(BEVTask):
                 ),
             )
 
-        dynamic_mask = segmentation_target[:, BDD100KSemSeg.DYNAMIC]
-        dynamic_mask = dynamic_mask.sigmoid().amax(dim=1).round()
-
-        return (
-            sem_loss,
-            dynamic_mask,
-        )
+        return sem_loss
 
     def project(
         self,
