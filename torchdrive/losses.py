@@ -165,7 +165,10 @@ def smooth_loss(disp: torch.Tensor, img: torch.Tensor) -> torch.Tensor:
     grad_disp_x *= torch.exp(-grad_img_x)
     grad_disp_y *= torch.exp(-grad_img_y)
 
-    return grad_disp_x.mean() + grad_disp_y.mean()
+    grad_disp_x = F.pad(grad_disp_x, (0, 1, 0, 0))
+    grad_disp_y = F.pad(grad_disp_y, (0, 0, 0, 1))
+
+    return grad_disp_x + grad_disp_y
 
 
 def losses_backward(

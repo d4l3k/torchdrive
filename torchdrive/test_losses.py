@@ -47,7 +47,11 @@ class TestLosses(unittest.TestCase):
 
     def test_smooth(self) -> None:
         out = smooth_loss(torch.rand(2, 3, 9, 16), torch.rand(2, 3, 9, 16))
-        self.assertEqual(out.shape, tuple())
+        self.assertEqual(out.shape, (2, 3, 9, 16))
+
+        # different # of channels
+        out = smooth_loss(torch.rand(2, 1, 9, 16), torch.rand(2, 19, 9, 16))
+        self.assertEqual(out.shape, (2, 1, 9, 16))
 
     def test_tvl1(self) -> None:
         out = tvl1_loss(torch.rand(2, 3, 4, 5))

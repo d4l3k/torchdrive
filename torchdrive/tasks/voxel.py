@@ -462,7 +462,7 @@ class VoxelTask(BEVTask):
                     frame_time=frame_time,
                     primary_color=primary_color,
                     primary_mask=primary_mask,
-                    per_pixel_weights=per_pixel_weights,  # * 0.1,
+                    per_pixel_weights=per_pixel_weights * 0.5,
                 )
 
                 del cam_vel
@@ -510,12 +510,16 @@ class VoxelTask(BEVTask):
                 {"max": amax, "min": amin},
             )
 
-        losses[f"losssmooth/{label}/{cam}/color"] = (
-            smooth_loss(disp, primary_color) * per_pixel_weights.mean() * 20
-        )
-        losses[f"losssmooth/{label}/{cam}/vel"] = (
-            smooth_loss(disp, semantic_vel) * per_pixel_weights.mean() * 20
-        )
+        for typ, t in [("disp", disp), ("vel", semantic_vel)]:
+            losssmooth = smooth_loss(t, primary_color) * per_pixel_weights
+            losses[f"losssmooth-{label}-{typ}/{cam}"] = (
+                losssmooth.mean(dim=(1, 2, 3)) * 20
+            )
+            if ctx.log_img:
+                ctx.add_image(
+                    f"losssmooth-{label}-{typ}/{cam}-pixel",
+                    render_color(losssmooth[0].mean(dim=0)),
+                )
 
         if ctx.log_img:
             ctx.add_image(

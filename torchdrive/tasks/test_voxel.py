@@ -22,14 +22,14 @@ SHARED_LOSSES = [
     "lossproj-cam/left/o0",
     "lossproj-cam/right/o-1",
     "lossproj-cam/left/o-1",
-    "losssmooth/voxel/left/vel",
-    "losssmooth/voxel/left/color",
-    "losssmooth/voxel/right/vel",
-    "losssmooth/voxel/right/color",
-    "losssmooth/cam/left/vel",
-    "losssmooth/cam/left/color",
-    "losssmooth/cam/right/vel",
-    "losssmooth/cam/right/color",
+    "losssmooth-voxel-vel/left",
+    "losssmooth-voxel-disp/left",
+    "losssmooth-voxel-vel/right",
+    "losssmooth-voxel-disp/right",
+    "losssmooth-cam-vel/left",
+    "losssmooth-cam-disp/left",
+    "losssmooth-cam-vel/right",
+    "losssmooth-cam-disp/right",
 ]
 
 
