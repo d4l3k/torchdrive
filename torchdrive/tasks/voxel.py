@@ -93,7 +93,14 @@ class VoxelTask(BEVTask):
         n_pts_per_ray: int = 216,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
         offsets: Tuple[int, ...] = (-2, -1, 1, 2),
+        camera_overlap: Optional[Dict[str, List[str]]] = None,
     ) -> None:
+        """
+        Args:
+            camera_overlap:
+                Dictionary of each camera and which cameras it overlaps with. If
+                specified enables stereoscopic losses.
+        """
         super().__init__()
 
         self.cam_shape = cam_shape
@@ -103,6 +110,7 @@ class VoxelTask(BEVTask):
         self.semantic = semantic
         self.render_batch_size = render_batch_size
         self.offsets = offsets
+        self.camera_overlap = camera_overlap
 
         # TODO support non-centered voxel grids
         self.volume_translation: Tuple[float, float, float] = (
@@ -369,83 +377,111 @@ class VoxelTask(BEVTask):
                     volumes=volumes,
                     eps=1e-8,
                 )
-            if semantic_img is not None:
-                semantic_img = semantic_img.permute(0, 3, 1, 2)
+            semantic_img = semantic_img.permute(0, 3, 1, 2)
 
-            primary_color = primary_colors[cam]
-            primary_mask = primary_masks[cam]
-            per_pixel_weights = torch.ones_like(primary_color).mean(dim=1, keepdim=True)
-
+            to_pause = [voxel_depth]
             if self.semantic:
-                dynamic_mask = dynamic_masks[cam]
-                semantic_loss = self._semantic_loss(
+                to_pause.append(semantic_img)
+
+            # pause backwards pass
+            with autograd_context(*to_pause) as paused:
+                if self.semantic:
+                    voxel_depth, semantic_img = paused
+                else:
+                    voxel_depth = paused
+
+                primary_color = primary_colors[cam]
+                primary_mask = primary_masks[cam]
+                per_pixel_weights = torch.ones_like(primary_color).mean(
+                    dim=1, keepdim=True
+                )
+
+                if self.semantic:
+                    dynamic_mask = dynamic_masks[cam]
+                    semantic_loss = self._semantic_loss(
+                        ctx=ctx,
+                        cam=cam,
+                        semantic_img=semantic_img,
+                        semantic_target=semantic_targets[cam],
+                        color=primary_color,
+                        mask=primary_mask,
+                    )
+
+                    semantic_vel = semantic_img[:, self.classes_elem :]
+                    semantic_vel = F.interpolate(
+                        semantic_vel.float(),
+                        [h // 2, w // 2],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                    if ctx.log_img:
+                        ctx.add_image(
+                            f"{cam}/semantic_vel",
+                            normalize_img(semantic_vel[0]),
+                        )
+                        ctx.add_image(
+                            f"{cam}/dynamic_mask",
+                            render_color(dynamic_mask[0]),
+                        )
+                    dynamic_mask = dynamic_mask.unsqueeze(1)
+                    semantic_vel *= dynamic_mask
+                    semantic_vel *= primary_mask
+
+                    # focus more on dynamic objects
+                    per_pixel_weights += dynamic_mask
+                    # normalize mean
+                    per_pixel_weights /= per_pixel_weights.mean()
+
+                    semantic_loss = semantic_loss * F.avg_pool2d(per_pixel_weights, 2)
+                    if ctx.log_img:
+                        ctx.add_image(
+                            f"semantic/{cam}/loss",
+                            render_color(semantic_loss[0].mean(dim=0)),
+                        )
+                    losses[f"semantic/{cam}"] = semantic_loss.mean(dim=(1, 2, 3)) * 100
+                else:
+                    dynamic_mask = torch.zeros_like(primary_color)
+                    semantic_vel = torch.zeros_like(primary_color)
+
+                voxel_disp = depth_to_disp(
+                    voxel_depth,
+                    min_depth=self.min_depth,
+                    max_depth=self.max_depth,
+                )
+
+                self._sfm_loss(
                     ctx=ctx,
+                    label="voxel",
                     cam=cam,
-                    semantic_img=semantic_img,
-                    semantic_target=semantic_targets[cam],
-                    color=primary_color,
-                    mask=primary_mask,
+                    disp=voxel_disp,
+                    depth=voxel_depth,
+                    semantic_vel=semantic_vel,
+                    losses=losses,
+                    h=h,
+                    w=w,
+                    batch=batch,
+                    frame=frame,
+                    frame_time=frame_time,
+                    primary_color=primary_color,
+                    primary_mask=primary_mask,
+                    per_pixel_weights=per_pixel_weights,  # * 1e-1,
                 )
 
-                semantic_vel = semantic_img[:, self.classes_elem :]
-                semantic_vel = F.interpolate(
-                    semantic_vel.float(),
-                    [h // 2, w // 2],
-                    mode="bilinear",
-                    align_corners=False,
-                )
-                if ctx.log_img:
-                    ctx.add_image(
-                        f"{cam}/semantic_vel",
-                        normalize_img(semantic_vel[0]),
+                camera_overlap = self.camera_overlap
+                if camera_overlap:
+                    self._stereoscopic_loss(
+                        ctx=ctx,
+                        batch=batch,
+                        primary_cam=cam,
+                        overlap_cams=camera_overlap[cam],
+                        cam_features=semantic_targets,
+                        cam_masks=primary_masks,
+                        per_pixel_weights=per_pixel_weights,
+                        primary_depth=voxel_depth,
+                        losses=losses,
+                        h=h,
+                        w=w,
                     )
-                    ctx.add_image(
-                        f"{cam}/dynamic_mask",
-                        render_color(dynamic_mask[0]),
-                    )
-                dynamic_mask = dynamic_mask.unsqueeze(1)
-                semantic_vel *= dynamic_mask
-                semantic_vel *= primary_mask
-
-                # focus more on dynamic objects
-                per_pixel_weights += dynamic_mask
-                # normalize mean
-                per_pixel_weights /= per_pixel_weights.mean()
-
-                semantic_loss = semantic_loss * F.avg_pool2d(per_pixel_weights, 2)
-                if ctx.log_img:
-                    ctx.add_image(
-                        f"semantic/{cam}/loss",
-                        render_color(semantic_loss[0].mean(dim=0)),
-                    )
-                losses[f"semantic/{cam}"] = semantic_loss.mean(dim=(1, 2, 3)) * 100
-            else:
-                dynamic_mask = torch.zeros_like(primary_color)
-                semantic_vel = torch.zeros_like(primary_color)
-
-            voxel_disp = depth_to_disp(
-                voxel_depth,
-                min_depth=self.min_depth,
-                max_depth=self.max_depth,
-            )
-
-            self._depth_loss(
-                ctx=ctx,
-                label="voxel",
-                cam=cam,
-                disp=voxel_disp,
-                depth=voxel_depth,
-                semantic_vel=semantic_vel,
-                losses=losses,
-                h=h,
-                w=w,
-                batch=batch,
-                frame=frame,
-                frame_time=frame_time,
-                primary_color=primary_color,
-                primary_mask=primary_mask,
-                per_pixel_weights=per_pixel_weights,  # * 1e-1,
-            )
             del voxel_depth
             del semantic_vel
             del semantic_img
@@ -471,7 +507,7 @@ class VoxelTask(BEVTask):
                     max_depth=self.max_depth,
                 )
 
-                self._depth_loss(
+                self._sfm_loss(
                     ctx=ctx,
                     label="cam",
                     cam=cam,
@@ -495,7 +531,7 @@ class VoxelTask(BEVTask):
 
         return losses
 
-    def _depth_loss(
+    def _sfm_loss(
         self,
         ctx: Context,
         label: str,
@@ -513,6 +549,10 @@ class VoxelTask(BEVTask):
         primary_mask: torch.Tensor,
         per_pixel_weights: torch.Tensor,
     ) -> None:
+        """
+        Computes the structure from motion loss for a single camera across
+        multiple times.
+        """
         depth = F.interpolate(
             depth.float().unsqueeze(1),
             [h // 2, w // 2],
@@ -565,7 +605,8 @@ class VoxelTask(BEVTask):
 
             projcolor, projmask = self.project(
                 batch=batch,
-                cam=cam,
+                primary_cam=cam,
+                target_cam=cam,
                 backproject_T=backproject_T,
                 project_T=project_T,
                 depth=depth,
@@ -620,6 +661,83 @@ class VoxelTask(BEVTask):
                 #    f"{label}/{cam}/{offset}/automask",
                 #    render_color(proj_loss[0, 0] < identity_proj_loss[0, 0]),
                 # )
+
+        ctx.backward(losses)
+
+    def _stereoscopic_loss(
+        self,
+        ctx: Context,
+        batch: Batch,
+        primary_cam: str,
+        cam_features: Dict[str, torch.Tensor],
+        cam_masks: Dict[str, torch.Tensor],
+        overlap_cams: List[str],
+        per_pixel_weights: torch.Tensor,
+        primary_depth: torch.Tensor,
+        losses: Dict[str, torch.Tensor],
+        h: int,
+        w: int,
+    ) -> None:
+        """
+        Computes the stereoscopic projection loss between the target cam and the
+        overlapping cameras.
+        """
+        frame = ctx.start_frame
+        primary_mask = cam_masks[primary_cam]
+        primary_features = cam_features[primary_cam]
+
+        primary_depth = F.interpolate(
+            primary_depth.float().unsqueeze(1),
+            [h // 2, w // 2],
+            mode="bilinear",
+            align_corners=False,
+        )
+
+        for target_cam in overlap_cams:
+            backproject_T = batch.cam_to_world(primary_cam, frame)
+            project_T = batch.world_to_cam(target_cam, frame)
+            target_mask = cam_masks[target_cam]
+            target_features = cam_features[target_cam]
+
+            print(primary_features.shape, primary_depth.shape)
+
+            proj_features, proj_mask = self.project(
+                batch=batch,
+                primary_cam=primary_cam,
+                target_cam=target_cam,
+                backproject_T=backproject_T,
+                project_T=project_T,
+                depth=primary_depth,
+                color=primary_features,
+                mask=primary_mask,
+            )
+            proj_mask *= target_mask
+
+            proj_loss = self.projection_loss(
+                proj_features, target_features, scales=3, mask=proj_mask
+            )
+            proj_loss = proj_loss * per_pixel_weights
+            losses[f"lossstereoscopic/{primary_cam}/{target_cam}"] = (
+                proj_loss.mean(dim=(1, 2, 3)) * 40
+            )
+
+            if ctx.log_img:
+                ctx.add_image(
+                    f"stereoscopic/{primary_cam}/{target_cam}/feats",
+                    normalize_img(
+                        torch.cat(
+                            (
+                                target_features[0],
+                                proj_features[0],
+                            ),
+                            dim=2,
+                        )
+                    ),
+                )
+                ctx.add_image(
+                    f"stereoscopic/{primary_cam}/{target_cam}/proj_loss",
+                    render_color(proj_loss[0, 0]),
+                )
 
         ctx.backward(losses)
 
@@ -682,20 +800,21 @@ class VoxelTask(BEVTask):
     def project(
         self,
         batch: Batch,
-        cam: str,
+        primary_cam: str,
+        target_cam: str,
         backproject_T: torch.Tensor,
         project_T: torch.Tensor,
         depth: torch.Tensor,
         color: torch.Tensor,
         mask: torch.Tensor,
-        vel: torch.Tensor,
+        vel: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        src_K = batch.K[cam].clone()
+        src_K = batch.K[target_cam].clone()
         # convert to image space
         src_K[:, 0] *= self.backproject_depth.width
         src_K[:, 1] *= self.backproject_depth.height
 
-        target_K = batch.K[cam].clone()
+        target_K = batch.K[primary_cam].clone()
         # convert to image space
         target_K[:, 0] *= self.backproject_depth.width
         target_K[:, 1] *= self.backproject_depth.height
@@ -705,8 +824,9 @@ class VoxelTask(BEVTask):
             depth, target_inv_K, backproject_T
         ).clone()
 
-        # add velocity to points
-        world_points[:, :3] += vel.flatten(-2, -1)
+        if vel is not None:
+            # add velocity to points
+            world_points[:, :3] += vel.flatten(-2, -1)
 
         # (world to cam) * camera motion
         pix_coords = self.project_3d(world_points, src_K, project_T)

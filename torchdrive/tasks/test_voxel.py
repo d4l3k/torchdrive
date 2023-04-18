@@ -8,7 +8,7 @@ from torchdrive.data import dummy_batch
 from torchdrive.tasks.bev import Context
 from torchdrive.tasks.voxel import axis_grid, VoxelTask
 
-SHARED_LOSSES = [
+VOXEL_LOSSES = [
     "tvl1",
     "lossproj-voxel/right/o1",
     "lossproj-voxel/left/o1",
@@ -30,6 +30,15 @@ SHARED_LOSSES = [
     "losssmooth-cam-disp/left",
     "losssmooth-cam-vel/right",
     "losssmooth-cam-disp/right",
+]
+
+SEMANTIC_LOSSES = [
+    "semantic/left",
+    "semantic/right",
+]
+
+STEREOSCOPIC_LOSSES = [
+    "lossstereoscopic/left/right",
 ]
 
 
@@ -65,7 +74,7 @@ class TestVoxel(unittest.TestCase):
         )
         bev = torch.rand(2, 5, 4, 4, device=device)
         losses = m(ctx, batch, bev)
-        self.assertCountEqual(losses.keys(), SHARED_LOSSES)
+        self.assertCountEqual(losses.keys(), VOXEL_LOSSES)
 
     def test_semantic_voxel_task(self) -> None:
         device = torch.device("cpu")
@@ -99,11 +108,46 @@ class TestVoxel(unittest.TestCase):
         losses = m(ctx, batch, bev)
         self.assertCountEqual(
             losses.keys(),
-            [
-                "semantic/left",
-                "semantic/right",
-            ]
-            + SHARED_LOSSES,
+            SEMANTIC_LOSSES + VOXEL_LOSSES,
+        )
+
+    def test_stereoscopic_voxel_task(self) -> None:
+        device = torch.device("cpu")
+        cameras = ["left", "right"]
+        m = VoxelTask(
+            cameras=cameras,
+            cam_shape=(320, 240),
+            cam_feats_shape=(320 // 16, 240 // 16),
+            dim=4,
+            cam_dim=4,
+            hr_dim=5,
+            height=12,
+            device=device,
+            semantic=["left"],
+            camera_overlap={
+                "left": ["right"],
+                "right": [],
+            },
+            offsets=(-1, 0, 1),
+        )
+        batch = dummy_batch()
+        ctx = Context(
+            log_img=True,
+            log_text=True,
+            global_step=0,
+            writer=MagicMock(),
+            start_frame=1,
+            scaler=None,
+            name="det",
+            output="",
+            weights=batch.weight,
+            cam_feats={cam: torch.rand(2, 4, 320 // 16, 240 // 16) for cam in cameras},
+        )
+        bev = torch.rand(2, 5, 4, 4)
+        losses = m(ctx, batch, bev)
+        self.assertCountEqual(
+            losses.keys(),
+            STEREOSCOPIC_LOSSES + SEMANTIC_LOSSES + VOXEL_LOSSES,
         )
 
     def test_axis_grid(self) -> None:
