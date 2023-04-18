@@ -103,6 +103,8 @@ class VoxelTask(BEVTask):
         self.semantic = semantic
         self.render_batch_size = render_batch_size
         self.offsets = offsets
+
+        # TODO support non-centered voxel grids
         self.volume_translation: Tuple[float, float, float] = (
             0,
             0,
@@ -331,13 +333,14 @@ class VoxelTask(BEVTask):
         semantic_targets = {}
         dynamic_masks = {}
         if self.semantic:
-            for cam in self.cameras:
-                semantic_target = self.segment(primary_colors[cam]).sigmoid()
-                semantic_targets[cam] = semantic_target
+            with torch.autograd.profiler.record_function("segment"):
+                for cam in self.cameras:
+                    semantic_target = self.segment(primary_colors[cam]).sigmoid()
+                    semantic_targets[cam] = semantic_target
 
-                dynamic_mask = semantic_target[:, BDD100KSemSeg.DYNAMIC]
-                dynamic_mask = dynamic_mask.amax(dim=1).round()
-                dynamic_masks[cam] = dynamic_mask
+                    dynamic_mask = semantic_target[:, BDD100KSemSeg.DYNAMIC]
+                    dynamic_mask = dynamic_mask.amax(dim=1).round()
+                    dynamic_masks[cam] = dynamic_mask
 
         for cam in self.cameras:
             volumes = Volumes(
@@ -346,8 +349,6 @@ class VoxelTask(BEVTask):
                 if feat_grid is not None
                 else None,
                 voxel_size=1 / self.scale,
-                # TODO support non-centered voxel grids
-                # volume_translation=(-self.height / 2 / self.scale, 0, 0),
                 volume_translation=self.volume_translation,
             )
 
