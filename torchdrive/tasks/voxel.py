@@ -603,7 +603,7 @@ class VoxelTask(BEVTask):
             project_T = batch.world_to_cam(cam, target_frame)
             time = frame_time[:, target_frame]
 
-            projcolor, projmask = self.project(
+            projcolor, projmask = self._project(
                 batch=batch,
                 primary_cam=cam,
                 target_cam=cam,
@@ -699,7 +699,7 @@ class VoxelTask(BEVTask):
             target_mask = cam_masks[target_cam]
             target_features = cam_features[target_cam].float()
 
-            proj_features, proj_mask = self.project(
+            proj_features, proj_mask = self._project(
                 batch=batch,
                 primary_cam=primary_cam,
                 target_cam=target_cam,
@@ -714,7 +714,7 @@ class VoxelTask(BEVTask):
             proj_loss = self.projection_loss(
                 proj_features, target_features, scales=3, mask=proj_mask
             )
-            proj_loss = proj_loss * per_pixel_weights
+            #proj_loss = proj_loss * per_pixel_weights
             losses[f"lossstereoscopic/{primary_cam}/{target_cam}"] = (
                 proj_loss.mean(dim=(1, 2, 3)) * 40
             )
@@ -726,8 +726,8 @@ class VoxelTask(BEVTask):
                         torch.argmax(
                             torch.cat(
                                 (
-                                    target_features[0],
-                                    proj_features[0],
+                                    target_features[0] * target_mask[0],
+                                    proj_features[0] * proj_mask[0],
                                 ),
                                 dim=2,
                             ),
@@ -798,7 +798,7 @@ class VoxelTask(BEVTask):
 
         return sem_loss
 
-    def project(
+    def _project(
         self,
         batch: Batch,
         primary_cam: str,
@@ -810,12 +810,12 @@ class VoxelTask(BEVTask):
         mask: torch.Tensor,
         vel: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        src_K = batch.K[target_cam].clone()
+        src_K = batch.K[primary_cam].clone()
         # convert to image space
         src_K[:, 0] *= self.backproject_depth.width
         src_K[:, 1] *= self.backproject_depth.height
 
-        target_K = batch.K[primary_cam].clone()
+        target_K = batch.K[target_cam].clone()
         # convert to image space
         target_K[:, 0] *= self.backproject_depth.width
         target_K[:, 1] *= self.backproject_depth.height
