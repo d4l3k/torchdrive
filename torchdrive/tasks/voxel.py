@@ -684,7 +684,7 @@ class VoxelTask(BEVTask):
         """
         frame = ctx.start_frame
         primary_mask = cam_masks[primary_cam]
-        primary_features = cam_features[primary_cam]
+        primary_features = cam_features[primary_cam].float()
 
         primary_depth = F.interpolate(
             primary_depth.float().unsqueeze(1),
@@ -697,9 +697,7 @@ class VoxelTask(BEVTask):
             backproject_T = batch.cam_to_world(primary_cam, frame)
             project_T = batch.world_to_cam(target_cam, frame)
             target_mask = cam_masks[target_cam]
-            target_features = cam_features[target_cam]
-
-            print(primary_features.shape, primary_depth.shape)
+            target_features = cam_features[target_cam].float()
 
             proj_features, proj_mask = self.project(
                 batch=batch,
@@ -724,14 +722,17 @@ class VoxelTask(BEVTask):
             if ctx.log_img:
                 ctx.add_image(
                     f"stereoscopic/{primary_cam}/{target_cam}/feats",
-                    normalize_img(
-                        torch.cat(
-                            (
-                                target_features[0],
-                                proj_features[0],
+                    render_color(
+                        torch.argmax(
+                            torch.cat(
+                                (
+                                    target_features[0],
+                                    proj_features[0],
+                                ),
+                                dim=2,
                             ),
-                            dim=2,
-                        )
+                            dim=0,
+                        ).float()
                     ),
                 )
                 ctx.add_image(
