@@ -106,6 +106,15 @@ def random_z_rotation(batch_size: int, device: torch.device) -> torch.Tensor:
     )
 
 
+def random_translation(
+    batch_size: int, distances: Tuple[float, float, float], device: torch.device
+) -> torch.Tensor:
+    dists = torch.tensor(distances, device=device, dtype=torch.float32)
+    offsets = (torch.rand(batch_size, 3, device=device) * 2) - 1
+    offsets *= dists
+    return Transform3d(device=device).translate(offsets).get_matrix().permute(0, 2, 1)
+
+
 def voxel_to_world(
     center: Tuple[int, int, int], scale: float, device: torch.device
 ) -> torch.Tensor:

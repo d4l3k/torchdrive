@@ -3,7 +3,7 @@ from dataclasses import replace
 from typing import Tuple
 
 from torchdrive.data import Batch
-from torchdrive.transforms.mat import random_z_rotation
+from torchdrive.transforms.mat import random_translation, random_z_rotation
 
 
 class BatchTransform(ABC):
@@ -70,6 +70,31 @@ class RandomRotation(BatchTransform):
 
     def __call__(self, batch: Batch) -> Batch:
         rot = random_z_rotation(batch.batch_size(), batch.cam_T.device).unsqueeze(1)
+        cam_T = batch.cam_T.matmul(rot)
+        long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
+        long_cam_T = long_cam_T.matmul(rot)
+        return replace(
+            batch,
+            cam_T=cam_T,
+            long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
+        )
+
+
+class RandomTranslation(BatchTransform):
+    """
+    RandomRotation applies a translation around the origin to the car
+    position transform.
+    """
+
+    def __init__(self, distances: Tuple[float, float, float]) -> None:
+        self.distances = distances
+
+    def __call__(self, batch: Batch) -> Batch:
+        rot = random_translation(
+            batch_size=batch.batch_size(),
+            distances=self.distances,
+            device=batch.cam_T.device,
+        ).unsqueeze(1)
         cam_T = batch.cam_T.matmul(rot)
         long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
         long_cam_T = long_cam_T.matmul(rot)

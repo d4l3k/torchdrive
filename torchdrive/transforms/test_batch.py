@@ -10,6 +10,7 @@ from torchdrive.transforms.batch import (
     Identity,
     NormalizeCarPosition,
     RandomRotation,
+    RandomTranslation,
 )
 
 
@@ -44,6 +45,18 @@ class TestBatchTransforms(unittest.TestCase):
         transform = Compose(
             NormalizeCarPosition(start_frame=1),
             RandomRotation(),
+        )
+        batch = dummy_batch()
+        out = transform(batch)
+
+        # origin shouldn't change
+        zero = torch.tensor((0, 0, 0, 1.0)).expand(2, -1).unsqueeze(-1)
+        torch.testing.assert_close(out.cam_T[:, 1].matmul(zero), zero)
+
+    def test_random_translation(self) -> None:
+        transform = Compose(
+            NormalizeCarPosition(start_frame=1),
+            RandomTranslation((0, 0, 0)),
         )
         batch = dummy_batch()
         out = transform(batch)
