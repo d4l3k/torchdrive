@@ -38,7 +38,8 @@ SEMANTIC_LOSSES = [
 ]
 
 STEREOSCOPIC_LOSSES = [
-    "lossstereoscopic/left/right",
+    "lossstereoscopic-voxel/left/right",
+    "lossstereoscopic-cam/left/right",
 ]
 
 
