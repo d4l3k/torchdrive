@@ -59,7 +59,7 @@ class BackprojectDepth(nn.Module):
 
         world_points = torch.matmul(T, cam_points)
         # normalize w -- perspective transform
-        return world_points / world_points[:, 3:]
+        return world_points / world_points[:, 3:].clamp(min=1e-7)
 
 
 class Project3D(nn.Module):
@@ -84,11 +84,11 @@ class Project3D(nn.Module):
         cam_points = torch.matmul(P, points)
 
         pix_coords = cam_points[:, :2, :] / (
-            cam_points[:, 2, :].unsqueeze(1) + self.eps
+            cam_points[:, 2, :].unsqueeze(1).clamp(min=self.eps)
         )
 
         # hide points behind the camera
-        invalid = (cam_points[:, 2:, :] < 0)
+        invalid = cam_points[:, 2:, :] < 0
         pix_coords[invalid.expand(-1, 2, -1)] = -100
 
         pix_coords = pix_coords.view(bs, 2, self.height, self.width)

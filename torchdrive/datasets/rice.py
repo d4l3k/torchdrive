@@ -109,8 +109,8 @@ def heading_diff(a: float, b: float) -> float:
 class MultiCamDataset(Dataset):
     CAMERA_OVERLAP = {
         "main": ["narrow", "fisheye"],
-        "narrow": ["main", "fisheye"],
-        "fisheye": ["main", "narrow", "leftpillar", "rightpillar"],
+        "narrow": ["main"],
+        "fisheye": ["main", "leftpillar", "rightpillar"],
         "leftpillar": ["leftrepeater", "fisheye"],
         "rightpillar": ["rightrepeater", "fisheye"],
         "leftrepeater": ["backup", "leftpillar"],

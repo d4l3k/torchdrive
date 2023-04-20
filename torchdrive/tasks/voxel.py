@@ -24,7 +24,7 @@ from torchdrive.transforms.depth import (
     disp_to_depth,
     Project3D,
 )
-from torchdrive.transforms.img import normalize_img, render_color
+from torchdrive.transforms.img import normalize_img, normalize_mask, render_color
 from torchdrive.transforms.mat import voxel_to_world
 
 
@@ -481,7 +481,8 @@ class VoxelTask(BEVTask):
                         label="voxel",
                         primary_cam=cam,
                         overlap_cams=camera_overlap[cam],
-                        cam_features=semantic_targets,
+                        # cam_features=semantic_targets,
+                        cam_features=primary_colors,
                         cam_masks=primary_masks,
                         cam_pix_weights=cam_pix_weights,
                         primary_depth=voxel_depth,
@@ -546,7 +547,8 @@ class VoxelTask(BEVTask):
                             label="cam",
                             primary_cam=cam,
                             overlap_cams=camera_overlap[cam],
-                            cam_features=semantic_targets,
+                            # cam_features=semantic_targets,
+                            cam_features=primary_colors,
                             cam_masks=primary_masks,
                             cam_pix_weights=cam_pix_weights,
                             loss_scale=0.5,
@@ -744,10 +746,13 @@ class VoxelTask(BEVTask):
             )
             proj_mask *= target_mask
 
+            proj_features = normalize_mask(proj_features, proj_mask)
+            target_features = normalize_mask(target_features, proj_mask)
+
             proj_loss = self.projection_loss(
                 proj_features, target_features, scales=3, mask=proj_mask
             )
-            proj_loss = proj_loss * cam_pix_weights[target_cam]
+            # proj_loss = proj_loss * cam_pix_weights[target_cam]
             losses[f"lossstereoscopic-{label}/{primary_cam}/{target_cam}"] = (
                 proj_loss.mean(dim=(1, 2, 3)) * 40 * loss_scale
             )
@@ -755,18 +760,19 @@ class VoxelTask(BEVTask):
             if ctx.log_img:
                 ctx.add_image(
                     f"stereoscopic-{label}/{primary_cam}/{target_cam}/feats",
-                    render_color(
-                        torch.argmax(
-                            torch.cat(
-                                (
-                                    target_features[0] * target_mask[0],
-                                    proj_features[0] * proj_mask[0],
-                                ),
-                                dim=2,
-                            ),
-                            dim=0,
-                        ).float()
+                    # render_color(
+                    # normalize_img(
+                    # torch.argmax(
+                    torch.cat(
+                        (
+                            target_features[0] * target_mask[0],
+                            proj_features[0] * proj_mask[0],
+                        ),
+                        dim=2,
                     ),
+                    # dim=0,
+                    # ).float()
+                    # ),
                 )
                 ctx.add_image(
                     f"stereoscopic-{label}/{primary_cam}/{target_cam}/proj_loss",

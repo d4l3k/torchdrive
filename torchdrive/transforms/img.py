@@ -34,6 +34,26 @@ def normalize_img(src: torch.Tensor) -> torch.Tensor:
     return normalize_img_cuda(src).cpu()
 
 
+def normalize_mask(src: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """
+    Normalizes the image based on the masked region.
+    """
+    ch = src.size(1)
+    masked = src.permute(0, 2, 3, 1)[(mask.squeeze(1) > 0.5)]
+    assert masked.size(-1) == 3
+    if masked.numel() == 0:
+        return src
+    quantiles = torch.quantile(
+        masked, torch.tensor((0.001, 0.99), device=src.device), dim=0
+    )
+
+    max = quantiles[1].unsqueeze(-1).unsqueeze(-1)
+    min = quantiles[0].unsqueeze(-1).unsqueeze(-1)
+    new = (src - min).div_(max - min)
+    new = new.clamp_(0, 1)
+    return new
+
+
 @torch.no_grad()
 def render_color(
     img: torch.Tensor,
