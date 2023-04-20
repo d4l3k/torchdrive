@@ -30,3 +30,6 @@ class TestDet(unittest.TestCase):
     def test_normalize_mask(self) -> None:
         out = normalize_mask(torch.rand(2, 3, 48, 64), torch.rand(2, 1, 48, 64))
         self.assertEqual(out.shape, (2, 3, 48, 64))
+
+        out = normalize_mask(torch.rand(2, 3, 48, 64), torch.zeros(2, 1, 48, 64))
+        self.assertEqual(out.shape, (2, 3, 48, 64))

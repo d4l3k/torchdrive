@@ -760,19 +760,15 @@ class VoxelTask(BEVTask):
             if ctx.log_img:
                 ctx.add_image(
                     f"stereoscopic-{label}/{primary_cam}/{target_cam}/feats",
-                    # render_color(
-                    # normalize_img(
-                    # torch.argmax(
-                    torch.cat(
-                        (
-                            target_features[0] * target_mask[0],
-                            proj_features[0] * proj_mask[0],
+                    normalize_img(
+                        torch.cat(
+                            (
+                                target_features[0] * target_mask[0],
+                                proj_features[0] * proj_mask[0],
+                            ),
+                            dim=2,
                         ),
-                        dim=2,
                     ),
-                    # dim=0,
-                    # ).float()
-                    # ),
                 )
                 ctx.add_image(
                     f"stereoscopic-{label}/{primary_cam}/{target_cam}/proj_loss",

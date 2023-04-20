@@ -38,20 +38,20 @@ def normalize_mask(src: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     """
     Normalizes the image based on the masked region.
     """
+    bs = src.size(0)
     ch = src.size(1)
-    masked = src.permute(0, 2, 3, 1)[(mask.squeeze(1) > 0.5)]
-    assert masked.size(-1) == 3
-    if masked.numel() == 0:
-        return src
-    quantiles = torch.quantile(
-        masked, torch.tensor((0.001, 0.99), device=src.device), dim=0
-    )
+    out = src.clone()
+    for i in range(bs):
+        masked = src[i].permute(1, 2, 0)[(mask[i].squeeze(0) > 0.5)]
+        if masked.numel() == 0:
+            continue
+        std, mean = torch.std_mean(masked, dim=0)
+        assert std.size(-1) == ch
+        out[i] = (out[i] - mean.view(1, ch, 1, 1)) / std.clamp(min=1e-7).view(
+            1, ch, 1, 1
+        )
 
-    max = quantiles[1].unsqueeze(-1).unsqueeze(-1)
-    min = quantiles[0].unsqueeze(-1).unsqueeze(-1)
-    new = (src - min).div_(max - min)
-    new = new.clamp_(0, 1)
-    return new
+    return out
 
 
 @torch.no_grad()
