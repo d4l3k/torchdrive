@@ -86,6 +86,11 @@ class Project3D(nn.Module):
         pix_coords = cam_points[:, :2, :] / (
             cam_points[:, 2, :].unsqueeze(1) + self.eps
         )
+
+        # hide points behind the camera
+        invalid = (cam_points[:, 2:, :] < 0)
+        pix_coords[invalid.expand(-1, 2, -1)] = -100
+
         pix_coords = pix_coords.view(bs, 2, self.height, self.width)
         pix_coords = pix_coords.permute(0, 2, 3, 1)
         pix_coords[..., 0] /= self.width - 1
