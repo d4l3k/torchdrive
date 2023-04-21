@@ -1,4 +1,5 @@
 import unittest
+from typing import Dict
 from unittest.mock import MagicMock
 
 import torch
@@ -22,9 +23,7 @@ VOXEL_LOSSES = [
     "lossproj-cam/left/o0",
     "lossproj-cam/right/o-1",
     "lossproj-cam/left/o-1",
-    "losssmooth-voxel-vel/left",
     "losssmooth-voxel-disp/left",
-    "losssmooth-voxel-vel/right",
     "losssmooth-voxel-disp/right",
     "losssmooth-cam-vel/left",
     "losssmooth-cam-disp/left",
@@ -35,6 +34,8 @@ VOXEL_LOSSES = [
 SEMANTIC_LOSSES = [
     "semantic/left",
     "semantic/right",
+    "losssmooth-voxel-vel/left",
+    "losssmooth-voxel-vel/right",
 ]
 
 STEREOSCOPIC_LOSSES = [
@@ -44,6 +45,10 @@ STEREOSCOPIC_LOSSES = [
 
 
 class TestVoxel(unittest.TestCase):
+    def _assert_loss_shapes(self, losses: Dict[str, torch.Tensor]) -> None:
+        for k, v in losses.items():
+            self.assertEqual(v.shape, (), k)
+
     def test_voxel_task(self) -> None:
         device = torch.device("cpu")
         cameras = ["left", "right"]
@@ -75,7 +80,9 @@ class TestVoxel(unittest.TestCase):
         )
         bev = torch.rand(2, 5, 4, 4, device=device)
         losses = m(ctx, batch, bev)
+        ctx.backward(losses)
         self.assertCountEqual(losses.keys(), VOXEL_LOSSES)
+        self._assert_loss_shapes(losses)
 
     def test_semantic_voxel_task(self) -> None:
         device = torch.device("cpu")
@@ -107,10 +114,12 @@ class TestVoxel(unittest.TestCase):
         )
         bev = torch.rand(2, 5, 4, 4)
         losses = m(ctx, batch, bev)
+        ctx.backward(losses)
         self.assertCountEqual(
             losses.keys(),
             SEMANTIC_LOSSES + VOXEL_LOSSES,
         )
+        self._assert_loss_shapes(losses)
 
     def test_stereoscopic_voxel_task(self) -> None:
         device = torch.device("cpu")
@@ -146,10 +155,12 @@ class TestVoxel(unittest.TestCase):
         )
         bev = torch.rand(2, 5, 4, 4)
         losses = m(ctx, batch, bev)
+        ctx.backward(losses)
         self.assertCountEqual(
             losses.keys(),
             STEREOSCOPIC_LOSSES + SEMANTIC_LOSSES + VOXEL_LOSSES,
         )
+        self._assert_loss_shapes(losses)
 
     def test_axis_grid(self) -> None:
         grid, color = axis_grid(torch.rand(2, 1, 3, 4, 5))

@@ -609,6 +609,8 @@ class VoxelTask(BEVTask):
             )
 
         for typ, t in [("disp", disp), ("vel", semantic_vel)]:
+            if not t.requires_grad:
+                continue
             losssmooth = smooth_loss(t, primary_color) * per_pixel_weights
             losses[f"losssmooth-{label}-{typ}/{cam}"] = (
                 losssmooth.mean(dim=(1, 2, 3)) * 20
