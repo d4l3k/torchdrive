@@ -363,7 +363,8 @@ class VoxelTask(BEVTask):
                     cam_pix_weights[cam] = per_pixel_weights
         else:
             for cam in self.cameras:
-                dynamic_masks[cam] = torch.zeros(BS, 1, h // 2, w // 2, device=device)
+                dynamic_masks[cam] = torch.zeros(
+                    BS, 1, h // 2, w // 2, device=device)
 
         for cam in self.cameras:
             volumes = Volumes(
