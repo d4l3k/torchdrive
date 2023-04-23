@@ -797,10 +797,12 @@ class VoxelTask(BEVTask):
         semantic_target = semantic_target[:, BDD100KSemSeg.NON_SKY]
         semantic_target = F.avg_pool2d(semantic_target, 2)
 
-        sem_loss = F.huber_loss(
-            semantic_classes.float(), semantic_target.float(), reduction="none"
+        sem_loss = self.projection_loss(
+            semantic_classes.float(),
+            semantic_target.float(),
+            scales=3,
+            mask=F.avg_pool2d(mask, 2),
         )
-        sem_loss *= F.avg_pool2d(mask, 2)
 
         if ctx.log_text:
             pred_min, pred_max = semantic_classes.aminmax()
