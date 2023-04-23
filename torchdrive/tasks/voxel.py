@@ -411,14 +411,6 @@ class VoxelTask(BEVTask):
 
                 dynamic_mask = dynamic_masks[cam]
                 if self.semantic:
-                    semantic_loss = self._semantic_loss(
-                        ctx=ctx,
-                        cam=cam,
-                        semantic_img=semantic_img,
-                        semantic_target=semantic_targets[cam],
-                        color=primary_color,
-                        mask=primary_mask,
-                    )
 
                     semantic_vel = semantic_img[:, self.classes_elem :]
                     semantic_vel = F.interpolate(
@@ -439,13 +431,20 @@ class VoxelTask(BEVTask):
                     semantic_vel *= dynamic_mask
                     semantic_vel *= primary_mask
 
-                    semantic_loss = semantic_loss * F.avg_pool2d(per_pixel_weights, 2)
+                    semantic_loss = self._semantic_loss(
+                        ctx=ctx,
+                        cam=cam,
+                        semantic_img=semantic_img,
+                        semantic_target=semantic_targets[cam],
+                        mask=primary_mask,
+                        per_pixel_weights=per_pixel_weights,
+                    )
                     if ctx.log_img:
                         ctx.add_image(
-                            f"semantic/{cam}/loss",
+                            f"semantic-voxel/{cam}/loss",
                             render_color(semantic_loss[0].mean(dim=0)),
                         )
-                    losses[f"semantic/{cam}"] = semantic_loss.mean(dim=(1, 2, 3)) * 100
+                    losses[f"semantic-voxel/{cam}"] = semantic_loss.mean(dim=(1, 2, 3))
                 else:
                     semantic_vel = torch.zeros_like(primary_color)
 
@@ -498,7 +497,23 @@ class VoxelTask(BEVTask):
                 with torch.autograd.profiler.record_function(
                     "depth_decoder"
                 ), autocast():
-                    cam_disp, cam_vel = self.depth_decoder(ctx.cam_feats[cam])
+                    cam_disp, cam_vel, cam_sem = self.depth_decoder(ctx.cam_feats[cam])
+
+                if self.semantic:
+                    semantic_loss = self._semantic_loss(
+                        ctx=ctx,
+                        cam=cam,
+                        semantic_img=cam_sem,
+                        semantic_target=semantic_targets[cam],
+                        mask=primary_mask,
+                        per_pixel_weights=per_pixel_weights * 0.5,
+                    )
+                    if ctx.log_img:
+                        ctx.add_image(
+                            f"semantic-cam/{cam}/loss",
+                            render_color(semantic_loss[0].mean(dim=0)),
+                        )
+                    losses[f"semantic-cam/{cam}"] = semantic_loss.mean(dim=(1, 2, 3))
 
                 cam_vel = F.interpolate(
                     cam_vel.float(),
@@ -785,8 +800,8 @@ class VoxelTask(BEVTask):
         cam: str,
         semantic_img: torch.Tensor,
         semantic_target: torch.Tensor,
-        color: torch.Tensor,
         mask: torch.Tensor,
+        per_pixel_weights: torch.Tensor,
     ) -> torch.Tensor:
         """
         _semantic_loss computes the semantic class probability loss.
@@ -803,6 +818,7 @@ class VoxelTask(BEVTask):
             scales=3,
             mask=F.avg_pool2d(mask, 2),
         )
+        sem_loss = sem_loss * F.avg_pool2d(per_pixel_weights, 2) * 100
 
         if ctx.log_text:
             pred_min, pred_max = semantic_classes.aminmax()

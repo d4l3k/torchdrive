@@ -16,6 +16,7 @@ class DepthDecoder(nn.Module):
         num_upsamples: int,
         cam_shape: Tuple[int, int],
         dim: int,
+        num_classes: int = 0,
         final_dim: int = 32,
     ) -> None:
         super().__init__()
@@ -27,10 +28,12 @@ class DepthDecoder(nn.Module):
                 dim=dim,
                 output_dim=final_dim,
             ),
-            nn.Conv2d(final_dim, 4, 1),
+            nn.Conv2d(final_dim, 1 + 3 + num_classes, 1),
         )
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         x: [BS, dim, *cam_shape]
         Returns:
@@ -39,5 +42,6 @@ class DepthDecoder(nn.Module):
         """
         out = self.upsample(x)
         disp = out[:, 0]
-        vel = out[:, 1:]
-        return disp, vel
+        vel = out[:, 1:4]
+        semantic = out[:, 4:]
+        return disp, vel, semantic
