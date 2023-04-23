@@ -25,6 +25,9 @@ def autograd_resume(*tensors: torch.Tensor) -> None:
     autograd_resume resumes the backwards pass for the provided tensors that were
     graph broken via autograd_pause.
     """
+    # ignore zero sized tensors
+    tensors = [t for t in tensors if t.numel() > 0]
+
     for t in tensors:
         assert t.grad is not None, "missing grad"
     # pyre-ignore
