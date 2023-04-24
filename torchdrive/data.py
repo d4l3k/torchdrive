@@ -93,6 +93,13 @@ class Batch:
         """
         return self.cam_T[:, frame]
 
+    def car_to_world(self, frame: int) -> torch.Tensor:
+        """
+        Get the car to world space transformation matrix.
+        [batch_size, 4, 4]
+        """
+        return self.world_to_car(frame).pinverse()
+
     def world_to_cam(self, cam: str, frame: int) -> torch.Tensor:
         """
         Get the world space to camera space transformation matrix.

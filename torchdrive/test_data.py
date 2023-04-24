@@ -104,6 +104,12 @@ class TestData(unittest.TestCase):
         self.assertEqual(out.shape, (2, 4, 4))
         torch.testing.assert_allclose(out, batch.cam_T[:, 1])
 
+    def test_car_to_world(self) -> None:
+        batch = dummy_batch()
+        out = batch.car_to_world(1)
+        self.assertEqual(out.shape, (2, 4, 4))
+        torch.testing.assert_allclose(out, batch.cam_T[:, 1].pinverse())
+
     def test_world_to_cam(self) -> None:
         batch = dummy_batch()
         cam = "left"
