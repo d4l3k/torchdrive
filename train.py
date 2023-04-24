@@ -278,7 +278,7 @@ if args.voxel:
         z_offset=0.4,
         device=device,
         semantic=args.voxelsem,
-        camera_overlap=dataset.CAMERA_OVERLAP,
+        #camera_overlap=dataset.CAMERA_OVERLAP,
         compile_fn=compile_fn,
     )
 

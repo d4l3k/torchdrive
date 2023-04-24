@@ -25,17 +25,19 @@ VOXEL_LOSSES = [
     "lossproj-cam/left/o-1",
     "losssmooth-voxel-disp/left",
     "losssmooth-voxel-disp/right",
-    "losssmooth-cam-vel/left",
     "losssmooth-cam-disp/left",
-    "losssmooth-cam-vel/right",
     "losssmooth-cam-disp/right",
+    #"losssmooth-cam-vel/left",
+    #"losssmooth-cam-vel/right",
 ]
 
 SEMANTIC_LOSSES = [
-    "semantic/left",
-    "semantic/right",
-    "losssmooth-voxel-vel/left",
-    "losssmooth-voxel-vel/right",
+    "semantic-voxel/left",
+    "semantic-voxel/right",
+    "semantic-cam/left",
+    "semantic-cam/right",
+    #"losssmooth-voxel-vel/left",
+    #"losssmooth-voxel-vel/right",
 ]
 
 STEREOSCOPIC_LOSSES = [
