@@ -472,7 +472,7 @@ class MultiCamDataset(Dataset):
         assert translation.shape == axisangle.shape, translation.shape
 
         frame_T = transformation_from_parameters(
-            axisangle.unsqueeze(1), translation.unsqueeze(1)
+            axisangle.unsqueeze(1), translation.unsqueeze(1), invert=True
         )
 
         cam_T = torch.zeros(frames, 4, 4, dtype=torch.float)
