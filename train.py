@@ -167,11 +167,29 @@ collator = TransferCollator(dataloader, batch_size=args.batch_size, device=devic
 if args.anomaly_detection:
     torch.set_anomaly_enabled(True)
 
-compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m
+if WORLD_SIZE > 1:
+
+    def convert_sync_bn(m: nn.Module) -> nn.Module:
+        if isinstance(m, nn.Module) and m.training:
+            print(f"converting syncbn: {m.__class__}")
+            return nn.SyncBatchNorm.convert_sync_batchnorm(m)
+        return m
+
+    compile_fn = convert_sync_bn
+else:
+    compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m
 if args.compile:
     print("using torch.compile")
-    # pyre-fixme[16]: no attribute compile
-    compile_fn = torch.compile
+    import torch._dynamo
+
+    torch._dynamo.config.cache_size_limit = 128
+    parent_fn: Callable[[nn.Module], nn.Module] = compile_fn
+
+    def compile_parent(m: nn.Module) -> nn.Module:
+        # pyre-fixme[16]: no attribute compile
+        return torch.compile(parent_fn(m))
+
+    compile_fn = compile_parent
 
 if args.backbone == "rice":
     from torchdrive.models.bev import RiceBackbone
@@ -278,7 +296,7 @@ if args.voxel:
         z_offset=0.4,
         device=device,
         semantic=args.voxelsem,
-        #camera_overlap=dataset.CAMERA_OVERLAP,
+        camera_overlap=dataset.CAMERA_OVERLAP,
         compile_fn=compile_fn,
     )
 
