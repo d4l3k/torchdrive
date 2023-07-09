@@ -26,7 +26,7 @@ def autograd_resume(*tensors: torch.Tensor) -> None:
     graph broken via autograd_pause.
     """
     # ignore zero sized tensors
-    tensors = [t for t in tensors if t.numel() > 0]
+    tensors = tuple([t for t in tensors if t.numel() > 0])
 
     for t in tensors:
         assert t.grad is not None, "missing grad"

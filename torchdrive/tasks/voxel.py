@@ -423,7 +423,7 @@ class VoxelTask(BEVTask):
                         mode="bilinear",
                         align_corners=False,
                     )
-                    semantic_classes = semantic_img[:, :self.classes_elem].sigmoid()
+                    semantic_classes = semantic_img[:, : self.classes_elem].sigmoid()
                     semantic_classes = F.interpolate(
                         semantic_classes.float(),
                         [h // 2, w // 2],
@@ -507,7 +507,6 @@ class VoxelTask(BEVTask):
                 ), autocast():
                     cam_disp, cam_vel, cam_sem = self.depth_decoder(ctx.cam_feats[cam])
 
-
                 cam_vel = F.interpolate(
                     cam_vel.float(),
                     [h // 2, w // 2],
@@ -546,7 +545,9 @@ class VoxelTask(BEVTask):
                             mask=primary_mask,
                             per_pixel_weights=per_pixel_weights * 0.5,
                         )
-                        losses[f"semantic-cam/{cam}"] = semantic_loss.mean(dim=(1, 2, 3))
+                        losses[f"semantic-cam/{cam}"] = semantic_loss.mean(
+                            dim=(1, 2, 3)
+                        )
 
                     self._sfm_loss(
                         ctx=ctx,
@@ -634,7 +635,7 @@ class VoxelTask(BEVTask):
                 {"max": amax, "min": amin},
             )
 
-        for typ, t in [("disp", disp)]:#, ("vel", semantic_vel)]:
+        for typ, t in [("disp", disp)]:  # , ("vel", semantic_vel)]:
             if not t.requires_grad:
                 continue
             losssmooth = smooth_loss(t, primary_color) * per_pixel_weights
@@ -659,35 +660,38 @@ class VoxelTask(BEVTask):
             )
 
         for offset in self.offsets:
-            target_frame = frame + offset
-            assert target_frame >= 0, (frame, offset)
-            backproject_T = batch.cam_to_world(cam, frame)
-            project_T = batch.world_to_cam(cam, target_frame)
-            time = frame_time[:, target_frame]
+            src_frame = frame + offset
+            assert src_frame >= 0, (frame, offset)
+            target_cam_to_world = batch.cam_to_world(cam, frame)
+            world_to_src_cam = batch.world_to_cam(cam, src_frame)
+            time = frame_time[:, src_frame]
 
-            projcolor, projmask = self._project(
-                batch=batch,
-                primary_cam=cam,
-                target_cam=cam,
-                backproject_T=backproject_T,
-                project_T=project_T,
-                depth=depth,
-                color=primary_color,
-                mask=primary_mask,
-                vel=semantic_vel * time.reshape(-1, 1, 1, 1),
-            )
-            projmask *= primary_mask
-            color = batch.color[cam][:, target_frame]
-            half_color = F.interpolate(
-                color.float(),
+            src_color = batch.color[cam][:, src_frame]
+            src_color = F.interpolate(
+                src_color.float(),
                 [h // 2, w // 2],
                 mode="bilinear",
                 align_corners=False,
             )
-            color = half_color
+
+            # project from offset frame (src) to start frame (target)
+            projcolor, projmask = self._project(
+                batch=batch,
+                src_cam=cam,
+                target_cam=cam,
+                target_cam_to_world=target_cam_to_world,
+                world_to_src_cam=world_to_src_cam,
+                target_depth=depth,
+                src_color=src_color,
+                src_mask=primary_mask,
+                target_vel=semantic_vel * time.reshape(-1, 1, 1, 1),
+            )
+            projmask *= primary_mask
             proj_weights = per_pixel_weights
 
-            proj_loss = self.projection_loss(projcolor, color, scales=3, mask=projmask)
+            proj_loss = self.projection_loss(
+                projcolor, primary_color, scales=3, mask=projmask
+            )
             # identity_proj_loss = self.projection_loss(
             #    color, primary_color, scales=3, mask=projmask
             # )
@@ -708,8 +712,9 @@ class VoxelTask(BEVTask):
                     normalize_img(
                         torch.cat(
                             (
-                                color[0],
+                                src_color[0],
                                 projcolor[0],
+                                primary_color[0],
                             ),
                             dim=2,
                         )
@@ -757,42 +762,42 @@ class VoxelTask(BEVTask):
             align_corners=False,
         )
 
-        for target_cam in overlap_cams:
-            backproject_T = batch.cam_to_world(target_cam, frame)
-            project_T = batch.world_to_cam(primary_cam, frame)
-            target_mask = cam_masks[target_cam]
-            target_features = cam_features[target_cam].float()
+        for src_cam in overlap_cams:
+            target_cam_to_world = batch.cam_to_world(primary_cam, frame)
+            world_to_src_cam = batch.world_to_cam(src_cam, frame)
+            src_mask = cam_masks[src_cam]
+            src_features = cam_features[src_cam].float()
 
             proj_features, proj_mask = self._project(
                 batch=batch,
-                primary_cam=primary_cam,
-                target_cam=target_cam,
-                backproject_T=backproject_T,
-                project_T=project_T,
-                depth=primary_depth,
-                color=primary_features,
-                mask=primary_mask,
+                src_cam=src_cam,
+                target_cam=primary_cam,
+                target_cam_to_world=target_cam_to_world,
+                world_to_src_cam=world_to_src_cam,
+                target_depth=primary_depth,
+                src_color=src_features,
+                src_mask=src_mask,
             )
-            proj_mask *= target_mask
+            proj_mask *= primary_mask
 
             proj_features = normalize_mask(proj_features, proj_mask)
-            target_features = normalize_mask(target_features, proj_mask)
+            target_features = normalize_mask(primary_features, proj_mask)
 
             proj_loss = self.projection_loss(
                 proj_features, target_features, scales=3, mask=proj_mask
             )
             # proj_loss = proj_loss * cam_pix_weights[target_cam]
-            losses[f"lossstereoscopic-{label}/{primary_cam}/{target_cam}"] = (
+            losses[f"lossstereoscopic-{label}/{primary_cam}/{src_cam}"] = (
                 proj_loss.mean(dim=(1, 2, 3)) * 40 * loss_scale
             )
 
             if ctx.log_img:
                 ctx.add_image(
-                    f"stereoscopic-{label}/{primary_cam}/{target_cam}/feats",
+                    f"stereoscopic-{label}/{primary_cam}/{src_cam}/feats",
                     normalize_img(
                         torch.cat(
                             (
-                                target_features[0] * target_mask[0],
+                                target_features[0] * primary_mask[0],
                                 proj_features[0] * proj_mask[0],
                             ),
                             dim=2,
@@ -800,7 +805,7 @@ class VoxelTask(BEVTask):
                     ),
                 )
                 ctx.add_image(
-                    f"stereoscopic-{label}/{primary_cam}/{target_cam}/proj_loss",
+                    f"stereoscopic-{label}/{primary_cam}/{src_cam}/proj_loss",
                     render_color(proj_loss[0, 0]),
                 )
 
@@ -822,7 +827,10 @@ class VoxelTask(BEVTask):
         # select interesting classes and convert to probabilities
         semantic_target = semantic_target[:, BDD100KSemSeg.NON_SKY]
 
-        assert semantic_classes.shape == semantic_target.shape, (semantic_classes.shape, semantic_target.shape)
+        assert semantic_classes.shape == semantic_target.shape, (
+            semantic_classes.shape,
+            semantic_target.shape,
+        )
 
         sem_loss = self.projection_loss(
             semantic_classes.float(),
@@ -873,16 +881,16 @@ class VoxelTask(BEVTask):
     def _project(
         self,
         batch: Batch,
-        primary_cam: str,
+        src_cam: str,
         target_cam: str,
-        backproject_T: torch.Tensor,
-        project_T: torch.Tensor,
-        depth: torch.Tensor,
-        color: torch.Tensor,
-        mask: torch.Tensor,
-        vel: Optional[torch.Tensor] = None,
+        target_cam_to_world: torch.Tensor,
+        world_to_src_cam: torch.Tensor,
+        target_depth: torch.Tensor,
+        src_color: torch.Tensor,
+        src_mask: torch.Tensor,
+        target_vel: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        src_K = batch.K[primary_cam].clone()
+        src_K = batch.K[src_cam].clone()
         # convert to image space
         src_K[:, 0] *= self.backproject_depth.width
         src_K[:, 1] *= self.backproject_depth.height
@@ -894,25 +902,25 @@ class VoxelTask(BEVTask):
         target_inv_K = target_K.pinverse()
 
         world_points = self.backproject_depth(
-            depth, target_inv_K, backproject_T
+            target_depth, target_inv_K, target_cam_to_world
         ).clone()
 
-        if vel is not None:
+        if target_vel is not None:
             # add velocity to points
-            world_points[:, :3] += vel.flatten(-2, -1)
+            world_points[:, :3] += target_vel.flatten(-2, -1)
 
         # (world to cam) * camera motion
-        pix_coords = self.project_3d(world_points, src_K, project_T)
+        pix_coords = self.project_3d(world_points, src_K, world_to_src_cam)
 
         color = F.grid_sample(
-            color,
+            src_color,
             pix_coords,
             mode="bilinear",
             padding_mode="border",
             align_corners=False,
         )
         mask = F.grid_sample(
-            mask,
+            src_mask,
             pix_coords,
             mode="nearest",
             padding_mode="zeros",
