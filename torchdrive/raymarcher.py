@@ -69,9 +69,9 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         if self.floor:
             # set floor depths
             # depth = (z-z0)/vz
-            floor_depth = (self.floor - ray_bundle.origins[..., 2]) / ray_bundle.directions[
-                ..., 2
-            ]
+            floor_depth = (
+                self.floor - ray_bundle.origins[..., 2]
+            ) / ray_bundle.directions[..., 2]
             floor_depth[floor_depth <= 0] = 10000
             floor_depth = floor_depth.unsqueeze(3).unsqueeze(4)
             is_floor = ray_bundle.lengths.unsqueeze(4) > floor_depth

@@ -11,10 +11,12 @@ from torchdrive.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarc
 
 class TestRaymarcher(unittest.TestCase):
     # pyre-fixme[16]: no attribute expand
-    @parameterized.expand([
-        (0.1,),
-        (None,),
-    ])
+    @parameterized.expand(
+        [
+            (0.1,),
+            (None,),
+        ]
+    )
     def test_depth_emission(self, floor: Optional[float]) -> None:
         BS = 2
         X = 3
@@ -39,7 +41,7 @@ class TestRaymarcher(unittest.TestCase):
         )
         self.assertEqual(depth.shape, (BS, X, Y))
         self.assertEqual(features.shape, (BS, X, Y, FEATS))
-        (depth.mean()+features.mean()).backward()
+        (depth.mean() + features.mean()).backward()
 
     def test_cameras(self) -> None:
         cameras = CustomPerspectiveCameras(
