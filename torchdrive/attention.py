@@ -31,7 +31,6 @@ def attention(
     assert q.size(-1) % 8 == 0, q.shape
     assert (kv.size(-1) // 2) % 8 == 0, q.shape
 
-    # pyre-fixme[16]: no attributed scaled_dot_product_attention
     return F.scaled_dot_product_attention(
         query=q,
         key=kv[..., :dim],

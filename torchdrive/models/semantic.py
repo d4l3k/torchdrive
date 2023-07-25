@@ -94,7 +94,7 @@ class BDD100KSemSeg:
 
         if not mmlab:
             path = TS_MODELS[config]
-            model: nn.Module = torch.hub.load_state_dict_from_url(
+            model: nn.Module = torch.hub.load_state_dict_from_url(  # pyre-ignore[9]
                 path, map_location=device, file_name=config
             )
         else:
