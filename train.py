@@ -108,7 +108,6 @@ assert torch.cuda.device_count() <= 1
 device_id = 0
 device = torch.device(device_id)
 
-# pyre-fixme[16]: no attribute set_float32_matmul_precision
 torch.set_float32_matmul_precision("high")
 
 BS: int = args.batch_size
@@ -186,8 +185,7 @@ if args.compile:
     parent_fn: Callable[[nn.Module], nn.Module] = compile_fn
 
     def compile_parent(m: nn.Module) -> nn.Module:
-        # pyre-fixme[16]: no attribute compile
-        return torch.compile(parent_fn(m))
+        return torch.compile(parent_fn(m))  # pyre-ignore[7]: Expected Module
 
     compile_fn = compile_parent
 
