@@ -19,3 +19,4 @@ parameterized
 av
 opencv-contrib-python-headless
 torchinfo
+nuscenes-devkit
