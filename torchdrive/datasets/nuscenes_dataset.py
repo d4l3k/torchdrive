@@ -2,7 +2,8 @@ import os
 import traceback
 from bisect import bisect_left
 from datetime import timedelta
-from typing import Any, Dict, List, Tuple
+from enum import Enum
+from typing import Dict, List, Optional, Tuple, TypedDict
 
 import torch
 import torchvision.transforms as transforms
@@ -17,6 +18,13 @@ Tensor = torch.Tensor
 from torchdrive.data import Batch, collate
 
 
+class SampleData(TypedDict):
+    timestamp: int
+    filename: str
+    ego_pose_token: str
+    calibrated_sensor_token: str
+
+
 def normalize01(tensor: Tensor) -> Tensor:
     return transforms.functional.normalize(
         tensor,
@@ -26,7 +34,7 @@ def normalize01(tensor: Tensor) -> Tensor:
     )
 
 
-class CamTypes:
+class CamTypes(str, Enum):
     CAM_FRONT = "CAM_FRONT"
     CAM_FRONT_LEFT = "CAM_FRONT_LEFT"
     CAM_FRONT_RIGHT = "CAM_FRONT_RIGHT"
@@ -39,8 +47,8 @@ NUM_FRAMES = 5
 
 
 def calculate_timestamp_index(
-    cam_samples: Dict[str, List[Dict[str, Any]]]
-) -> Dict[int, Dict[str, Tuple[Dict[str, Any], int]]]:
+    cam_samples: Dict[str, List[SampleData]]
+) -> Dict[int, Dict[str, Tuple[SampleData, int]]]:
     timestamp_index = {}
     for cam, samples in cam_samples.items():
         for i, sample in enumerate(samples):
@@ -52,8 +60,11 @@ def calculate_timestamp_index(
 
 
 def calculate_nearest_data_within_epsilon(
-    cam_samples, epsilon, timestamp_index, sorted_timestamps
-):
+    cam_samples: Dict[str, List[SampleData]],
+    epsilon: int,
+    timestamp_index: Dict[int, Dict[str, Tuple[SampleData, int]]],
+    sorted_timestamps: List[int],
+) -> Dict[int, Tuple[SampleData, Dict[str, int]]]:
     nearest_data_within_epsilon = {}
     for cam_front_timestamp in sorted_timestamps:
         nearest_data = {}
@@ -85,22 +96,24 @@ def calculate_nearest_data_within_epsilon(
 
 
 class TimestampMatcher:
-    def __init__(self, cam_samples, epsilon):
-        """
-        cam_samples: Dict[CamTypes, List[Dict[str, Any]]]
-        epsilon: timedelta
-        """
+    def __init__(
+        self, cam_samples: Dict[str, List[SampleData]], epsilon: timedelta
+    ) -> None:
         self.cam_samples = cam_samples
         self.epsilon = int(epsilon.total_seconds() * 1e6)
-        self.timestamp_index = calculate_timestamp_index(cam_samples)
-        self.sorted_timestamps = sorted(self.timestamp_index.keys())
-        self.nearest_data_within_epsilon = calculate_nearest_data_within_epsilon(
+        self.timestamp_index: Dict[
+            int, Dict[str, Tuple[SampleData, int]]
+        ] = calculate_timestamp_index(cam_samples)
+        self.sorted_timestamps: List[int] = sorted(self.timestamp_index.keys())
+        self.nearest_data_within_epsilon: Dict[
+            int, Tuple[SampleData, Dict[str, int]]
+        ] = calculate_nearest_data_within_epsilon(
             cam_samples, self.epsilon, self.timestamp_index, self.sorted_timestamps
         )
 
     def get_nearest_data_within_epsilon(
         self, idx: int
-    ) -> Tuple[Dict[str, Any], Dict[str, int]]:
+    ) -> Tuple[SampleData, Dict[str, int]]:
         cam_front_samples = self.cam_samples[CamTypes.CAM_FRONT]
         if idx < 0 or idx >= len(cam_front_samples):
             raise IndexError("Index out of range")
@@ -112,15 +125,17 @@ class TimestampMatcher:
 class SceneDataset(Dataset):
     """A "scene" is all the sample data from first (the one with no prev) to last (the one with no next) for a single camera."""
 
-    def __init__(self, dataroot: str, nusc: NuScenes, samples: List[Dict[str, Any]]):
+    def __init__(
+        self, dataroot: str, nusc: NuScenes, samples: List[SampleData]
+    ) -> None:
         self.dataroot = dataroot
         self.nusc = nusc
         self.samples = samples
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.samples) - NUM_FRAMES - 1
 
-    def _getitem(self, sample_data):
+    def _getitem(self, sample_data: SampleData) -> Dict[str, object]:
         # Get the camera_intrinsic (K)
         calibrated_sensor_token = sample_data["calibrated_sensor_token"]
         calibrated_sensor = self.nusc.get("calibrated_sensor", calibrated_sensor_token)
@@ -174,7 +189,7 @@ class SceneDataset(Dataset):
             "mask": None,
         }
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Dict[str, object]:
         frame_dicts = []
         for i in range(idx, idx + NUM_FRAMES):
             sample = self.samples[i]
@@ -219,7 +234,7 @@ class SceneDataset(Dataset):
 
 
 class NuscenesDataset(Dataset):
-    CAMERA_OVERLAP = {
+    CAMERA_OVERLAP: Dict[str, List[str]] = {
         CamTypes.CAM_FRONT: [CamTypes.CAM_FRONT_LEFT, CamTypes.CAM_FRONT_RIGHT],
         CamTypes.CAM_FRONT_LEFT: [CamTypes.CAM_FRONT, CamTypes.CAM_BACK_LEFT],
         CamTypes.CAM_FRONT_RIGHT: [CamTypes.CAM_FRONT, CamTypes.CAM_BACK_RIGHT],
@@ -228,7 +243,7 @@ class NuscenesDataset(Dataset):
         CamTypes.CAM_BACK_RIGHT: [CamTypes.CAM_BACK, CamTypes.CAM_FRONT_RIGHT],
     }
 
-    def __init__(self, data_dir, version="v1.0-trainval"):
+    def __init__(self, data_dir: str, version: str = "v1.0-trainval") -> None:
         self.data_dir = data_dir
         self.version = version
         self.nusc = NuScenes(version=version, dataroot=data_dir, verbose=True)
@@ -243,7 +258,7 @@ class NuscenesDataset(Dataset):
 
         # Organize all the sample_data into scenes by camera type
         self.cam_scenes: Dict[str, ConcatDataset] = {}
-        self.cam_samples: Dict[str, List[Dict]] = {}
+        self.cam_samples: Dict[str, List[SampleData]] = {}
         for cam in self.cam_types:
             self.cam_scenes[cam], self.cam_samples[cam] = self._cam2scenes(cam)
             print(f"Found {len(self.cam_scenes[cam])} scenes for {cam}")
@@ -254,7 +269,9 @@ class NuscenesDataset(Dataset):
             self.cam_samples, epsilon=timedelta(milliseconds=51)
         )
 
-    def _cam2scenes(self, cam: str) -> ConcatDataset[SceneDataset]:
+    def _cam2scenes(
+        self, cam: str
+    ) -> Tuple[ConcatDataset[SceneDataset], List[Dict[str, object]]]:
         """Takes in a camera, returns the data split up into SceneDatasets of information."""
         # Get all the sample_data with no prev
         starts = [
@@ -282,10 +299,10 @@ class NuscenesDataset(Dataset):
         ds = ConcatDataset(ds_scenes)
         return ds, scene_samples
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.cam_scenes[CamTypes.CAM_FRONT])
 
-    def _getitem(self, idx: int) -> Batch:
+    def _getitem(self, idx: int) -> Optional[Batch]:
         """Returns one row of a Batch of data for the given index."""
         # Do timestamp matching for this idx
         sample_data, idxs = self.timestamp_matcher.get_nearest_data_within_epsilon(
@@ -334,7 +351,7 @@ class NuscenesDataset(Dataset):
             long_cam_T=cam_Ts,
         )
 
-    def __getitem__(self, idx: int) -> Batch:
+    def __getitem__(self, idx: int) -> Optional[Batch]:
         """Aggregates the data from each camera type into an element of a Batch."""
         try:
             batch = self._getitem(idx)
@@ -351,10 +368,13 @@ class NuscenesDataset(Dataset):
 
 if __name__ == "__main__":
     import sys
-    dataroot = sys.argv[-1]
-    version = "v1.0-mini"
+
+    dataroot: str = sys.argv[-1]
+    version: str = "v1.0-mini"
     ds = NuscenesDataset(dataroot, version=version)
-    dl = DataLoader(ds, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate)
+    dl: DataLoader = DataLoader(
+        ds, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate
+    )
     for batch in dl:
         torch.save(batch, "nuscenes_batch.pt")
         break
