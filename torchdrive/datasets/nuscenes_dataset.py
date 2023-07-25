@@ -9,8 +9,7 @@ import torch
 import torchvision.transforms as transforms
 from nuscenes.nuscenes import NuScenes
 from PIL import Image
-from pyquaternion import Quaternion
-from pytorch3d.transforms import RotateAxisAngle
+from pytorch3d.transforms import RotateAxisAngle, quaternion_to_matrix
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 Tensor = torch.Tensor
@@ -167,7 +166,7 @@ class SceneDataset(Dataset):
 
         # Get car to camera local translation matrix T
         # Due to coordinate system differences, we need to rotate the camera 90 degrees counterclockwise around the z-axis.
-        rotation = Quaternion(calibrated_sensor["rotation"]).rotation_matrix
+        rotation = quaternion_to_matrix(torch.tensor(calibrated_sensor["rotation"]))
         z_rotation = (
             RotateAxisAngle(90, axis="Z", device="cpu").get_matrix()[0, :3, :3].T
         )  # transpose is required to convert pytorch3d rotations (clockwise.T = counterclockwise)
