@@ -23,11 +23,15 @@ def run_ddp(params: Iterable[nn.Parameter]) -> None:
 
 
 def _all_reduce_params(group_params: List[nn.Parameter]) -> Work:
-    grads = torch.cat([param.grad.view(-1) for param in group_params])
+    grads = torch.cat(
+        [param.grad.view(-1) for param in group_params]  # pyre-fixme[16]: optional Grad
+    )
     size = 0
     for p in group_params:
         grad_size = p.numel()
-        p.grad = grads[size : size + grad_size].view_as(p.grad)
+        grad = p.grad
+        assert grad is not None
+        p.grad = grads[size : size + grad_size].view_as(grad)
         size += grad_size
 
     return dist.all_reduce(grads, async_op=True)
@@ -53,7 +57,9 @@ def run_ddp_concat(
     for param in params:
         if param.requires_grad and param.grad is not None:
             group_params.append(param)
-            group_size += param.grad.numel()
+            grad = param.grad
+            assert grad is not None
+            group_size += grad.numel()
             if group_size >= bucket_cap_elem:
                 handles.append(_all_reduce_params(group_params))
                 group_params = []
