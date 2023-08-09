@@ -6,6 +6,7 @@ import torch
 from torchdrive.data import Batch, dummy_batch
 from torchdrive.transforms.batch import (
     BatchTransform,
+    CenterCar,
     Compose,
     Identity,
     NormalizeCarPosition,
@@ -50,7 +51,7 @@ class TestBatchTransforms(unittest.TestCase):
         out = transform(batch)
 
         # origin shouldn't change
-        zero = torch.tensor((0, 0, 0, 1.0)).expand(2, -1).unsqueeze(-1)
+        zero = torch.tensor((0, 0, 0.1, 1.0)).expand(2, -1).unsqueeze(-1)
         torch.testing.assert_close(out.cam_T[:, 1].matmul(zero), zero)
 
     def test_random_translation(self) -> None:
@@ -64,3 +65,14 @@ class TestBatchTransforms(unittest.TestCase):
         # origin shouldn't change
         zero = torch.tensor((0, 0, 0, 1.0)).expand(2, -1).unsqueeze(-1)
         torch.testing.assert_close(out.cam_T[:, 1].matmul(zero), zero)
+
+    def test_center_car(self) -> None:
+        transform = CenterCar(start_frame=1)
+        batch = dummy_batch()
+        out = transform(batch)
+
+        # center should be zero point
+        zero = torch.tensor((0, 0, 0, 1.0)).expand(2, -1).unsqueeze(-1)
+        new_pos = out.cam_T[:, 1].matmul(zero)
+        new_pos /= new_pos[:, 3:4]  # normalize w
+        torch.testing.assert_close(new_pos, zero)

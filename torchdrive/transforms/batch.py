@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from dataclasses import replace
 from typing import Tuple
 
+import torch
+
 from torchdrive.data import Batch
 from torchdrive.transforms.mat import random_translation, random_z_rotation
 
@@ -50,10 +52,44 @@ class NormalizeCarPosition(BatchTransform):
 
     def __call__(self, batch: Batch) -> Batch:
         start_T = batch.cam_T[:, self.start_frame]
-        inv_start_T = start_T.unsqueeze(1).pinverse()
-        cam_T = inv_start_T.matmul(batch.cam_T)
+        inv_start_T = start_T.unsqueeze(1)
+        cam_T = inv_start_T.matmul(batch.cam_T.inverse()).inverse()
         long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
         long_cam_T = inv_start_T.matmul(long_cam_T)
+
+        return replace(
+            batch,
+            cam_T=cam_T,
+            long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
+        )
+
+
+class CenterCar(BatchTransform):
+    """
+    Centers the car XYZ position relative to the target frame. Preserves
+    rotations.
+    """
+
+    def __init__(self, start_frame: int) -> None:
+        self.start_frame = start_frame
+
+    def __call__(self, batch: Batch) -> Batch:
+        # calculate the xyz for the target frame
+        BS = batch.batch_size()
+        start_T = batch.cam_T[:, self.start_frame].inverse()
+        point = torch.tensor((0, 0, 0, 1.0))
+        coord = start_T.matmul(point)
+        coord = coord / coord[:, 3:4]  # normalize w
+
+        # create inverse position transform
+        transform = torch.eye(4).repeat(BS, 1, 1)
+        transform[:, :3, 3] = -coord[:, :3]
+        transform = transform.unsqueeze(1)  # [BS, 1, 4, 4]
+
+        # apply transformation matrix to car position matrices
+        cam_T = transform.matmul(batch.cam_T.inverse()).inverse()
+        long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
+        long_cam_T = transform.matmul(long_cam_T)
 
         return replace(
             batch,

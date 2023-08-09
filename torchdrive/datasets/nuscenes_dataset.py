@@ -1,5 +1,4 @@
 import os
-import traceback
 from bisect import bisect_left
 from datetime import timedelta
 from enum import Enum
@@ -9,7 +8,7 @@ import torch
 import torchvision.transforms as transforms
 from nuscenes.nuscenes import NuScenes
 from PIL import Image
-from pytorch3d.transforms import quaternion_to_matrix, RotateAxisAngle
+from pytorch3d.transforms import quaternion_to_matrix
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 Tensor = torch.Tensor
@@ -142,11 +141,21 @@ class SceneDataset(Dataset):
         K = torch.eye(4)
         K[:3, :3] = camera_intrinsic
 
-        # Get world to car translation matrix cam_T (still needs to be transformed relative to identify matrix)
+        # Get world to car translation matrix cam_T
         pose_token = sample_data["ego_pose_token"]
         pose = self.nusc.get("ego_pose", pose_token)
         cam_T = torch.eye(4)
-        cam_T[:3, 3] = torch.tensor(pose["translation"])
+        translation = torch.tensor(pose["translation"])
+        cam_T[:3, 3] = translation
+        cam_T = cam_T.inverse()  # convert to car_to_world
+
+        # apply rotation matrix
+        rotation_mat = torch.eye(4)
+        quat = torch.tensor(pose["rotation"])
+        rotation = quaternion_to_matrix(quat)
+        rotation_mat[:3, :3] = rotation
+
+        cam_T = rotation_mat.inverse().matmul(cam_T)
 
         timestamp = sample_data["timestamp"]
 
@@ -154,7 +163,7 @@ class SceneDataset(Dataset):
 
         img = Image.open(img_path)
         # Resize to (640, 480) [H, W]
-        img = img.resize((640, 480))
+        # img = img.resize((640, 480))
         transform = transforms.Compose(
             [
                 transforms.PILToTensor(),
@@ -165,12 +174,7 @@ class SceneDataset(Dataset):
         img = transform(img)
 
         # Get car to camera local translation matrix T
-        # Due to coordinate system differences, we need to rotate the camera 90 degrees counterclockwise around the z-axis.
         rotation = quaternion_to_matrix(torch.tensor(calibrated_sensor["rotation"]))
-        z_rotation = (
-            RotateAxisAngle(90, axis="Z", device="cpu").get_matrix()[0, :3, :3].T
-        )  # transpose is required to convert pytorch3d rotations (clockwise.T = counterclockwise)
-        rotation = z_rotation @ rotation
         translation = calibrated_sensor["translation"]
         T = torch.eye(4)
         T[:3, :3] = rotation
@@ -208,7 +212,7 @@ class SceneDataset(Dataset):
         frame_Ts = [torch.eye(4)]
         for i in range(1, len(frame_dicts)):
             # Get the relative frame_T for this frame by comparing the current cam_T to the previous cam_T
-            frame_T = torch.linalg.inv(cam_Ts[i - 1]) @ cam_Ts[i]
+            frame_T = cam_Ts[i - 1].inverse().matmul(cam_Ts[i])
             # TODO use torch.solve instead
             # frame_T = torch.linalg.solve(cam_Ts[i], cam_Ts[i - 1])[0]
             frame_Ts.append(frame_T)
@@ -352,17 +356,7 @@ class NuscenesDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Optional[Batch]:
         """Aggregates the data from each camera type into an element of a Batch."""
-        try:
-            batch = self._getitem(idx)
-        except IndexError as e:
-            traceback.print_exc()
-            print(f"IndexError at {idx}")
-            return None
-        except Exception as e:
-            traceback.print_exc()
-            print(f"Exception at {idx}")
-            return None
-        return batch
+        return self._getitem(idx)
 
 
 if __name__ == "__main__":
