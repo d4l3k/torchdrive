@@ -134,13 +134,6 @@ class SceneDataset(Dataset):
         return len(self.samples) - NUM_FRAMES - 1
 
     def _getitem(self, sample_data: SampleData) -> Dict[str, object]:
-        # Get the camera_intrinsic (K)
-        calibrated_sensor_token = sample_data["calibrated_sensor_token"]
-        calibrated_sensor = self.nusc.get("calibrated_sensor", calibrated_sensor_token)
-        camera_intrinsic = torch.tensor(calibrated_sensor["camera_intrinsic"])
-        K = torch.eye(4)
-        K[:3, :3] = camera_intrinsic
-
         # Get world to car translation matrix cam_T
         pose_token = sample_data["ego_pose_token"]
         pose = self.nusc.get("ego_pose", pose_token)
@@ -159,19 +152,32 @@ class SceneDataset(Dataset):
 
         timestamp = sample_data["timestamp"]
 
+        # Get the image
         img_path = os.path.join(self.dataroot, sample_data["filename"])  # current image
-
         img = Image.open(img_path)
-        # Resize to (640, 480) [H, W]
+        width, height = img.size
+        # TODO: Resize to (640, 480) [H, W]
         # img = img.resize((640, 480))
         transform = transforms.Compose(
             [
                 transforms.PILToTensor(),
                 transforms.ConvertImageDtype(torch.float32),
                 normalize01,
+                transforms.ConvertImageDtype(
+                    torch.bfloat16
+                ),  # drop precision to save memory
             ]
         )
         img = transform(img)
+
+        # Get the camera_intrinsic (K)
+        calibrated_sensor_token = sample_data["calibrated_sensor_token"]
+        calibrated_sensor = self.nusc.get("calibrated_sensor", calibrated_sensor_token)
+        camera_intrinsic = torch.tensor(calibrated_sensor["camera_intrinsic"])
+        K = torch.eye(4)
+        K[:3, :3] = camera_intrinsic
+        K[0] /= width
+        K[1] /= height
 
         # Get car to camera local translation matrix T
         rotation = quaternion_to_matrix(torch.tensor(calibrated_sensor["rotation"]))
