@@ -20,10 +20,10 @@ from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
-
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
-from torchdrive.datasets.rice import MultiCamDataset
+
+from torchdrive.datasets.dataset import Dataset, Datasets
 from torchdrive.dist import run_ddp_concat
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.ae import AETask
@@ -53,7 +53,10 @@ parser.add_argument("--output", required=True, type=str, default="out")
 parser.add_argument("--load", type=str)
 parser.add_argument("--epochs", type=int, default=20)
 parser.add_argument("--lr", type=float, default=1e-4)
-parser.add_argument("--dataset", type=str, required=True)
+parser.add_argument(
+    "--dataset", type=str, choices=list(Datasets), required=True
+)  # pyre-fixme[6]: list(Datasets)
+parser.add_argument("--dataset_path", type=str, required=True)
 parser.add_argument("--masks", type=str, required=True)
 parser.add_argument("--batch_size", type=int, default=10)
 parser.add_argument("--step_size", type=int, default=15)
@@ -131,20 +134,35 @@ else:
     writer = None
 
 
-dataset = MultiCamDataset(
-    index_file=args.dataset,
-    mask_dir=args.masks,
-    cameras=args.cameras,
-    dynamic=True,
-    cam_shape=args.cam_shape,
-    # 3 encode frames, 3 decode frames, overlap last frame
-    nframes_per_point=args.num_encode_frames + 2,
-    limit_size=args.limit_size,
-)
+dataset: Dataset
+if args.dataset == Datasets.RICE:
+    from torchdrive.datasets.rice import MultiCamDataset
+
+    dataset = MultiCamDataset(
+        index_file=args.dataset_path,
+        mask_dir=args.masks,
+        cameras=args.cameras,
+        dynamic=True,
+        cam_shape=args.cam_shape,
+        # 3 encode frames, 3 decode frames, overlap last frame
+        nframes_per_point=args.num_encode_frames + 2,
+        limit_size=args.limit_size,
+    )
+elif args.dataset == Datasets.NUSCENES:
+    from torchdrive.datasets.nuscenes_dataset import NuscenesDataset
+
+    dataset = NuscenesDataset(
+        data_dir=args.dataset_path,
+        version="v1.0-mini",
+    )
+else:
+    raise ValueError(f"unknown dataset type {args.dataset}")
+
+
 if RANK == 0:
     print(f"trainset size {len(dataset)}")
 
-sampler: DistributedSampler[MultiCamDataset] = DistributedSampler(
+sampler: DistributedSampler[Dataset] = DistributedSampler(
     dataset,
     num_replicas=WORLD_SIZE,
     rank=RANK,
@@ -202,7 +220,7 @@ if args.backbone == "rice":
         input_shape=(h // 16, w // 16),
         hr_dim=args.hr_dim,
         num_frames=3,
-        cameras=args.cameras,
+        cameras=dataset.cameras,
         num_upsamples=4,
     )
 elif args.backbone == "simple_bev":
@@ -268,7 +286,7 @@ if args.path:
     )
 if args.det:
     tasks["det"] = DetTask(
-        cameras=args.cameras,
+        cameras=dataset.cameras,
         cam_shape=args.cam_shape,
         bev_shape=args.bev_shape,
         dim=args.dim,
@@ -277,14 +295,14 @@ if args.det:
     )
 if args.ae:
     tasks["ae"] = AETask(
-        cameras=args.cameras,
+        cameras=dataset.cameras,
         cam_shape=args.cam_shape,
         bev_shape=args.bev_shape,
         dim=args.dim,
     )
 if args.voxel:
     hr_tasks["voxel"] = VoxelTask(
-        cameras=args.cameras,
+        cameras=dataset.cameras,
         cam_shape=args.cam_shape,
         dim=args.dim,
         hr_dim=args.hr_dim,
@@ -303,7 +321,7 @@ model = BEVTaskVan(
     hr_tasks=hr_tasks,
     bev_shape=args.bev_shape,
     cam_shape=args.cam_shape,
-    cameras=args.cameras,
+    cameras=dataset.cameras,
     dim=args.dim,
     hr_dim=args.hr_dim,
     writer=writer,

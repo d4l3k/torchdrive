@@ -9,7 +9,9 @@ import torchvision.transforms as transforms
 from nuscenes.nuscenes import NuScenes
 from PIL import Image
 from pytorch3d.transforms import quaternion_to_matrix
-from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from torch.utils.data import ConcatDataset, DataLoader, Dataset as TorchDataset
+
+from torchdrive.datasets.dataset import Dataset
 
 Tensor = torch.Tensor
 
@@ -120,7 +122,7 @@ class TimestampMatcher:
         return self.nearest_data_within_epsilon[cam_front_timestamp]
 
 
-class SceneDataset(Dataset):
+class SceneDataset(TorchDataset):
     """A "scene" is all the sample data from first (the one with no prev) to last (the one with no next) for a single camera."""
 
     def __init__(
@@ -156,8 +158,10 @@ class SceneDataset(Dataset):
         img_path = os.path.join(self.dataroot, sample_data["filename"])  # current image
         img = Image.open(img_path)
         width, height = img.size
-        # TODO: Resize to (640, 480) [H, W]
-        # img = img.resize((640, 480))
+
+        # this is fine since K is normalized to 1.0
+        img = img.resize((640, 480))
+
         transform = transforms.Compose(
             [
                 transforms.PILToTensor(),
@@ -264,6 +268,7 @@ class NuscenesDataset(Dataset):
             CamTypes.CAM_BACK_LEFT,
             CamTypes.CAM_BACK_RIGHT,
         ]
+        self.cameras: List[str] = list(self.CAMERA_OVERLAP.keys())
 
         # Organize all the sample_data into scenes by camera type
         self.cam_scenes: Dict[str, ConcatDataset] = {}
