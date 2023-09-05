@@ -153,7 +153,7 @@ elif args.dataset == Datasets.NUSCENES:
 
     dataset = NuscenesDataset(
         data_dir=args.dataset_path,
-        version="v1.0-mini",
+        #version="v1.0-mini",
     )
 else:
     raise ValueError(f"unknown dataset type {args.dataset}")
@@ -312,7 +312,7 @@ if args.voxel:
         z_offset=0.4,
         device=device,
         semantic=args.voxelsem,
-        camera_overlap=dataset.CAMERA_OVERLAP,
+        #camera_overlap=dataset.CAMERA_OVERLAP,
         compile_fn=compile_fn,
     )
 

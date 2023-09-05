@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Tuple, TypedDict
 
 import torch
+from tqdm import tqdm
 import torchvision.transforms as transforms
 from nuscenes.nuscenes import NuScenes
 from PIL import Image
@@ -329,7 +330,11 @@ class NuscenesDataset(Dataset):
         data = {}
         for cam in idxs:
             adj_idx = idxs[cam]
-            data[cam] = self.cam_scenes[cam][adj_idx]
+            cam_scene = self.cam_scenes[cam]
+            if adj_idx < 0 or adj_idx >= len(cam_scene):
+                # TODO: figure out why index is invalid
+                return None
+            data[cam] = cam_scene[adj_idx]
         data[CamTypes.CAM_FRONT] = self.cam_scenes[CamTypes.CAM_FRONT][idx]
 
         weight: Tensor = data[CamTypes.CAM_FRONT]["weight"]
@@ -372,13 +377,20 @@ class NuscenesDataset(Dataset):
 
 if __name__ == "__main__":
     import sys
-
-    dataroot: str = sys.argv[-1]
-    version: str = "v1.0-mini"
-    ds = NuscenesDataset(dataroot, version=version)
-    dl: DataLoader = DataLoader(
-        ds, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate
-    )
-    for batch in dl:
-        torch.save(batch, "nuscenes_batch.pt")
-        break
+    cmd = sys.argv[1]
+    dataroot: str = sys.argv[2]
+    version: str = sys.argv[3] # "v1.0-mini"
+    if cmd == "single":
+        ds = NuscenesDataset(dataroot, version=version)
+        dl: DataLoader = DataLoader(
+            ds, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate
+        )
+        for batch in dl:
+            torch.save(batch, "nuscenes_batch.pt")
+            break
+    elif cmd == "bulk":
+        ds = NuscenesDataset(dataroot, version=version)
+        for batch in tqdm(ds):
+            pass
+    else:
+        raise ValueError(f"unknown command {cmd}")
