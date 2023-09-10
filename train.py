@@ -153,7 +153,7 @@ elif args.dataset == Datasets.NUSCENES:
 
     dataset = NuscenesDataset(
         data_dir=args.dataset_path,
-        #version="v1.0-mini",
+        # version="v1.0-mini",
     )
 else:
     raise ValueError(f"unknown dataset type {args.dataset}")
@@ -312,7 +312,7 @@ if args.voxel:
         z_offset=0.4,
         device=device,
         semantic=args.voxelsem,
-        #camera_overlap=dataset.CAMERA_OVERLAP,
+        # camera_overlap=dataset.CAMERA_OVERLAP,
         compile_fn=compile_fn,
     )
 
@@ -456,7 +456,9 @@ for epoch in range(NUM_EPOCHS):
             global_step,
         )
 
-    for batch in tqdm(collator, desc=f"epoch {epoch}"):
+    # only show progress on rank 0
+    batch_iter = tqdm(collator, desc=f"epoch {epoch}") if LOCAL_RANK == 0 else collator
+    for batch in batch_iter:
         batch = cast(Optional[Batch], batch)
         if batch is None:
             print("empty batch")

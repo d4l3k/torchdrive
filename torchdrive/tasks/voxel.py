@@ -421,14 +421,18 @@ class VoxelTask(BEVTask):
 
                 dynamic_mask = dynamic_masks[cam]
                 if self.semantic:
-                    semantic_vel = semantic_img[:, self.classes_elem :]
+                    semantic_vel = ctx.log_grad_norm(
+                        semantic_img, "grad/semantic_img", "semantic_vel"
+                    )[:, self.classes_elem :]
                     semantic_vel = F.interpolate(
                         semantic_vel.float(),
                         [h // 2, w // 2],
                         mode="bilinear",
                         align_corners=False,
                     )
-                    semantic_classes = semantic_img[:, : self.classes_elem].sigmoid()
+                    semantic_classes = ctx.log_grad_norm(
+                        semantic_img, "grad/semantic_img", "semantic_classes"
+                    )[:, : self.classes_elem].sigmoid()
                     semantic_classes = F.interpolate(
                         semantic_classes.float(),
                         [h // 2, w // 2],
@@ -708,7 +712,7 @@ class VoxelTask(BEVTask):
 
             min_proj_loss = min_proj_loss * proj_weights
             losses[f"lossproj-{label}/{cam}/o{offset}"] = (
-                min_proj_loss.mean(dim=(1, 2, 3)) * 40
+                min_proj_loss.mean(dim=(1, 2, 3)) * 40 * 3
             )
 
             if ctx.log_img:
@@ -843,7 +847,7 @@ class VoxelTask(BEVTask):
             scales=3,
             mask=mask,
         )
-        sem_loss = sem_loss * per_pixel_weights * 100
+        sem_loss = sem_loss * per_pixel_weights * 100 * 1000 * 1000
 
         if ctx.log_text:
             pred_min, pred_max = semantic_classes.aminmax()
