@@ -191,14 +191,13 @@ class VoxelTask(BEVTask):
         # convert back to float so sigmoid works
         embedding = embedding.float()
 
-        grid = embedding[:, :1].sigmoid()
-        feat_grid = embedding[:, 1:]
-
-        # log grad norms
-        grid = ctx.log_grad_norm(grid, "grad/norm/grid_embedding", "grid")
+        # log grad norms on full embedding to make norms comparable
+        grid = ctx.log_grad_norm(embedding, "grad/norm/grid_embedding", "grid")[
+            :, :1
+        ].sigmoid()
         feat_grid = ctx.log_grad_norm(
-            feat_grid, "grad/norm/grid_embedding", "feat_grid"
-        )
+            embedding, "grad/norm/grid_embedding", "feat_grid"
+        )[:, 1:]
 
         grid = grid.permute(0, 1, 4, 3, 2)
         feat_grid = feat_grid.permute(0, 1, 4, 3, 2)
