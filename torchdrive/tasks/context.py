@@ -5,6 +5,8 @@ import torch
 from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
 
+from torchdrive.autograd import log_grad_norm
+
 from torchdrive.losses import losses_backward
 
 
@@ -64,3 +66,10 @@ class Context:
             self.writer.add_figure(
                 f"{self.name}-{name}", figure, global_step=self.global_step
             )
+
+    def log_grad_norm(self, tensor: torch.Tensor, key: str, tag: str) -> torch.Tensor:
+        if not self.log_text:
+            return tensor
+        return log_grad_norm(
+            tensor, self.writer, f"{self.name}-{key}", tag, self.global_step
+        )

@@ -194,6 +194,12 @@ class VoxelTask(BEVTask):
         grid = embedding[:, :1].sigmoid()
         feat_grid = embedding[:, 1:]
 
+        # log grad norms
+        grid = ctx.log_grad_norm(grid, "grad/norm/grid_embedding", "grid")
+        feat_grid = ctx.log_grad_norm(
+            feat_grid, "grad/norm/grid_embedding", "feat_grid"
+        )
+
         grid = grid.permute(0, 1, 4, 3, 2)
         feat_grid = feat_grid.permute(0, 1, 4, 3, 2)
         # grid, _ = axis_grid(grid)
@@ -265,10 +271,12 @@ class VoxelTask(BEVTask):
             losses = {}
 
             # total variation loss to encourage sharp edges
-            losses["tvl1"] = tvl1_loss(grid.squeeze(1))
+            tvl1_grid = ctx.log_grad_norm(grid, "grad/norm/grid", "tvl1")
+            losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1))
 
             mini_batches = batch.split(self.render_batch_size)
-            mini_grids = torch.split(grid, self.render_batch_size)
+            mini_grids = ctx.log_grad_norm(grid, "grad/norm/grid", "mini_grids")
+            mini_grids = torch.split(mini_grids, self.render_batch_size)
             mini_feats = (
                 torch.split(feat_grid, self.render_batch_size)
                 if feat_grid is not None
@@ -414,7 +422,6 @@ class VoxelTask(BEVTask):
 
                 dynamic_mask = dynamic_masks[cam]
                 if self.semantic:
-
                     semantic_vel = semantic_img[:, self.classes_elem :]
                     semantic_vel = F.interpolate(
                         semantic_vel.float(),
