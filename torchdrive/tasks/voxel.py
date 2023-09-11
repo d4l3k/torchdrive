@@ -683,8 +683,10 @@ class VoxelTask(BEVTask):
             world_to_src_cam = batch.world_to_cam(cam, src_frame)
             time = frame_time[:, src_frame]
 
-            if ctx.log_text:
-                ctx.add_scalar(f"frame_time_max/{offset}", time.abs().amax())
+            if ctx.log_text and offset != 0:
+                time_max = time.abs().amax()
+                assert time_max > 0 and time_max < 60, f"frame_time is bad {offset} {time}"
+                ctx.add_scalar(f"frame_time_max/{offset}", time_max)
 
             src_color = batch.color[cam][:, src_frame]
             src_color = F.interpolate(

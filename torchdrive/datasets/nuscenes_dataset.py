@@ -153,8 +153,7 @@ class SceneDataset(TorchDataset):
 
         cam_T = rotation_mat.inverse().matmul(cam_T)
 
-        # timestamp is in microseconds, need to convert it to seconds
-        timestamp = sample_data["timestamp"] / 1e6
+        timestamp = sample_data["timestamp"]
 
         # Get the image
         img_path = os.path.join(self.dataroot, sample_data["filename"])  # current image
@@ -231,12 +230,19 @@ class SceneDataset(TorchDataset):
 
         imgs = [fd["color"] for fd in frame_dicts]
 
+        # timestamp is in microseconds, need to convert it to seconds and
+        # normalize to first frame
+        frame_time = torch.tensor([fd["frame_time"] for fd in frame_dicts], dtype=torch.int64)
+        frame_time = frame_time - frame_time[0]
+        frame_time = frame_time.float()/1e6
+
+
         return {
             "weight": torch.tensor(frame_dicts[0]["weight"]),
             "distance": torch.stack(dists),
             "cam_T": torch.stack(cam_Ts),
             "frame_T": torch.stack(frame_Ts),
-            "frame_time": torch.tensor([fd["frame_time"] for fd in frame_dicts]),
+            "frame_time": frame_time,
             "K": frame_dicts[0][
                 "K"
             ],  # only one cam to pixel matrix is required as it doesn't change during drive
