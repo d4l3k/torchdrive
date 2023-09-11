@@ -440,9 +440,17 @@ class VoxelTask(BEVTask):
                         align_corners=False,
                     )
 
+                    if ctx.log_text:
+                        ctx.add_scalars(
+                            f"semantic_vel/{cam}/abs",
+                            {
+                                "max": semantic_vel.abs().amax(),
+                                "mean": semantic_vel.abs().mean(),
+                            }
+                        )
                     if ctx.log_img:
                         ctx.add_image(
-                            f"{cam}/semantic_vel",
+                            f"semantic_vel/{cam}",
                             normalize_img(semantic_vel[0]),
                         )
                         ctx.add_image(
@@ -552,7 +560,7 @@ class VoxelTask(BEVTask):
                             semantic_classes=cam_sem.float().sigmoid(),
                             semantic_target=semantic_targets[cam],
                             mask=primary_mask,
-                            per_pixel_weights=per_pixel_weights * 0.5,
+                            per_pixel_weights=per_pixel_weights * 0.1,
                         )
                         losses[f"semantic-cam/{cam}"] = semantic_loss.mean(
                             dim=(1, 2, 3)
@@ -573,7 +581,7 @@ class VoxelTask(BEVTask):
                         frame_time=frame_time,
                         primary_color=primary_color,
                         primary_mask=primary_mask,
-                        per_pixel_weights=per_pixel_weights * 0.5,
+                        per_pixel_weights=per_pixel_weights * 0.1,
                     )
 
                     camera_overlap = self.camera_overlap
@@ -588,7 +596,7 @@ class VoxelTask(BEVTask):
                             cam_features=primary_colors,
                             cam_masks=primary_masks,
                             cam_pix_weights=cam_pix_weights,
-                            loss_scale=0.5,
+                            loss_scale=0.1,
                             primary_depth=cam_depth,
                             losses=losses,
                             h=h,
@@ -674,6 +682,9 @@ class VoxelTask(BEVTask):
             target_cam_to_world = batch.cam_to_world(cam, frame)
             world_to_src_cam = batch.world_to_cam(cam, src_frame)
             time = frame_time[:, src_frame]
+
+            if ctx.log_text:
+                ctx.add_scalar(f"frame_time_max/{offset}", time.abs().amax())
 
             src_color = batch.color[cam][:, src_frame]
             src_color = F.interpolate(
@@ -847,7 +858,7 @@ class VoxelTask(BEVTask):
             scales=3,
             mask=mask,
         )
-        sem_loss = sem_loss * per_pixel_weights * 100 * 1000 * 1000
+        sem_loss = sem_loss * per_pixel_weights * 100 * 1000
 
         if ctx.log_text:
             pred_min, pred_max = semantic_classes.aminmax()

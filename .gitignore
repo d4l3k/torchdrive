@@ -133,3 +133,4 @@ dmypy.json
 experiments/
 
 profile*.svg
+*.pt

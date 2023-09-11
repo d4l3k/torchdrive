@@ -153,7 +153,8 @@ class SceneDataset(TorchDataset):
 
         cam_T = rotation_mat.inverse().matmul(cam_T)
 
-        timestamp = sample_data["timestamp"]
+        # timestamp is in microseconds, need to convert it to seconds
+        timestamp = sample_data["timestamp"] / 1e6
 
         # Get the image
         img_path = os.path.join(self.dataroot, sample_data["filename"])  # current image
@@ -387,6 +388,7 @@ if __name__ == "__main__":
         )
         for batch in dl:
             torch.save(batch, "nuscenes_batch.pt")
+            print(batch)
             break
     elif cmd == "bulk":
         ds = NuscenesDataset(dataroot, version=version)
