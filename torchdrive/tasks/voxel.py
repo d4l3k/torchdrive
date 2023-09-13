@@ -5,6 +5,7 @@ import numpy as np
 
 import torch
 import torch.nn.functional as F
+import torchmetrics
 from pytorch3d.renderer import NDCMultinomialRaysampler, VolumeRenderer
 from pytorch3d.structures import Volumes
 from torch import nn
@@ -130,6 +131,9 @@ class VoxelTask(BEVTask):
             self.num_elem += self.classes_elem + self.vel_elem
             self.segment: BDD100KSemSeg = BDD100KSemSeg(
                 device=device, compile_fn=compile_fn
+            )
+            self.semantic_confusion_matrix = torchmetrics.ConfusionMatrix(
+                task="multiclass", num_classes=self.classes_elem
             )
         else:
             self.classes_elem = 0
@@ -406,7 +410,7 @@ class VoxelTask(BEVTask):
                 bin_frequency = (
                     self.semantic_bin_counts / self.semantic_bin_counts.sum()
                 )
-                print("bin_frequency", bin_frequency)
+                # print("bin_frequency", bin_frequency)
                 self.semantic_bin_counts.zero_()
                 ctx.add_scalars(
                     "semantic/label_distribution",
@@ -515,6 +519,22 @@ class VoxelTask(BEVTask):
                         per_pixel_weights=per_pixel_weights,
                     )
                     losses[f"semantic-voxel/{cam}"] = semantic_loss.mean(dim=(1, 2, 3))
+
+                    # update and plot confusion matrix
+                    self.semantic_confusion_matrix.update(
+                        preds=semantic_classes.argmax(dim=1),
+                        target=semantic_targets[cam].argmax(dim=1),
+                    )
+                    if ctx.log_img:
+                        ctx.add_figure(
+                            f"semantic/confusion_matrix/{cam}",
+                            self.semantic_confusion_matrix.plot(
+                                labels=[
+                                    BDD100KSemSeg.LABELS[i]
+                                    for i in BDD100KSemSeg.NON_SKY
+                                ]
+                            ),
+                        )
                 else:
                     semantic_vel = torch.zeros_like(primary_color)
 

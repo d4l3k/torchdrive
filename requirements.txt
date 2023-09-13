@@ -20,3 +20,4 @@ av
 opencv-contrib-python-headless
 torchinfo
 nuscenes-devkit
+torchmetrics>=1.1.0
