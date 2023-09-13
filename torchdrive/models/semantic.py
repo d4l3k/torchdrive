@@ -79,6 +79,30 @@ class BDD100KSemSeg:
         18,
     )
 
+    # The observed relative pixel wise frequency of each of the different
+    # classes.
+    CLASS_FREQUENCY = [
+        1.8476e-01,
+        4.9409e-02,
+        2.5560e-01,
+        9.4501e-03,
+        5.8030e-02,
+        9.4640e-03,
+        6.0450e-04,
+        2.3885e-03,
+        2.0300e-01,
+        4.2501e-02,
+        1.0847e-01,
+        2.4595e-03,
+        7.1098e-05,
+        5.0693e-02,
+        1.7129e-02,
+        5.1975e-03,
+        1.0447e-04,
+        1.8954e-04,
+        4.6450e-04,
+    ]
+
     def __init__(
         self,
         device: torch.device,

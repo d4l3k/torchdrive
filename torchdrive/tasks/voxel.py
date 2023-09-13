@@ -133,6 +133,21 @@ class VoxelTask(BEVTask):
             )
         else:
             self.classes_elem = 0
+        self.register_buffer(
+            "semantic_bin_counts",
+            torch.zeros(len(BDD100KSemSeg.LABELS), dtype=torch.int64),
+            persistent=False,
+        )
+        # compute inverse frequency to weight the pixel labels according to rarity
+        semantic_weights = 1 / torch.tensor(
+            BDD100KSemSeg.CLASS_FREQUENCY, dtype=torch.float
+        )
+        semantic_weights /= semantic_weights.mean()
+        self.register_buffer(
+            "semantic_weights",
+            semantic_weights,
+            persistent=False,
+        )
 
         h, w = cam_shape
 
@@ -271,7 +286,7 @@ class VoxelTask(BEVTask):
 
             # total variation loss to encourage sharp edges
             tvl1_grid = ctx.log_grad_norm(grid, "grad/norm/grid", "tvl1")
-            losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1))
+            losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1)) * 0.25
 
             mini_batches = batch.split(self.render_batch_size)
             mini_grids = ctx.log_grad_norm(grid, "grad/norm/grid", "mini_grids")
@@ -361,16 +376,46 @@ class VoxelTask(BEVTask):
                     semantic_target = self.segment(primary_colors[cam]).sigmoid()
                     semantic_targets[cam] = semantic_target
 
+                    semantic_classes = semantic_target.argmax(dim=1, keepdim=True)
+                    class_bincount = torch.bincount(
+                        semantic_classes.flatten(), minlength=semantic_target.size(1)
+                    )
+                    self.semantic_bin_counts += class_bincount
+
                     dynamic_mask = semantic_target[:, BDD100KSemSeg.DYNAMIC]
                     dynamic_mask = dynamic_mask.amax(dim=1).round().unsqueeze(1)
                     dynamic_masks[cam] = dynamic_mask
 
-                    per_pixel_weights = cam_pix_weights[cam]
-                    # focus more on dynamic objects
-                    per_pixel_weights += dynamic_mask
-                    # normalize mean
+                    # Compute per pixel weights based on the inverse frequency
+                    # of the classes to counter weight imbalance and normalize
+                    # mean to 1.
+                    per_pixel_weights = torch.index_select(
+                        self.semantic_weights, dim=0, index=semantic_classes.flatten()
+                    ).view_as(semantic_classes)
                     per_pixel_weights /= per_pixel_weights.mean()
                     cam_pix_weights[cam] = per_pixel_weights
+
+                    if ctx.log_img:
+                        ctx.add_image(
+                            f"semantic/per_pixel_weights/{cam}",
+                            render_color(per_pixel_weights[0, 0]),
+                        )
+
+            if ctx.log_img:
+                # log distribution of semantic classes
+                bin_frequency = (
+                    self.semantic_bin_counts / self.semantic_bin_counts.sum()
+                )
+                print("bin_frequency", bin_frequency)
+                self.semantic_bin_counts.zero_()
+                ctx.add_scalars(
+                    "semantic/label_distribution",
+                    {
+                        label: bin_frequency[i]
+                        for i, label in BDD100KSemSeg.LABELS.items()
+                    },
+                )
+
         else:
             for cam in self.cameras:
                 dynamic_masks[cam] = torch.zeros(BS, 1, h // 2, w // 2, device=device)
@@ -446,7 +491,7 @@ class VoxelTask(BEVTask):
                             {
                                 "max": semantic_vel.abs().amax(),
                                 "mean": semantic_vel.abs().mean(),
-                            }
+                            },
                         )
                     if ctx.log_img:
                         ctx.add_image(
@@ -685,7 +730,9 @@ class VoxelTask(BEVTask):
 
             if ctx.log_text and offset != 0:
                 time_max = time.abs().amax()
-                assert time_max > 0 and time_max < 60, f"frame_time is bad {offset} {time}"
+                assert (
+                    time_max > 0 and time_max < 60
+                ), f"frame_time is bad {offset} {time}"
                 ctx.add_scalar(f"frame_time_max/{offset}", time_max)
 
             src_color = batch.color[cam][:, src_frame]
@@ -725,7 +772,7 @@ class VoxelTask(BEVTask):
 
             min_proj_loss = min_proj_loss * proj_weights
             losses[f"lossproj-{label}/{cam}/o{offset}"] = (
-                min_proj_loss.mean(dim=(1, 2, 3)) * 40 * 3
+                min_proj_loss.mean(dim=(1, 2, 3)) * 40 * 6
             )
 
             if ctx.log_img:
@@ -860,7 +907,7 @@ class VoxelTask(BEVTask):
             scales=3,
             mask=mask,
         )
-        sem_loss = sem_loss * per_pixel_weights * 100 * 1000
+        sem_loss = sem_loss * per_pixel_weights * 100 * 1000 / 16
 
         if ctx.log_text:
             pred_min, pred_max = semantic_classes.aminmax()
