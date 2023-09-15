@@ -596,10 +596,12 @@ class VoxelTask(BEVTask):
                         add_text=False,
                     )
                     ctx.add_figure("semantic/confusion_matrix", fig)
+                    self.semantic_confusion_matrix.reset()
                 if ctx.log_text:
                     ctx.add_scalar(
                         "semantic/accuracy", self.semantic_accuracy.compute()
                     )
+                    self.semantic_accuracy.reset()
 
             del voxel_depth
             del semantic_vel

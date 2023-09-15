@@ -279,7 +279,7 @@ class LidarDataset(Dataset):
         pcl = LidarPointCloud.from_file(
             os.path.join(self.dataroot, sample_data["filename"])
         )
-        return pcl.points
+        return torch.from_numpy(pcl.points)
 
 
 class NuscenesDataset(Dataset):
@@ -292,7 +292,9 @@ class NuscenesDataset(Dataset):
         CamTypes.CAM_BACK_RIGHT: [CamTypes.CAM_BACK, CamTypes.CAM_FRONT_RIGHT],
     }
 
-    def __init__(self, data_dir: str, version: str = "v1.0-trainval") -> None:
+    def __init__(
+        self, data_dir: str, version: str = "v1.0-trainval", lidar: bool = False
+    ) -> None:
         self.data_dir = data_dir
         self.version = version
         self.nusc = NuScenes(version=version, dataroot=data_dir, verbose=True)
@@ -304,7 +306,10 @@ class NuscenesDataset(Dataset):
             CamTypes.CAM_BACK_LEFT,
             CamTypes.CAM_BACK_RIGHT,
         ]
-        self.sensor_types = self.cam_types + [SensorTypes.LIDAR_TOP]
+        self.sensor_types = self.cam_types
+        if lidar:
+            self.sensor_types = self.sensor_types + [SensorTypes.LIDAR_TOP]
+        self.lidar = lidar
         self.cameras: List[str] = list(self.CAMERA_OVERLAP.keys())
 
         # Organize all the sample_data into scenes by camera type
@@ -399,7 +404,7 @@ class NuscenesDataset(Dataset):
             colors[cam] = torch.stack(cam_colors, dim=0)
             masks[cam] = sample_dict["mask"]
 
-        lidar = data[SensorTypes.LIDAR_TOP]
+        lidar = data[SensorTypes.LIDAR_TOP] if self.lidar else None
 
         return Batch(
             weight=weight.float(),
