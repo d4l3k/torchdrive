@@ -133,7 +133,16 @@ class VoxelTask(BEVTask):
                 device=device, compile_fn=compile_fn
             )
             self.semantic_confusion_matrix = torchmetrics.ConfusionMatrix(
-                task="multiclass", num_classes=self.classes_elem
+                task="multiclass",
+                num_classes=self.classes_elem,
+                sync_on_compute=False,
+                normalize="true",
+            )
+            self.semantic_accuracy = torchmetrics.Accuracy(
+                task="multiclass",
+                num_classes=self.classes_elem,
+                sync_on_compute=False,
+                average="macro",
             )
         else:
             self.classes_elem = 0
@@ -521,20 +530,20 @@ class VoxelTask(BEVTask):
                     losses[f"semantic-voxel/{cam}"] = semantic_loss.mean(dim=(1, 2, 3))
 
                     # update and plot confusion matrix
-                    self.semantic_confusion_matrix.update(
-                        preds=semantic_classes.argmax(dim=1),
-                        target=semantic_targets[cam].argmax(dim=1),
+                    preds = semantic_classes.argmax(dim=1).flatten()
+                    target = (
+                        semantic_targets[cam][:, BDD100KSemSeg.NON_SKY]
+                        .argmax(dim=1)
+                        .flatten()
                     )
-                    if ctx.log_img:
-                        ctx.add_figure(
-                            f"semantic/confusion_matrix/{cam}",
-                            self.semantic_confusion_matrix.plot(
-                                labels=[
-                                    BDD100KSemSeg.LABELS[i]
-                                    for i in BDD100KSemSeg.NON_SKY
-                                ]
-                            ),
-                        )
+                    self.semantic_confusion_matrix.update(
+                        preds=preds,
+                        target=target,
+                    )
+                    self.semantic_accuracy.update(
+                        preds=preds,
+                        target=target,
+                    )
                 else:
                     semantic_vel = torch.zeros_like(primary_color)
 
@@ -579,6 +588,19 @@ class VoxelTask(BEVTask):
                         h=h,
                         w=w,
                     )
+
+            if self.semantic:
+                if ctx.log_img:
+                    fig, ax = self.semantic_confusion_matrix.plot(
+                        labels=[BDD100KSemSeg.LABELS[i] for i in BDD100KSemSeg.NON_SKY],
+                        add_text=False,
+                    )
+                    ctx.add_figure("semantic/confusion_matrix", fig)
+                if ctx.log_text:
+                    ctx.add_scalar(
+                        "semantic/accuracy", self.semantic_accuracy.compute()
+                    )
+
             del voxel_depth
             del semantic_vel
             del semantic_img

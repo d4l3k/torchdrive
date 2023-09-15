@@ -43,6 +43,9 @@ class Batch:
     # future (out, mask, lens) [BS, long_num_frames, 4, 4]
     long_cam_T: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
 
+    # Lidar data [BS, 4, n], channel format is [x, y, z, intensity]
+    lidar: Optional[torch.Tensor] = None
+
     global_batch_size: int = 1
 
     def batch_size(self) -> int:
@@ -71,16 +74,23 @@ class Batch:
         """
         out = []
         BS = self.batch_size()
-        parts = BS // split_size
+        num_parts = BS // split_size
         if BS % split_size != 0:
-            parts += 1
-        for i in range(parts):
+            num_parts += 1
+        for i in range(num_parts):
             out.append({"global_batch_size": self.global_batch_size})
         for field in fields(Batch):
             name = field.name
             if name == "global_batch_size":
                 continue
+
             original = getattr(self, name)
+
+            if original is None:
+                for i in range(num_parts):
+                    out[i][name] = None
+                continue
+
             parts = split(original, split_size)
             for i, p in enumerate(parts):
                 out[i][name] = p
@@ -168,10 +178,19 @@ def _collate_weight(
     return weights
 
 
+def _collate_lidar(
+    tensors: List[Optional[torch.Tensor]],
+):
+    if len(tensors) == 0 or tensors[0] is None:
+        return None
+    return torch.stack(tensors)
+
+
 _COLLATE_FIELDS: Mapping[str, Callable[[object], object]] = {
     "long_cam_T": _collate_long_cam_T,
     "weight": _collate_weight,
     "global_batch_size": sum,
+    "lidar": _collate_lidar,
 }
 
 

@@ -5,12 +5,13 @@ from enum import Enum
 from typing import Dict, List, Optional, Tuple, TypedDict
 
 import torch
-from tqdm import tqdm
 import torchvision.transforms as transforms
 from nuscenes.nuscenes import NuScenes
+from nuscenes.utils.data_classes import LidarPointCloud
 from PIL import Image
 from pytorch3d.transforms import quaternion_to_matrix
 from torch.utils.data import ConcatDataset, DataLoader, Dataset as TorchDataset
+from tqdm import tqdm
 
 from torchdrive.datasets.dataset import Dataset
 
@@ -42,6 +43,10 @@ class CamTypes(str, Enum):
     CAM_BACK = "CAM_BACK"
     CAM_BACK_LEFT = "CAM_BACK_LEFT"
     CAM_BACK_RIGHT = "CAM_BACK_RIGHT"
+
+
+class SensorTypes(str, Enum):
+    LIDAR_TOP = "LIDAR_TOP"
 
 
 NUM_FRAMES = 5
@@ -232,10 +237,11 @@ class SceneDataset(TorchDataset):
 
         # timestamp is in microseconds, need to convert it to seconds and
         # normalize to first frame
-        frame_time = torch.tensor([fd["frame_time"] for fd in frame_dicts], dtype=torch.int64)
+        frame_time = torch.tensor(
+            [fd["frame_time"] for fd in frame_dicts], dtype=torch.int64
+        )
         frame_time = frame_time - frame_time[0]
-        frame_time = frame_time.float()/1e6
-
+        frame_time = frame_time.float() / 1e6
 
         return {
             "weight": torch.tensor(frame_dicts[0]["weight"]),
@@ -252,6 +258,28 @@ class SceneDataset(TorchDataset):
             "color": torch.stack(imgs),
             "mask": torch.ones(1, 480, 640),
         }
+
+
+class LidarDataset(Dataset):
+    def __init__(
+        self, dataroot: str, nusc: NuScenes, samples: List[SampleData]
+    ) -> None:
+        self.dataroot = dataroot
+        self.nusc = nusc
+        self.samples = samples
+
+    def __len__(self) -> int:
+        return len(self.samples) - NUM_FRAMES - 1
+
+    def __getitem__(self, idx: int) -> object:
+        # Account for FPS difference between cameras (15ps) and lidar
+        # (20fps)
+        idx += NUM_FRAMES // 2 * 15 // 20
+        sample_data = self.samples[idx]
+        pcl = LidarPointCloud.from_file(
+            os.path.join(self.dataroot, sample_data["filename"])
+        )
+        return pcl.points
 
 
 class NuscenesDataset(Dataset):
@@ -276,12 +304,13 @@ class NuscenesDataset(Dataset):
             CamTypes.CAM_BACK_LEFT,
             CamTypes.CAM_BACK_RIGHT,
         ]
+        self.sensor_types = self.cam_types + [SensorTypes.LIDAR_TOP]
         self.cameras: List[str] = list(self.CAMERA_OVERLAP.keys())
 
         # Organize all the sample_data into scenes by camera type
         self.cam_scenes: Dict[str, ConcatDataset] = {}
         self.cam_samples: Dict[str, List[SampleData]] = {}
-        for cam in self.cam_types:
+        for cam in self.sensor_types:
             self.cam_scenes[cam], self.cam_samples[cam] = self._cam2scenes(cam)
             print(f"Found {len(self.cam_scenes[cam])} scenes for {cam}")
             print(f"Found {len(self.cam_samples[cam])} samples for {cam}")
@@ -315,7 +344,14 @@ class NuscenesDataset(Dataset):
             samples.append(sample_data)
 
             scenes.append(samples)
-            ds_scenes.append(SceneDataset(self.data_dir, self.nusc, samples))
+            sensor_modality = sample_data["sensor_modality"]
+            if sensor_modality == "camera":
+                kls = SceneDataset
+            elif sensor_modality == "lidar":
+                kls = LidarDataset
+            else:
+                raise RuntimeError(f"unsupported sensor_modality {sensor_modality}")
+            ds_scenes.append(kls(self.data_dir, self.nusc, samples))
 
         scene_samples = [sample for scene in scenes for sample in scene]
         ds = ConcatDataset(ds_scenes)
@@ -335,8 +371,7 @@ class NuscenesDataset(Dataset):
 
         # Now get processed sample data using SceneDatasets from the cam_scenes
         data = {}
-        for cam in idxs:
-            adj_idx = idxs[cam]
+        for cam, adj_idx in idxs.items():
             cam_scene = self.cam_scenes[cam]
             if adj_idx < 0 or adj_idx >= len(cam_scene):
                 # TODO: figure out why index is invalid
@@ -364,6 +399,8 @@ class NuscenesDataset(Dataset):
             colors[cam] = torch.stack(cam_colors, dim=0)
             masks[cam] = sample_dict["mask"]
 
+        lidar = data[SensorTypes.LIDAR_TOP]
+
         return Batch(
             weight=weight.float(),
             distances=distances,
@@ -375,6 +412,7 @@ class NuscenesDataset(Dataset):
             color=colors,
             mask=masks,
             long_cam_T=cam_Ts,
+            lidar=lidar,
         )
 
     def __getitem__(self, idx: int) -> Optional[Batch]:
@@ -384,9 +422,10 @@ class NuscenesDataset(Dataset):
 
 if __name__ == "__main__":
     import sys
+
     cmd = sys.argv[1]
     dataroot: str = sys.argv[2]
-    version: str = sys.argv[3] # "v1.0-mini"
+    version: str = sys.argv[3]  # "v1.0-mini"
     if cmd == "single":
         ds = NuscenesDataset(dataroot, version=version)
         dl: DataLoader = DataLoader(
