@@ -321,7 +321,7 @@ class LidarDataset(Dataset):
         pcl = LidarPointCloud.from_file(
             os.path.join(self.dataroot, sample_data["filename"])
         )
-        return torch.from_numpy(pcl.points), sensor_T.matmul(ego_T).unsqueeze(0)
+        return torch.from_numpy(pcl.points), sensor_T.matmul(ego_T)
 
 
 class NuscenesDataset(Dataset):

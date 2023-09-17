@@ -129,3 +129,8 @@ class TestData(unittest.TestCase):
         out = batch.cam_to_world(cam, frame)
         self.assertEqual(out.shape, (2, 4, 4))
         torch.testing.assert_allclose(out, target)
+
+    def test_lidar_to_world(self) -> None:
+        batch = dummy_batch()
+        out = batch.lidar_to_world()
+        self.assertEqual(out.shape, (2, 4, 4))
