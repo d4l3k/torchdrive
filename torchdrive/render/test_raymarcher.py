@@ -6,7 +6,7 @@ from parameterized import parameterized
 import torch
 from pytorch3d.renderer.implicit.utils import RayBundle
 
-from torchdrive.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarcher
+from torchdrive.render.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarcher
 
 
 class TestRaymarcher(unittest.TestCase):

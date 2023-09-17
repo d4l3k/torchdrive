@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torchmetrics
-from pytorch3d.renderer import NDCMultinomialRaysampler, VolumeRenderer
+from pytorch3d.renderer import ImplicitRenderer, NDCMultinomialRaysampler
 from pytorch3d.structures import Volumes
 from torch import nn
 
@@ -17,7 +17,11 @@ from torchdrive.losses import multi_scale_projection_loss, smooth_loss, tvl1_los
 from torchdrive.models.depth import DepthDecoder
 from torchdrive.models.regnet import resnet_init
 from torchdrive.models.semantic import BDD100KSemSeg
-from torchdrive.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarcher
+from torchdrive.render.raymarcher import (
+    CustomPerspectiveCameras,
+    DepthEmissionRaymarcher,
+)
+from torchdrive.render.volume_sampler import VolumeSampler
 from torchdrive.tasks.bev import BEVTask, Context
 from torchdrive.transforms.depth import (
     BackprojectDepth,
@@ -181,11 +185,13 @@ class VoxelTask(BEVTask):
         )
         raymarcher = DepthEmissionRaymarcher(
             floor=None,
-            background=torch.tensor(background, device=device)
-            if len(background) > 0
-            else None,
+            # background=torch.tensor(background, device=device)
+            # if len(background) > 0
+            # else None,
+            # wall=False,
+            background=None,
         )
-        self.renderer = VolumeRenderer(
+        self.renderer = ImplicitRenderer(
             raysampler=raysampler,
             raymarcher=compile_fn(raymarcher),
         )
@@ -431,16 +437,22 @@ class VoxelTask(BEVTask):
             for cam in self.cameras:
                 dynamic_masks[cam] = torch.zeros(BS, 1, h // 2, w // 2, device=device)
 
-        for cam in self.cameras:
-            volumes = Volumes(
-                densities=grid.permute(0, 1, 4, 3, 2),
-                features=feat_grid.permute(0, 1, 4, 3, 2).float()
-                if feat_grid is not None
-                else None,
-                voxel_size=1 / self.scale,
-                volume_translation=self.volume_translation,
-            )
+        volumes = Volumes(
+            densities=grid.permute(0, 1, 4, 3, 2),
+            features=feat_grid.permute(0, 1, 4, 3, 2).float()
+            if feat_grid is not None
+            else None,
+            voxel_size=1 / self.scale,
+            volume_translation=self.volume_translation,
+        )
+        volumetric_function = VolumeSampler(
+            volumes,
+            # we set padding_mode so points outside the grid will inherit from
+            # the border so we don't need custom endpoint logic
+            padding_mode="border",
+        )
 
+        for cam in self.cameras:
             K = batch.K[cam]
             # create camera to world transformation matrix
             T = batch.cam_to_world(cam, start_frame)
@@ -455,7 +467,7 @@ class VoxelTask(BEVTask):
             with torch.autograd.profiler.record_function("render"):
                 (voxel_depth, semantic_img), ray_bundle = self.renderer(
                     cameras=cameras,
-                    volumes=volumes,
+                    volumetric_function=volumetric_function,
                     eps=1e-8,
                 )
             semantic_img = semantic_img.permute(0, 3, 1, 2)

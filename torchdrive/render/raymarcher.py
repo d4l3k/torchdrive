@@ -15,12 +15,24 @@ class DepthEmissionRaymarcher(torch.nn.Module):
     """
 
     def __init__(
-        self, background: Optional[torch.Tensor] = None, floor: Optional[float] = 0
+        self, background: Optional[torch.Tensor] = None, floor: Optional[float]
+        = 0, wall: bool = True
     ) -> None:
+        """
+        Args:
+            background: Optional background "color" for the furthest sample in a
+                ray.
+            floor: Optional floor where all points below that will be marked as
+                solid.
+            wall: whether to make the furthest point density always 1 to avoid
+                failing to sum to 1 and having a too close distance. Optional if
+                the VolumeSampler padding method is not zeros.
+        """
         super().__init__()
 
         self.floor = floor
         self.background = background
+        self.wall = wall
 
     def forward(
         self,
@@ -56,9 +68,10 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         """
         device = rays_densities.device
 
-        rays_densities = rays_densities.clone()
-        # clamp furthest point to prob 1
-        rays_densities[..., -1, 0] = 1
+        if self.wall:
+            rays_densities = rays_densities.clone()
+            # clamp furthest point to prob 1
+            rays_densities[..., -1, 0] = 1
 
         feat_dim = rays_features.size(-1)
         # set last point to background color
