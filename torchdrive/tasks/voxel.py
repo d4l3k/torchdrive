@@ -135,13 +135,11 @@ class VoxelTask(BEVTask):
             self.semantic_confusion_matrix = torchmetrics.ConfusionMatrix(
                 task="multiclass",
                 num_classes=self.classes_elem,
-                sync_on_compute=False,
                 normalize="true",
             )
             self.semantic_accuracy = torchmetrics.Accuracy(
                 task="multiclass",
                 num_classes=self.classes_elem,
-                sync_on_compute=False,
                 average="macro",
             )
         else:

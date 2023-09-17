@@ -154,6 +154,7 @@ elif args.dataset == Datasets.NUSCENES:
     dataset = NuscenesDataset(
         data_dir=args.dataset_path,
         # version="v1.0-mini",
+        lidar=True,
     )
 else:
     raise ValueError(f"unknown dataset type {args.dataset}")

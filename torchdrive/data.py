@@ -44,6 +44,8 @@ class Batch:
     # future (out, mask, lens) [BS, long_num_frames, 4, 4]
     long_cam_T: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
 
+    # Lidar transformation matrix -- world to Lidar coordinates [1, 4, 4]
+    lidar_T: torch.Tensor
     # Lidar data [BS, 4, n], channel format is [x, y, z, intensity]
     lidar: Optional[torch.Tensor] = None
 
@@ -109,21 +111,22 @@ class Batch:
         Get the car to world space transformation matrix.
         [batch_size, 4, 4]
         """
-        return self.world_to_car(frame).pinverse()
+        return self.world_to_car(frame).inverse()
 
     def world_to_cam(self, cam: str, frame: int) -> torch.Tensor:
         """
         Get the world space to camera space transformation matrix.
         [batch_size, 4, 4]
         """
-        return self.T[cam].pinverse().matmul(self.world_to_car(frame))
+        return torch.linalg.solve(self.T[cam], self.world_to_car(frame))
+        #return self.T[cam].pinverse().matmul(self.world_to_car(frame))
 
     def cam_to_world(self, cam: str, frame: int) -> torch.Tensor:
         """
         Get the camera space to world space transformation matrix.
         [batch_size, 4, 4]
         """
-        return self.world_to_cam(cam, frame).pinverse()
+        return self.world_to_cam(cam, frame).inverse()
 
 
 def dummy_item() -> Batch:
@@ -145,6 +148,7 @@ def dummy_item() -> Batch:
         T={cam: torch.rand(4, 4) for cam in cams},
         color=color,
         mask={cam: torch.rand(1, 48, 64) for cam in cams},
+        lidar_T=torch.rand(1, 4, 4),
         lidar=torch.rand(4, random.randint(6, 10)),
     )
 

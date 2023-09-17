@@ -1,5 +1,5 @@
 import unittest
-from dataclasses import replace
+from dataclasses import replace, fields
 
 import torch
 
@@ -15,6 +15,14 @@ from torchdrive.transforms.batch import (
 )
 
 
+def assert_dimensions_same(a: Batch, b: Batch) -> None:
+    for field in fields(a):
+        name = field.name
+        av = getattr(a, name)
+        bv = getattr(b, name)
+        if isinstance(av, torch.Tensor):
+            assert av.shape == bv.shape, f"{name}: {av.shape} {bv.shape}"
+
 class IncrementWeight(BatchTransform):
     def __call__(self, batch: Batch) -> Batch:
         return replace(batch, weight=batch.weight + 1)
@@ -28,18 +36,21 @@ class TestBatchTransforms(unittest.TestCase):
         )
         batch = dummy_batch()
         out = transform(batch)
+        assert_dimensions_same(batch, out)
         torch.testing.assert_close(out.weight, batch.weight + 2)
 
     def test_identity(self) -> None:
         transform = Identity()
         batch = dummy_batch()
         out = transform(batch)
+        assert_dimensions_same(batch, out)
         self.assertIs(batch, out)
 
     def test_normalize_car_position(self) -> None:
         transform = NormalizeCarPosition(start_frame=1)
         batch = dummy_batch()
         out = transform(batch)
+        assert_dimensions_same(batch, out)
         torch.testing.assert_close(out.cam_T[:, 1], torch.eye(4).expand(2, -1, -1))
 
     def test_random_rotation(self) -> None:
@@ -49,6 +60,7 @@ class TestBatchTransforms(unittest.TestCase):
         )
         batch = dummy_batch()
         out = transform(batch)
+        assert_dimensions_same(batch, out)
 
         # origin shouldn't change
         zero = torch.tensor((0, 0, 0.1, 1.0)).expand(2, -1).unsqueeze(-1)
@@ -61,6 +73,7 @@ class TestBatchTransforms(unittest.TestCase):
         )
         batch = dummy_batch()
         out = transform(batch)
+        assert_dimensions_same(batch, out)
 
         # origin shouldn't change
         zero = torch.tensor((0, 0, 0, 1.0)).expand(2, -1).unsqueeze(-1)
@@ -70,6 +83,7 @@ class TestBatchTransforms(unittest.TestCase):
         transform = CenterCar(start_frame=1)
         batch = dummy_batch()
         out = transform(batch)
+        assert_dimensions_same(batch, out)
 
         # center should be zero point
         zero = torch.tensor((0, 0, 0, 1.0)).expand(2, -1).unsqueeze(-1)

@@ -127,8 +127,57 @@ class TimestampMatcher:
         cam_front_timestamp = cam_front_samples[idx]["timestamp"]
         return self.nearest_data_within_epsilon[cam_front_timestamp]
 
+def get_ego_T(nusc: NuScenes, sample_data: SampleData) -> torch.Tensor:
+    """
+    Get world to car translation matrix cam_T
+    """
+    pose_token = sample_data["ego_pose_token"]
+    pose = nusc.get("ego_pose", pose_token)
+    cam_T = torch.eye(4)
+    translation = torch.tensor(pose["translation"])
+    cam_T[:3, 3] = translation
+    #cam_T = cam_T.inverse()  # convert to car_to_world
 
-class SceneDataset(TorchDataset):
+    # apply rotation matrix
+    rotation_mat = torch.eye(4)
+    quat = torch.tensor(pose["rotation"])
+    rotation = quaternion_to_matrix(quat)
+    rotation_mat[:3, :3] = rotation
+
+    #cam_T = rotation_mat.inverse().matmul(cam_T)
+    return cam_T.matmul(rotation_mat).inverse()
+
+def get_sensor_calibration_K(nusc: NuScenes, sample_data: SampleData, width: int, height: int) -> torch.Tensor:
+    """
+    Camera intrinsic matrix.
+    """
+
+    calibrated_sensor_token = sample_data["calibrated_sensor_token"]
+    calibrated_sensor = nusc.get("calibrated_sensor", calibrated_sensor_token)
+    camera_intrinsic = torch.tensor(calibrated_sensor["camera_intrinsic"])
+    K = torch.eye(4)
+    K[:3, :3] = camera_intrinsic
+    K[0] /= width
+    K[1] /= height
+
+    return K
+
+def get_sensor_calibration_T(nusc: NuScenes, sample_data: SampleData) -> torch.Tensor:
+    """
+    Get car to camera local translation matrix T
+    """
+    calibrated_sensor_token = sample_data["calibrated_sensor_token"]
+    calibrated_sensor = nusc.get("calibrated_sensor", calibrated_sensor_token)
+
+    rotation = quaternion_to_matrix(torch.tensor(calibrated_sensor["rotation"]))
+    translation = calibrated_sensor["translation"]
+    T = torch.eye(4)
+    T[:3, :3] = rotation
+    T[:3, 3] = torch.tensor(translation)
+
+    return T
+
+class CameraDataset(TorchDataset):
     """A "scene" is all the sample data from first (the one with no prev) to last (the one with no next) for a single camera."""
 
     def __init__(
@@ -142,22 +191,7 @@ class SceneDataset(TorchDataset):
         return len(self.samples) - NUM_FRAMES - 1
 
     def _getitem(self, sample_data: SampleData) -> Dict[str, object]:
-        # Get world to car translation matrix cam_T
-        pose_token = sample_data["ego_pose_token"]
-        pose = self.nusc.get("ego_pose", pose_token)
-        cam_T = torch.eye(4)
-        translation = torch.tensor(pose["translation"])
-        cam_T[:3, 3] = translation
-        cam_T = cam_T.inverse()  # convert to car_to_world
-
-        # apply rotation matrix
-        rotation_mat = torch.eye(4)
-        quat = torch.tensor(pose["rotation"])
-        rotation = quaternion_to_matrix(quat)
-        rotation_mat[:3, :3] = rotation
-
-        cam_T = rotation_mat.inverse().matmul(cam_T)
-
+        cam_T = get_ego_T(self.nusc, sample_data)
         timestamp = sample_data["timestamp"]
 
         # Get the image
@@ -180,21 +214,8 @@ class SceneDataset(TorchDataset):
         )
         img = transform(img)
 
-        # Get the camera_intrinsic (K)
-        calibrated_sensor_token = sample_data["calibrated_sensor_token"]
-        calibrated_sensor = self.nusc.get("calibrated_sensor", calibrated_sensor_token)
-        camera_intrinsic = torch.tensor(calibrated_sensor["camera_intrinsic"])
-        K = torch.eye(4)
-        K[:3, :3] = camera_intrinsic
-        K[0] /= width
-        K[1] /= height
-
-        # Get car to camera local translation matrix T
-        rotation = quaternion_to_matrix(torch.tensor(calibrated_sensor["rotation"]))
-        translation = calibrated_sensor["translation"]
-        T = torch.eye(4)
-        T[:3, :3] = rotation
-        T[:3, 3] = torch.tensor(translation)
+        T = get_sensor_calibration_T(self.nusc, sample_data)
+        K = get_sensor_calibration_K(self.nusc, sample_data, width=width, height=height)
 
         return {
             "weight": 1,
@@ -209,6 +230,7 @@ class SceneDataset(TorchDataset):
         }
 
     def __getitem__(self, idx: int) -> Dict[str, object]:
+        print(self.samples[idx])
         frame_dicts = []
         for i in range(idx, idx + NUM_FRAMES):
             sample = self.samples[i]
@@ -228,7 +250,7 @@ class SceneDataset(TorchDataset):
         frame_Ts = [torch.eye(4)]
         for i in range(1, len(frame_dicts)):
             # Get the relative frame_T for this frame by comparing the current cam_T to the previous cam_T
-            frame_T = cam_Ts[i - 1].inverse().matmul(cam_Ts[i])
+            frame_T = torch.linalg.solve(cam_Ts[i - 1], cam_Ts[i])
             # TODO use torch.solve instead
             # frame_T = torch.linalg.solve(cam_Ts[i], cam_Ts[i - 1])[0]
             frame_Ts.append(frame_T)
@@ -271,15 +293,34 @@ class LidarDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples) - NUM_FRAMES - 1
 
-    def __getitem__(self, idx: int) -> object:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         # Account for FPS difference between cameras (15ps) and lidar
         # (20fps)
         idx += NUM_FRAMES // 2 * 15 // 20
         sample_data = self.samples[idx]
+        print(sample_data)
+
+        calibrated_sensor_token = sample_data["calibrated_sensor_token"]
+        calibrated_sensor = self.nusc.get("calibrated_sensor", calibrated_sensor_token)
+
+        ego_T = get_ego_T(self.nusc, sample_data)
+
+        #calibrated_sensor_token = sample_data["calibrated_sensor_token"]
+        #calibrated_sensor = self.nusc.get("calibrated_sensor", calibrated_sensor_token)
+        #print(calibrated_sensor)
+
+        #rotation = quaternion_to_matrix(torch.tensor(calibrated_sensor["rotation"]))
+        #translation = calibrated_sensor["translation"]
+        #T = torch.eye(4)
+        #T[:3, :3] = rotation
+        #T[:3, 3] = torch.tensor(translation)
+        #sensor_T = T
+        sensor_T = get_sensor_calibration_T(self.nusc, sample_data)
+
         pcl = LidarPointCloud.from_file(
             os.path.join(self.dataroot, sample_data["filename"])
         )
-        return torch.from_numpy(pcl.points)
+        return torch.from_numpy(pcl.points), sensor_T.matmul(ego_T).unsqueeze(0)
 
 
 class NuscenesDataset(Dataset):
@@ -327,8 +368,8 @@ class NuscenesDataset(Dataset):
 
     def _cam2scenes(
         self, cam: str
-    ) -> Tuple[ConcatDataset[SceneDataset], List[Dict[str, object]]]:
-        """Takes in a camera, returns the data split up into SceneDatasets of information."""
+    ) -> Tuple[ConcatDataset[CameraDataset], List[Dict[str, object]]]:
+        """Takes in a camera, returns the data split up into CameraDatasets of information."""
         # Get all the sample_data with no prev
         starts = [
             sd
@@ -338,7 +379,7 @@ class NuscenesDataset(Dataset):
 
         assert len(starts) > 0, f"No starts found for {cam}"
 
-        # For each start, follow the .next until there are no more. Store these samples in a SceneDataset.
+        # For each start, follow the .next until there are no more. Store these samples in a CameraDataset.
         ds_scenes, scenes = [], []
         for start in starts:
             samples = []
@@ -351,7 +392,7 @@ class NuscenesDataset(Dataset):
             scenes.append(samples)
             sensor_modality = sample_data["sensor_modality"]
             if sensor_modality == "camera":
-                kls = SceneDataset
+                kls = CameraDataset
             elif sensor_modality == "lidar":
                 kls = LidarDataset
             else:
@@ -374,7 +415,7 @@ class NuscenesDataset(Dataset):
         if sample_data is None:
             return None
 
-        # Now get processed sample data using SceneDatasets from the cam_scenes
+        # Now get processed sample data using CameraDatasets from the cam_scenes
         data = {}
         for cam, adj_idx in idxs.items():
             cam_scene = self.cam_scenes[cam]
@@ -404,7 +445,11 @@ class NuscenesDataset(Dataset):
             colors[cam] = torch.stack(cam_colors, dim=0)
             masks[cam] = sample_dict["mask"]
 
-        lidar = data[SensorTypes.LIDAR_TOP] if self.lidar else None
+        if self.lidar:
+            lidar, lidar_T = data[SensorTypes.LIDAR_TOP]
+        else:
+            lidar = None
+            lidar_T = torch.eye(4)
 
         return Batch(
             weight=weight.float(),
@@ -418,6 +463,7 @@ class NuscenesDataset(Dataset):
             mask=masks,
             long_cam_T=cam_Ts,
             lidar=lidar,
+            lidar_T=lidar_T,
         )
 
     def __getitem__(self, idx: int) -> Optional[Batch]:

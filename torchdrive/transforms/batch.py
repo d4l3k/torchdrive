@@ -56,11 +56,13 @@ class NormalizeCarPosition(BatchTransform):
         cam_T = inv_start_T.matmul(batch.cam_T.inverse()).inverse()
         long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
         long_cam_T = inv_start_T.matmul(long_cam_T.inverse()).inverse()
+        lidar_T = inv_start_T.matmul(batch.lidar_T.inverse()).inverse()
 
         return replace(
             batch,
             cam_T=cam_T,
             long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
+            lidar_T=lidar_T,
         )
 
 
@@ -90,11 +92,13 @@ class CenterCar(BatchTransform):
         cam_T = transform.matmul(batch.cam_T.inverse()).inverse()
         long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
         long_cam_T = transform.matmul(long_cam_T.inverse()).inverse()
+        lidar_T = transform.matmul(batch.lidar_T.inverse()).inverse()
 
         return replace(
             batch,
             cam_T=cam_T,
             long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
+            lidar_T=lidar_T,
         )
 
 
@@ -109,10 +113,12 @@ class RandomRotation(BatchTransform):
         cam_T = batch.cam_T.matmul(rot)
         long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
         long_cam_T = long_cam_T.matmul(rot)
+        lidar_T = batch.lidar_T.matmul(rot)
         return replace(
             batch,
             cam_T=cam_T,
             long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
+            lidar_T=lidar_T,
         )
 
 
@@ -134,8 +140,10 @@ class RandomTranslation(BatchTransform):
         cam_T = batch.cam_T.matmul(rot)
         long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
         long_cam_T = long_cam_T.matmul(rot)
+        lidar_T = batch.lidar_T.matmul(rot)
         return replace(
             batch,
             cam_T=cam_T,
             long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
+            lidar_T=lidar_T,
         )

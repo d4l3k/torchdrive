@@ -68,7 +68,7 @@ class Context:
             )
 
     def log_grad_norm(self, tensor: torch.Tensor, key: str, tag: str) -> torch.Tensor:
-        if not self.log_text:
+        if not self.log_text or not self.writer:
             return tensor
         return log_grad_norm(
             tensor, self.writer, f"{self.name}-{key}", tag, self.global_step
