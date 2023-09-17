@@ -171,11 +171,12 @@ def get_sensor_calibration_T(nusc: NuScenes, sample_data: SampleData) -> torch.T
 
     rotation = quaternion_to_matrix(torch.tensor(calibrated_sensor["rotation"]))
     translation = calibrated_sensor["translation"]
-    T = torch.eye(4)
-    T[:3, :3] = rotation
-    T[:3, 3] = torch.tensor(translation)
+    rot_T = torch.eye(4)
+    rot_T[:3, :3] = rotation
+    trans_T = torch.eye(4)
+    trans_T[:3, 3] = torch.tensor(translation)
 
-    return T
+    return trans_T.matmul(rot_T)
 
 class CameraDataset(TorchDataset):
     """A "scene" is all the sample data from first (the one with no prev) to last (the one with no next) for a single camera."""
@@ -447,6 +448,7 @@ class NuscenesDataset(Dataset):
 
         if self.lidar:
             lidar, lidar_T = data[SensorTypes.LIDAR_TOP]
+            lidar_T = cam_Ts[0].matmul(lidar_T.inverse()).inverse()
         else:
             lidar = None
             lidar_T = torch.eye(4)

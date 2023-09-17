@@ -44,7 +44,8 @@ class Batch:
     # future (out, mask, lens) [BS, long_num_frames, 4, 4]
     long_cam_T: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
 
-    # Lidar transformation matrix -- world to Lidar coordinates [1, 4, 4]
+    # Lidar transformation matrix -- car to Lidar coordinates [1, 4, 4],
+    # relative to first cam_T position
     lidar_T: torch.Tensor
     # Lidar data [BS, 4, n], channel format is [x, y, z, intensity]
     lidar: Optional[torch.Tensor] = None
