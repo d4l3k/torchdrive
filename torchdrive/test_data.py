@@ -33,8 +33,8 @@ class TestData(unittest.TestCase):
         batch = collate([dummy_item(), dummy_item(), None])
 
     def test_collate_long_cam_T(self) -> None:
-        a = dummy_batch()
-        b = dummy_batch()
+        a = dummy_item()
+        b = dummy_item()
         a = replace(a, long_cam_T=torch.rand(3, 4, 4))
         b = replace(b, long_cam_T=torch.rand(5, 4, 4))
         batch = collate([a, b])

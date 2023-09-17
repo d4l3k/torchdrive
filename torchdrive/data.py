@@ -13,6 +13,7 @@ from typing import (
     TypeVar,
     Union,
 )
+import random
 
 import torch
 from torch.utils.data import DataLoader, default_collate
@@ -144,6 +145,7 @@ def dummy_item() -> Batch:
         T={cam: torch.rand(4, 4) for cam in cams},
         color=color,
         mask={cam: torch.rand(1, 48, 64) for cam in cams},
+        lidar=torch.rand(4, random.randint(6, 10)),
     )
 
 
@@ -180,10 +182,14 @@ def _collate_weight(
 
 def _collate_lidar(
     tensors: List[Optional[torch.Tensor]],
-):
+) -> Optional[torch.Tensor]:
     if len(tensors) == 0 or tensors[0] is None:
         return None
-    return torch.stack(tensors)
+    min_dim = min(x.size(1) for x in tensors)
+    assert min_dim > 5, f"min dimension must not be empty {tensors[0].shape}"
+    return torch.stack([
+        x[:, :min_dim] for x in tensors
+    ])
 
 
 _COLLATE_FIELDS: Mapping[str, Callable[[object], object]] = {
