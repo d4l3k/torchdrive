@@ -15,8 +15,10 @@ class DepthEmissionRaymarcher(torch.nn.Module):
     """
 
     def __init__(
-        self, background: Optional[torch.Tensor] = None, floor: Optional[float]
-        = 0, wall: bool = True
+        self,
+        background: Optional[torch.Tensor] = None,
+        floor: Optional[float] = 0,
+        wall: bool = True,
     ) -> None:
         """
         Args:
@@ -93,12 +95,12 @@ class DepthEmissionRaymarcher(torch.nn.Module):
                 rays_features[is_floor.squeeze(-1), :] = background
 
         ray_shape = rays_densities.shape[:-2]
-        probs = rays_densities[..., 0].cumsum_(dim=3)
+        probs = rays_densities[..., 0].cumsum_(dim=-1)
         probs = probs.clamp_(max=1)
-        probs = probs.diff(dim=3, prepend=torch.zeros((*ray_shape, 1), device=device))
+        probs = probs.diff(dim=-1, prepend=torch.zeros((*ray_shape, 1), device=device))
 
-        depth = (probs * ray_bundle.lengths).sum(dim=3)
-        features = (probs.unsqueeze(-1) * rays_features).sum(dim=3)
+        depth = (probs * ray_bundle.lengths).sum(dim=-1)
+        features = (probs.unsqueeze(-1) * rays_features).sum(dim=-2)
 
         return depth, features
 

@@ -17,6 +17,7 @@ from torchdrive.losses import multi_scale_projection_loss, smooth_loss, tvl1_los
 from torchdrive.models.depth import DepthDecoder
 from torchdrive.models.regnet import resnet_init
 from torchdrive.models.semantic import BDD100KSemSeg
+from torchdrive.render.ray_sampler import LIDARRaySampler
 from torchdrive.render.raymarcher import (
     CustomPerspectiveCameras,
     DepthEmissionRaymarcher,
@@ -183,17 +184,24 @@ class VoxelTask(BEVTask):
             min_depth=self.min_depth,
             max_depth=self.max_depth,
         )
-        raymarcher = DepthEmissionRaymarcher(
-            floor=None,
-            # background=torch.tensor(background, device=device)
-            # if len(background) > 0
-            # else None,
-            # wall=False,
-            background=None,
+        self.lidar_raysampler = LIDARRaySampler(
+            n_pts_per_ray=n_pts_per_ray,
+            min_depth=self.min_depth,
+            max_depth=self.max_depth,
+        )
+        self.raymarcher = compile_fn(
+            DepthEmissionRaymarcher(
+                floor=None,
+                # background=torch.tensor(background, device=device)
+                # if len(background) > 0
+                # else None,
+                # wall=False,
+                background=None,
+            )
         )
         self.renderer = ImplicitRenderer(
             raysampler=raysampler,
-            raymarcher=compile_fn(raymarcher),
+            raymarcher=self.raymarcher,
         )
 
         # image space model
@@ -207,6 +215,9 @@ class VoxelTask(BEVTask):
         )
         # pyre-fixme[6]: nn.Module
         self.projection_loss: nn.Module = compile_fn(multi_scale_projection_loss)
+
+        self.lidar_mape = torchmetrics.MeanAbsolutePercentageError()
+        self.lidar_mae = torchmetrics.MeanAbsoluteError()
 
     def forward(
         self, ctx: Context, batch: Batch, bev: torch.Tensor
@@ -335,6 +346,21 @@ class VoxelTask(BEVTask):
             ctx.weights = batch.weight
             ctx.cam_feats = cam_feats
 
+        if self.semantic:
+            if ctx.log_img:
+                fig, ax = self.semantic_confusion_matrix.plot(
+                    labels=[BDD100KSemSeg.LABELS[i] for i in BDD100KSemSeg.NON_SKY],
+                    add_text=False,
+                )
+                ctx.add_figure("semantic/confusion_matrix", fig)
+                self.semantic_confusion_matrix.reset()
+            if ctx.log_text:
+                ctx.add_scalar("semantic/accuracy", self.semantic_accuracy.compute())
+                self.semantic_accuracy.reset()
+        if ctx.log_text:
+            ctx.add_scalar("lidar/mae", self.lidar_mae.compute())
+            ctx.add_scalar("lidar/mape", self.lidar_mape.compute())
+
         return losses
 
     def _losses(
@@ -451,6 +477,20 @@ class VoxelTask(BEVTask):
             # the border so we don't need custom endpoint logic
             padding_mode="border",
         )
+
+        if batch.lidar is not None:
+            with torch.no_grad():
+                ray_bundle, distances = self.lidar_raysampler(batch)
+                rays_densities, rays_features = volumetric_function(
+                    ray_bundle=ray_bundle,
+                )
+                lidar_depth, _ = self.raymarcher(
+                    rays_densities=rays_densities,
+                    rays_features=rays_features,
+                    ray_bundle=ray_bundle,
+                )
+                self.lidar_mae.update(lidar_depth, distances)
+                self.lidar_mape.update(lidar_depth, distances)
 
         for cam in self.cameras:
             K = batch.K[cam]
@@ -598,20 +638,6 @@ class VoxelTask(BEVTask):
                         h=h,
                         w=w,
                     )
-
-            if self.semantic:
-                if ctx.log_img:
-                    fig, ax = self.semantic_confusion_matrix.plot(
-                        labels=[BDD100KSemSeg.LABELS[i] for i in BDD100KSemSeg.NON_SKY],
-                        add_text=False,
-                    )
-                    ctx.add_figure("semantic/confusion_matrix", fig)
-                    self.semantic_confusion_matrix.reset()
-                if ctx.log_text:
-                    ctx.add_scalar(
-                        "semantic/accuracy", self.semantic_accuracy.compute()
-                    )
-                    self.semantic_accuracy.reset()
 
             del voxel_depth
             del semantic_vel

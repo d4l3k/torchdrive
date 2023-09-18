@@ -1,12 +1,15 @@
 import unittest
 from typing import Optional
 
-from parameterized import parameterized
-
 import torch
+
+from parameterized import parameterized
 from pytorch3d.renderer.implicit.utils import RayBundle
 
-from torchdrive.render.raymarcher import CustomPerspectiveCameras, DepthEmissionRaymarcher
+from torchdrive.render.raymarcher import (
+    CustomPerspectiveCameras,
+    DepthEmissionRaymarcher,
+)
 
 
 class TestRaymarcher(unittest.TestCase):
@@ -17,7 +20,7 @@ class TestRaymarcher(unittest.TestCase):
             (None,),
         ]
     )
-    def test_depth_emission(self, floor: Optional[float]) -> None:
+    def test_depth_emission_2d(self, floor: Optional[float]) -> None:
         BS = 2
         X = 3
         Y = 3
@@ -41,6 +44,30 @@ class TestRaymarcher(unittest.TestCase):
         )
         self.assertEqual(depth.shape, (BS, X, Y))
         self.assertEqual(features.shape, (BS, X, Y, FEATS))
+        (depth.mean() + features.mean()).backward()
+
+    def test_depth_emission_1d(self) -> None:
+        BS = 2
+        X = 3
+        PTS_PER_RAY = 4
+        FEATS = 5
+        raymarcher = DepthEmissionRaymarcher(
+            background=torch.tensor([1] + [0] * (FEATS - 1), dtype=torch.float32),
+        )
+        ray_densities = torch.rand(BS, X, PTS_PER_RAY, 1, requires_grad=True)
+        ray_features = torch.rand(BS, X, PTS_PER_RAY, FEATS, requires_grad=True)
+        depth, features = raymarcher(
+            rays_densities=ray_densities.clone(),
+            rays_features=ray_features.clone(),
+            ray_bundle=RayBundle(
+                origins=torch.rand(BS, X, 3),
+                directions=torch.rand(BS, X, 3),
+                lengths=torch.rand(BS, X, PTS_PER_RAY),
+                xys=None,
+            ),
+        )
+        self.assertEqual(depth.shape, (BS, X))
+        self.assertEqual(features.shape, (BS, X, FEATS))
         (depth.mean() + features.mean()).backward()
 
     def test_cameras(self) -> None:

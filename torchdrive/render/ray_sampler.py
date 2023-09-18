@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import torch
 import torch.nn.functional as F
 from pytorch3d.renderer.implicit.raysampling import RayBundle
@@ -24,25 +26,33 @@ class LIDARRaySampler(torch.nn.Module):
         self.step = (self.max_depth - self.min_depth) / self.n_pts_per_ray
         assert self.step > 0
 
-    def forward(self, batch: Batch) -> RayBundle:
+    def forward(self, batch: Batch) -> Tuple[RayBundle, torch.Tensor]:
+        """
+        Returns:
+            RayBundle
+            Tensor of depths corresponding to each LIDAR point.
+        """
         T = batch.lidar_to_world()
         BS = batch.batch_size()
+        num_points = batch.lidar.size(2)
 
         origin = torch.tensor((0, 0, 0, 1.0), device=T.device, dtype=T.dtype).reshape(
             1, 4, 1
         )
         origin = T.matmul(origin)
         origin = origin[:, :3] / origin[:, 3:]
+        origin = origin.permute(0, 2, 1).expand(-1, num_points, -1)
 
-        num_points = batch.lidar.size(2)
         coords = batch.lidar[:, :3]
         ones = torch.ones(BS, 1, num_points)
         coords = torch.cat((coords, ones), dim=1)
         coords = T.matmul(coords)
         coords = coords[:, :3] / coords[:, 3:]
+        coords = coords.permute(0, 2, 1)
 
         directions = coords - origin
-        directions = F.normalize(directions, dim=1)
+        distances = torch.linalg.vector_norm(coords, dim=2)
+        directions = F.normalize(directions, dim=2)
 
         lengths = torch.arange(
             start=self.min_depth,
@@ -50,11 +60,14 @@ class LIDARRaySampler(torch.nn.Module):
             step=self.step,
             device=T.device,
             dtype=T.dtype,
-        )
+        ).expand(BS, num_points, -1)
 
-        return RayBundle(
-            origins=origin,
-            directions=directions,
-            lengths=lengths,
-            xys=None,
+        return (
+            RayBundle(
+                origins=origin,
+                directions=directions,
+                lengths=lengths,
+                xys=None,
+            ),
+            distances,
         )
