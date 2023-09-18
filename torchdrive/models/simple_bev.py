@@ -41,7 +41,7 @@ from torchdrive.amp import autocast
 from torchdrive.data import Batch
 from torchdrive.models.bev import BEVUpsampler
 from torchdrive.models.bev_backbone import BEVBackbone
-from torchdrive.models.resnet_3d import resnet3d18
+from torchdrive.models.resnet_3d import resnet3d18, Upsample3DBlock
 from torchdrive.transforms.mat import voxel_to_world
 from torchdrive.transforms.simple_bev import lift_cam_to_voxel
 
@@ -867,3 +867,96 @@ def lift_cam_to_voxel_mean(
         feat_mem = feat_voxels.sum(dim=1) / feat_valids.sum(dim=1).clamp(min=1)
         feat_mem = feat_mem.permute(0, 1, 4, 2, 3)
     return feat_mem
+
+
+class Segnet3DBackbone(BEVBackbone):
+    """
+    A BEV backbone using the Segnet projections and a custom 3D convolution backbone.
+
+    This extends Simple BEV to support multiple time frames.
+    """
+
+    def __init__(
+        self,
+        cam_dim: int,
+        dim: int,
+        hr_dim: int,
+        grid_shape: Tuple[int, int, int],
+        num_frames: int,
+        scale: float,
+        center: Tuple[float, float, float] = (-0.5, -0.5, 0),
+        num_upsamples: int = 0,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
+    ) -> None:
+        super().__init__()
+
+        assert dim == 256, "dim must equal intermediate"
+        self.dim = dim
+        self.grid_shape = grid_shape
+        self.num_frames = num_frames
+        self.scale = scale
+        self.center: Tuple[int, int, int] = tuple(
+            a * b for a, b in zip(center, self.grid_shape)
+        )
+
+        Z = grid_shape[2]
+        HR_Z = Z // 8
+
+        self.project = nn.ModuleList(
+            [compile_fn(nn.Conv2d(cam_dim, cam_dim, 1)) for i in range(num_frames)]
+        )
+        self.fpn: nn.Module = compile_fn(ResnetFPN3d(cam_dim, dim // HR_Z))
+        per_voxel_dim = max(hr_dim // (Z * 2), 1)
+        assert num_upsamples == 1, "only one upsample supported"
+        self.upsample: nn.Module = compile_fn(Upsample3DBlock(cam_dim, per_voxel_dim))
+        self.final_project = nn.Conv2d(per_voxel_dim * Z * 2, hr_dim, 1)
+        self.hr_project = nn.Conv2d(dim // HR_Z * HR_Z, dim, 1)
+
+        # pyre-fixme[6]: invalid parameter type
+        self.lift_cam_to_voxel_mean: nn.Module = compile_fn(lift_cam_to_voxel_mean)
+
+    def forward(
+        self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        BS = batch.batch_size()
+        S = len(camera_features) * self.num_frames
+        device = batch.device()
+
+        voxel_to_world = (
+            Transform3d(device=device)
+            .translate(*self.center)
+            .scale(1 / self.scale)
+            .get_matrix()
+            .permute(0, 2, 1)
+        )
+
+        features = []
+        Ks = []
+        Ts = []
+        # camera order doesn't matter for segnet
+        for cam, time_feats in camera_features.items():
+            for i, feats in enumerate(time_feats):
+                with autocast():
+                    features.append(self.project[i](feats))
+                Ks.append(batch.K[cam])
+
+                # calculate voxel to camera space transformation matrix
+                T = batch.world_to_cam(cam, i)
+                T = T.matmul(voxel_to_world)
+                Ts.append(T)
+
+        feature = torch.stack(features, dim=1)
+        K = torch.stack(Ks, dim=1)
+        T = torch.stack(Ts, dim=1)
+        feat_mem = self.lift_cam_to_voxel_mean(feature, K, T, self.grid_shape)
+
+        with autocast():
+            # run through FPN
+            x, x4 = self.fpn(feat_mem)
+            x = self.upsample(x)
+            x = x.flatten(1, 2)
+            x = self.final_project(x)
+
+            x4 = x4.flatten(1, 2)
+            x4 = self.hr_project(x4)
+            return x, x4

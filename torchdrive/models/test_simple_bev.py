@@ -10,6 +10,7 @@ from torchdrive.models.simple_bev import (
     ResnetFPN2d,
     ResnetFPN3d,
     Segnet,
+    Segnet3DBackbone,
     segnet_rgb,
     SegnetBackbone,
     UpsamplingAdd2d,
@@ -141,3 +142,37 @@ class TestSimpleBEV(unittest.TestCase):
             x_skip=torch.rand(2, 4, 10, 12, 14),
         )
         self.assertEqual(out.shape, (2, 4, 10, 12, 14))
+
+    def test_segnet_3d_backbone(self) -> None:
+        batch = dummy_batch()
+        X = 8
+        Y = 16
+        Z = 24
+        cam_dim = 6
+        hr_dim = 5
+        latent_dim = 256
+        num_frames = 2
+        m = Segnet3DBackbone(
+            grid_shape=(X, Y, Z),
+            dim=latent_dim,
+            cam_dim=cam_dim,
+            hr_dim=hr_dim,
+            num_frames=num_frames,
+            scale=3,
+            num_upsamples=1,
+        )
+        camera_features = {
+            camera: [torch.rand(batch.batch_size(), cam_dim, 48, 64)] * num_frames
+            for camera in batch.cameras()
+        }
+        for feats in camera_features.values():
+            for feat in feats:
+                feat.requires_grad = True
+        x, x4 = m(camera_features, batch)
+        self.assertEqual(x.shape, (batch.batch_size(), hr_dim, X * 2, Y * 2))
+        self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X // 8, Y // 8))
+        (x.mean() + x4.mean()).backward()
+
+        for feats in camera_features.values():
+            for feat in feats:
+                self.assertIsNotNone(feat.grad)

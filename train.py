@@ -240,6 +240,22 @@ elif args.backbone == "simple_bev":
         num_upsamples=num_upsamples,
         compile_fn=compile_fn,
     )
+elif args.backbone == "simple_bev3d":
+    from torchdrive.models.simple_bev import Segnet3DBackbone
+
+    num_upsamples: int = 1
+    adjust: int = 2**num_upsamples
+
+    backbone = Segnet3DBackbone(
+        grid_shape=(256 // adjust, 256 // adjust, 16 // adjust),
+        dim=args.dim,
+        hr_dim=args.hr_dim,
+        cam_dim=args.cam_dim,
+        num_frames=3,
+        scale=3 / adjust,
+        num_upsamples=num_upsamples,
+        compile_fn=compile_fn,
+    )
 else:
     raise ValueError(f"unknown backbone {args.backbone}")
 

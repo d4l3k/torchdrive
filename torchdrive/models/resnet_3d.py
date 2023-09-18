@@ -260,3 +260,30 @@ class ResNet3d(nn.Module):
 
 def resnet3d18(**kwargs: Any) -> ResNet3d:
     return ResNet3d(BasicBlock3d, [2, 2, 2, 2], **kwargs)
+
+
+class Upsample3DBlock(nn.Module):
+    """
+    An 2x upsample block in 3D that uses Resnet layers.
+    """
+
+    def __init__(self, in_ch: int, out_ch: int, depth: int = 4) -> None:
+        super().__init__()
+
+        self.upsample = nn.Upsample(scale_factor=(2, 2, 2))
+        layers = [
+            conv1x1(in_ch, out_ch, 1),
+            nn.BatchNorm3d(out_ch),
+        ]
+        for i in range(depth):
+            layers.append(
+                BasicBlock3d(
+                    inplanes=out_ch,
+                    planes=out_ch,
+                )
+            )
+        self.decode = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.upsample(x.float())
+        return self.decode(x)
