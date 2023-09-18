@@ -492,10 +492,28 @@ class VoxelTask(BEVTask):
                 self.lidar_mae.update(lidar_depth, distances)
                 self.lidar_mape.update(lidar_depth, distances)
 
+                if ctx.log_text:
+                    ctx.add_scalars(
+                        "lidar/target",
+                        {
+                            "min": distances.amin(),
+                            "max": distances.amax(),
+                            "mean": distances.mean(),
+                        },
+                    )
+                    ctx.add_scalars(
+                        "lidar/pred",
+                        {
+                            "min": lidar_depth.amin(),
+                            "max": lidar_depth.amax(),
+                            "mean": lidar_depth.mean(),
+                        },
+                    )
+
         for cam in self.cameras:
             K = batch.K[cam]
-            # create camera to world transformation matrix
-            T = batch.cam_to_world(cam, start_frame)
+            # create world to camera transformation matrix
+            T = batch.world_to_cam(cam, start_frame)
             cameras = CustomPerspectiveCameras(
                 T=T,
                 K=K,

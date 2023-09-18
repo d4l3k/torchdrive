@@ -44,14 +44,14 @@ class LIDARRaySampler(torch.nn.Module):
         origin = origin.permute(0, 2, 1).expand(-1, num_points, -1)
 
         coords = batch.lidar[:, :3]
-        ones = torch.ones(BS, 1, num_points)
+        ones = torch.ones(BS, 1, num_points, dtype=T.dtype, device=T.device)
         coords = torch.cat((coords, ones), dim=1)
         coords = T.matmul(coords)
         coords = coords[:, :3] / coords[:, 3:]
         coords = coords.permute(0, 2, 1)
 
         directions = coords - origin
-        distances = torch.linalg.vector_norm(coords, dim=2)
+        distances = torch.linalg.vector_norm(directions, dim=2)
         directions = F.normalize(directions, dim=2)
 
         lengths = torch.arange(

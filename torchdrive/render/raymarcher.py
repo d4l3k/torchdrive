@@ -116,6 +116,7 @@ class CustomPerspectiveCameras(PerspectiveCameras):
         """
         dim is (BS, h, w)
         K (in normalized K matrix by size)
+        T is world_to_camera matrix [4,4]
         """
         BS = len(T)
 
@@ -137,7 +138,7 @@ class CustomPerspectiveCameras(PerspectiveCameras):
             # pyre-fixme[6]: got object
             **kwargs,
         )
-        self.T: torch.Tensor = T.pinverse()
+        self.T = T
 
     def get_world_to_view_transform(self, **kwargs: object) -> Transform3d:
         r = RotateAxisAngle(180, axis="Z", device=self.T.device)
