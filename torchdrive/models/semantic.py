@@ -108,7 +108,7 @@ class BDD100KSemSeg:
         device: torch.device,
         half: bool = True,
         config: str = "upernet_convnext-t_fp16_512x1024_80k_sem_seg_bdd100k.py",
-        mmlab: bool = True,
+        mmlab: bool = False,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         if device == torch.device("cpu"):
