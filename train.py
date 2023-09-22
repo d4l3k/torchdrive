@@ -388,25 +388,58 @@ lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, ga
 # scaler: amp.GradScaler = amp.GradScaler()
 scaler: Optional[amp.GradScaler] = None
 
-if args.load:
-    state_dict: Dict[str, torch.Tensor] = torch.load(
-        args.load, map_location=device, weights_only=True
+global_step = 0
+CHECKPOINT_PATH = os.path.join(args.output, "model.pt")
+GLOBAL_STEP_KEY = "global_step"
+MODEL_KEY = "model"
+OPTIM_KEY = "optim"
+
+
+def save(epoch: int) -> None:
+    if RANK != 0:
+        return
+    loss = epoch_loss / batch_idx if batch_idx else 0
+    torch.save(
+        {
+            MODEL_KEY: model.state_dict(),
+            OPTIM_KEY: optimizer.state_dict(),
+            "epoch": epoch,
+            GLOBAL_STEP_KEY: global_step,
+            "loss": loss,
+        },
+        path,
+    )
+    print(f"saved to {path}, loss = {loss}")
+
+
+load_path = args.load
+
+LOAD_FAULT_TOLERANCE = os.path.exists(CHECKPOINT_PATH)
+
+if LOAD_FAULT_TOLERANCE:
+    print(f"loading from fault tolerance checkpoint {CHECKPOINT_PATH}")
+    load_path = CHECKPOINT_PATH
+
+if load_path:
+    ckpt: Dict[str, torch.Tensor] = torch.load(
+        load_path, map_location=device, weights_only=True
     )
 
-    # new save format
-    if "optim" in state_dict:
-        if not args.skip_load_optim:
-            print("loading optim state_dict")
-            optim_dict: Dict[str, object] = state_dict["optim"]  # pyre-fixme
-            optim_dict = transfer("optim_dict", optim_dict, device=torch.device("cpu"))
-            optimizer.load_state_dict(optim_dict)
+    if not args.skip_load_optim or LOAD_FAULT_TOLERANCE:
+        print("loading optim state_dict")
+        optim_dict: Dict[str, object] = ckpt[OPTIM_KEY]  # pyre-fixme
+        optim_dict = transfer("optim_dict", optim_dict, device=torch.device("cpu"))
+        optimizer.load_state_dict(optim_dict)
 
-            # NOTE: this overrides any LR set by schedulers
-            assert len(lr_groups) == len(optimizer.param_groups)
-            for lr, og in zip(lr_groups, optimizer.param_groups):
-                og["lr"] = lr
+        # NOTE: this overrides any LR set by schedulers
+        assert len(lr_groups) == len(optimizer.param_groups)
+        for lr, og in zip(lr_groups, optimizer.param_groups):
+            og["lr"] = lr
 
-        state_dict = state_dict["model"]  # pyre-fixme
+        if GLOBAL_STEP_KEY in ckpt:
+            global_step = ckpt[GLOBAL_STEP_KEY]
+
+    state_dict = ckpt[MODEL_KEY]  # pyre-fixme
 
     # remap state_dict
     state_dict = remap_state_dict(state_dict, model)
@@ -418,8 +451,6 @@ if args.load:
         print(f"failed to load state_dict, err: {e}")
 
 
-global_step = 0
-
 meaned_losses: Dict[str, Union[float, torch.Tensor]] = {}
 
 
@@ -427,21 +458,6 @@ def reset_metrics() -> None:
     global loss_count, meaned_losses
     meaned_losses = defaultdict[str, Union[float, torch.Tensor]](lambda: 0.0)
     loss_count = 0
-
-
-def save(epoch: int) -> None:
-    if RANK != 0:
-        return
-    path = os.path.join(args.output, f"model_{epoch}.pt")
-    torch.save(
-        {
-            "model": model.state_dict(),
-            "optim": optimizer.state_dict(),
-        },
-        path,
-    )
-    l = epoch_loss / batch_idx if batch_idx else 0
-    print(f"saved to {path}, loss = {l}")
 
 
 if args.profile:  # and rank == 0:

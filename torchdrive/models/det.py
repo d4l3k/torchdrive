@@ -189,3 +189,35 @@ class DetBEVDecoder(nn.Module):
         bboxes = bboxes.float().sigmoid()  # normalized 0 to 1
 
         return classes, bboxes
+
+
+if __name__ == "__main__":
+    from functools import partial
+
+    m = BDD100KDet(device=torch.device("cpu"))
+    model = m.model.__self__
+    img, img_meta = m.transform(torch.rand(2, 3, 120, 240))
+    img_meta_list = [img_meta]
+    original_forward = model.forward
+
+    def forward(imgs):
+        return original_forward(
+            [imgs], img_metas=img_meta_list, return_loss=False, rescale=False
+        )
+
+    model.forward = forward
+    # model.forward = partial(
+    #        model.forward,
+    #        img_metas=img_meta_list,
+    #        return_loss=False,
+    #        rescale=False)
+    # model.forward.__globals__ = original_forward.__globals__
+    # model.forward.__code__ = original_forward.__code__
+    # model.forward.__closure__ = original_forward.__closure__
+
+    model(img)
+
+    # scripted = torch.jit.script(model, example_inputs=[[[img]]])
+    scripted = torch.jit.trace(model, img)
+
+    breakpoint()
