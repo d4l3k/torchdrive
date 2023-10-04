@@ -73,7 +73,13 @@ class TestBEV(unittest.TestCase):
             ),
         )
         writer = MagicMock()
-        losses = m(dummy_batch(), global_step=500, writer=writer, output="/tmp/out")
+        global_step = 500
+        batch = dummy_batch()
+        self.assertEqual(
+            m.should_log(global_step=global_step, BS=batch.batch_size()),
+            (True, True),
+        )
+        losses = m(batch, global_step=500, writer=writer, output="/tmp/out")
         self.assertCountEqual(losses.keys(), ["dummy-foo", "hr_dummy-foo"])
         self.assertIsNotNone(writer)
         self.assertEqual(writer.add_scalar.call_count, 2)
