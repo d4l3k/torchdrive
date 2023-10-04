@@ -163,25 +163,6 @@ else:
 if RANK == 0:
     print(f"trainset size {len(dataset)}")
 
-sampler: DistributedSampler[Dataset] = DistributedSampler(
-    dataset,
-    num_replicas=WORLD_SIZE,
-    rank=RANK,
-    shuffle=True,
-    drop_last=True,
-    seed=binascii.crc32((args.load or args.output).encode("utf-8")),
-)
-dataloader = DataLoader[Batch](
-    dataset,
-    batch_size=None,
-    num_workers=args.num_workers,
-    # drop_last=True,
-    # collate_fn=nonstrict_collate,
-    pin_memory=True,
-    sampler=sampler,
-)
-collator = TransferCollator(dataloader, batch_size=args.batch_size, device=device)
-
 if args.anomaly_detection:
     torch.set_anomaly_enabled(True)
 
@@ -407,9 +388,9 @@ def save(epoch: int) -> None:
             GLOBAL_STEP_KEY: global_step,
             "loss": loss,
         },
-        path,
+        CHECKPOINT_PATH,
     )
-    print(f"saved to {path}, loss = {loss}")
+    print(f"saved to {CHECKPOINT_PATH}, loss = {loss}")
 
 
 load_path = args.load
@@ -451,6 +432,26 @@ if load_path:
         print(f"failed to load state_dict, err: {e}")
 
 
+sampler: DistributedSampler[Dataset] = DistributedSampler(
+    dataset,
+    num_replicas=WORLD_SIZE,
+    rank=RANK,
+    shuffle=True,
+    drop_last=True,
+    seed=binascii.crc32((args.load or args.output).encode("utf-8")) + global_step,
+)
+dataloader = DataLoader[Batch](
+    dataset,
+    batch_size=None,
+    num_workers=args.num_workers,
+    # drop_last=True,
+    # collate_fn=nonstrict_collate,
+    pin_memory=True,
+    sampler=sampler,
+)
+collator = TransferCollator(dataloader, batch_size=args.batch_size, device=device)
+
+
 meaned_losses: Dict[str, Union[float, torch.Tensor]] = {}
 
 
@@ -476,6 +477,7 @@ else:
 for epoch in range(NUM_EPOCHS):
     batch_idx = 0
     epoch_loss = 0
+    save(epoch)
 
     reset_metrics()
 
@@ -582,4 +584,5 @@ for epoch in range(NUM_EPOCHS):
     print(f"epoch {epoch} loss {epoch_loss_mean}")
 
     lr_scheduler.step()
-    save(epoch)
+
+save(epoch + 1)

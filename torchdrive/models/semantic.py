@@ -148,8 +148,7 @@ class BDD100KSemSeg:
         if half:
             model = model.half()
         model = model.to(device)
-        if mmlab:
-            model = compile_fn(model)
+        model = compile_fn(model)
         self.model: nn.Module = model
         self.transform: nn.Module = compile_fn(
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -164,3 +163,14 @@ class BDD100KSemSeg:
                 img = img.half()
             img = self.transform(img)
             return self.model(img)
+
+
+if __name__ == "__main__":
+    from functools import partial
+
+    dtype = torch.half
+    device = torch.device("cuda")
+    m = BDD100KSemSeg(device=device, mmlab=False, compile_fn=torch.compile)
+    model = m.model
+    inp = torch.rand(2, 3, 120, 240, device=device)
+    m(inp)
