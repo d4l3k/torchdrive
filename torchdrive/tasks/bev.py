@@ -44,8 +44,6 @@ class BEVTaskVan(torch.nn.Module):
         cameras: List[str],
         dim: int,
         hr_dim: int,
-        writer: Optional[SummaryWriter] = None,
-        output: str = "out",
         num_encode_frames: int = 3,
         num_backprop_frames: int = 2,
         num_drop_encode_cameras: int = 0,
@@ -63,8 +61,6 @@ class BEVTaskVan(torch.nn.Module):
 
         super().__init__()
 
-        self.writer = writer
-        self.output = output
         self.cameras = cameras
         self.num_encode_frames = num_encode_frames
         self.num_backprop_frames = num_backprop_frames
@@ -104,7 +100,12 @@ class BEVTaskVan(torch.nn.Module):
         ]
 
     def forward(
-        self, batch: Batch, global_step: int, scaler: Optional[amp.GradScaler] = None
+        self,
+        batch: Batch,
+        global_step: int,
+        scaler: Optional[amp.GradScaler] = None,
+        writer: Optional[SummaryWriter] = None,
+        output: str = "out",
     ) -> Dict[str, torch.Tensor]:
         BS = len(batch.distances)
         log_text: bool
@@ -144,7 +145,7 @@ class BEVTaskVan(torch.nn.Module):
                         if log_text:
                             feat = log_grad_norm(
                                 feat,
-                                self.writer,
+                                writer,
                                 f"grad/norm/encoder/{cam}",
                                 "bev",
                                 global_step,
@@ -159,7 +160,7 @@ class BEVTaskVan(torch.nn.Module):
             last_cam_feats = {
                 cam: log_grad_norm(
                     feat,
-                    self.writer,
+                    writer,
                     f"grad/norm/encoder/{cam}",
                     "cam_feats",
                     global_step,
@@ -167,7 +168,7 @@ class BEVTaskVan(torch.nn.Module):
                 for cam, feat in last_cam_feats.items()
             }
 
-        if log_img and (writer := self.writer):
+        if log_img and writer:
             writer.add_image(
                 "bev/bev", render_color(bev[0].sum(dim=0)), global_step=global_step
             )
@@ -188,8 +189,8 @@ class BEVTaskVan(torch.nn.Module):
             log_text=log_text,
             global_step=global_step,
             scaler=scaler,
-            writer=self.writer,
-            output=self.output,
+            writer=writer,
+            output=output,
             start_frame=start_frame,
             weights=batch.weight,
             cam_feats=last_cam_feats,
@@ -207,7 +208,7 @@ class BEVTaskVan(torch.nn.Module):
                     if log_text:
                         per_task_bev = log_grad_norm(
                             per_task_bev,
-                            self.writer,
+                            writer,
                             f"grad/norm/{task_type}",
                             name,
                             global_step,
@@ -226,7 +227,7 @@ class BEVTaskVan(torch.nn.Module):
         if len(self.hr_tasks) > 0:
             _run_tasks("hr_bev", self.hr_tasks, hr_bev)
 
-        if log_text and (writer := self.writer) is not None:
+        if log_text and writer is not None:
             writer.add_scalars(
                 "task_times",
                 task_times,

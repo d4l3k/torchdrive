@@ -54,7 +54,6 @@ class TestBEV(unittest.TestCase):
             hr_dim=hr_dim,
             num_encode_frames=2,
             num_backprop_frames=1,
-            writer=MagicMock(),
             backbone=RiceBackbone(
                 dim=dim,
                 cam_dim=dim,
@@ -73,9 +72,9 @@ class TestBEV(unittest.TestCase):
                 RandomRotation(),
             ),
         )
-        losses = m(dummy_batch(), global_step=500)
+        writer = MagicMock()
+        losses = m(dummy_batch(), global_step=500, writer=writer, output="/tmp/out")
         self.assertCountEqual(losses.keys(), ["dummy-foo", "hr_dummy-foo"])
-        writer = m.writer
         self.assertIsNotNone(writer)
         self.assertEqual(writer.add_scalar.call_count, 2)
         self.assertEqual(

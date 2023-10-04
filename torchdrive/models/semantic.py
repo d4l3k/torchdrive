@@ -166,8 +166,6 @@ class BDD100KSemSeg:
 
 
 if __name__ == "__main__":
-    from functools import partial
-
     dtype = torch.half
     device = torch.device("cuda")
     m = BDD100KSemSeg(device=device, mmlab=False, compile_fn=torch.compile)

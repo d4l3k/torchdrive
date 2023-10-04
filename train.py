@@ -23,20 +23,9 @@ from torch.utils.tensorboard import SummaryWriter
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
 
-from torchdrive.datasets.dataset import Dataset, Datasets
+from torchdrive.datasets.dataset import Dataset
 from torchdrive.dist import run_ddp_concat
-from torchdrive.models.bev_backbone import BEVBackbone
-from torchdrive.tasks.ae import AETask
-from torchdrive.tasks.bev import BEVTask, BEVTaskVan
-from torchdrive.tasks.det import DetTask
-from torchdrive.tasks.path import PathTask
-from torchdrive.tasks.voxel import VoxelTask
-from torchdrive.transforms.batch import (
-    Compose,
-    NormalizeCarPosition,
-    RandomRotation,
-    RandomTranslation,
-)
+from torchdrive.train_config import create_parser
 from tqdm import tqdm
 
 
@@ -48,53 +37,13 @@ def tuple_int(s: str) -> Tuple[int, ...]:
     return tuple(int(v) for v in s.split(","))
 
 
-parser = argparse.ArgumentParser(description="train")
-parser.add_argument("--output", required=True, type=str, default="out")
-parser.add_argument("--load", type=str)
-parser.add_argument("--epochs", type=int, default=20)
-parser.add_argument("--lr", type=float, default=1e-4)
-parser.add_argument(
-    "--dataset", type=str, choices=list(Datasets), required=True
-)  # pyre-fixme[6]: list(Datasets)
-parser.add_argument("--dataset_path", type=str, required=True)
-parser.add_argument("--masks", type=str, required=True)
-parser.add_argument("--batch_size", type=int, default=10)
-parser.add_argument("--step_size", type=int, default=15)
-parser.add_argument("--num_workers", type=int, default=16)
-parser.add_argument(
-    "--cameras",
-    default="main,narrow,fisheye,leftpillar,rightpillar,leftrepeater,rightrepeater,backup",
-    type=tuple_str,
-)
-parser.add_argument("--dim", type=int, required=True)
-parser.add_argument("--cam_dim", type=int, required=True)
-parser.add_argument("--hr_dim", type=int)
-parser.add_argument("--bev_shape", type=tuple_int, required=True)
-parser.add_argument("--cam_shape", type=tuple_int, required=True)
-parser.add_argument("--backbone", type=str, required=True)
-parser.add_argument("--cam_encoder", type=str, required=True)
-parser.add_argument("--skip_load_optim", default=False, action="store_true")
-parser.add_argument("--anomaly-detection", default=False, action="store_true")
-parser.add_argument("--limit_size", type=int)
-parser.add_argument("--grad_clip", type=float, default=1.0)
-parser.add_argument("--checkpoint_every", type=int, default=2000)
-parser.add_argument("--num_encode_frames", type=int, default=3)
-parser.add_argument("--profile", default=False, action="store_true")
-parser.add_argument(
-    "--grad_sizes", default=False, action="store_true", help="log grad sizes"
-)
-parser.add_argument(
-    "--compile", default=False, action="store_true", help="use torch.compile"
-)
-
-# tasks
-parser.add_argument("--det", default=False, action="store_true")
-parser.add_argument("--ae", default=False, action="store_true")
-parser.add_argument("--voxel", default=False, action="store_true")
-parser.add_argument("--voxelsem", default=None, type=tuple_str)
-parser.add_argument("--path", default=False, action="store_true")
-
+parser = create_parser()
 args: argparse.Namespace = parser.parse_args()
+
+import importlib
+
+config_module = importlib.import_module("configs." + args.config)
+config = config_module.CONFIG
 
 os.makedirs(args.output, exist_ok=True)
 
@@ -113,8 +62,8 @@ device = torch.device(device_id)
 
 torch.set_float32_matmul_precision("high")
 
-BS: int = args.batch_size
-NUM_EPOCHS: int = args.epochs
+BS: int = config.batch_size
+NUM_EPOCHS: int = config.epochs
 
 if RANK == 0:
     writer: Optional[SummaryWriter] = SummaryWriter(
@@ -134,31 +83,7 @@ else:
     writer = None
 
 
-dataset: Dataset
-if args.dataset == Datasets.RICE:
-    from torchdrive.datasets.rice import MultiCamDataset
-
-    dataset = MultiCamDataset(
-        index_file=args.dataset_path,
-        mask_dir=args.masks,
-        cameras=args.cameras,
-        dynamic=True,
-        cam_shape=args.cam_shape,
-        # 3 encode frames, 3 decode frames, overlap last frame
-        nframes_per_point=args.num_encode_frames + 2,
-        limit_size=args.limit_size,
-    )
-elif args.dataset == Datasets.NUSCENES:
-    from torchdrive.datasets.nuscenes_dataset import NuscenesDataset
-
-    dataset = NuscenesDataset(
-        data_dir=args.dataset_path,
-        # version="v1.0-mini",
-        lidar=True,
-    )
-else:
-    raise ValueError(f"unknown dataset type {args.dataset}")
-
+dataset: Dataset = config.create_dataset()
 
 if RANK == 0:
     print(f"trainset size {len(dataset)}")
@@ -189,153 +114,8 @@ if args.compile:
 
     compile_fn = compile_parent
 
-if args.backbone == "rice":
-    from torchdrive.models.bev import RiceBackbone
+model = config.create_model(device=device, compile_fn=compile_fn)
 
-    h: int
-    w: int
-    h, w = args.cam_shape
-    backbone: BEVBackbone = RiceBackbone(
-        dim=args.dim,
-        cam_dim=args.cam_dim,
-        bev_shape=args.bev_shape,
-        input_shape=(h // 16, w // 16),
-        hr_dim=args.hr_dim,
-        num_frames=3,
-        cameras=dataset.cameras,
-        num_upsamples=4,
-    )
-elif args.backbone == "simple_bev":
-    from torchdrive.models.simple_bev import SegnetBackbone
-
-    num_upsamples: int = 1
-    adjust: int = 2**num_upsamples
-
-    backbone = SegnetBackbone(
-        grid_shape=(256 // adjust, 256 // adjust, 8 // adjust),
-        dim=args.dim,
-        hr_dim=args.hr_dim,
-        cam_dim=args.cam_dim,
-        num_frames=3,
-        scale=3 / adjust,
-        num_upsamples=num_upsamples,
-        compile_fn=compile_fn,
-    )
-elif args.backbone == "simple_bev3d":
-    from torchdrive.models.simple_bev import Segnet3DBackbone
-
-    num_upsamples: int = 1
-    adjust: int = 2**num_upsamples
-
-    backbone = Segnet3DBackbone(
-        grid_shape=(256 // adjust, 256 // adjust, 16 // adjust),
-        dim=args.dim,
-        hr_dim=args.hr_dim,
-        cam_dim=args.cam_dim,
-        num_frames=3,
-        scale=3 / adjust,
-        num_upsamples=num_upsamples,
-        compile_fn=compile_fn,
-    )
-else:
-    raise ValueError(f"unknown backbone {args.backbone}")
-
-if args.cam_encoder == "regnet":
-    from torchdrive.models.regnet import RegNetEncoder
-
-    h: int
-    w: int
-    h, w = args.cam_shape
-
-    cam_feats_shape: Tuple[int, int] = (h // 16, w // 16)
-
-    def cam_encoder() -> RegNetEncoder:
-        return RegNetEncoder(
-            cam_shape=args.cam_shape,
-            dim=args.cam_dim,
-        )
-
-elif args.cam_encoder == "simple_regnet":
-    from torchdrive.models.simple_bev import RegNetEncoder
-    from torchvision import models
-
-    h: int
-    w: int
-    h, w = args.cam_shape
-
-    cam_feats_shape = (h // 8, w // 8)
-
-    def cam_encoder() -> RegNetEncoder:
-        return RegNetEncoder(
-            C=args.cam_dim, regnet=models.regnet_x_800mf(pretrained=True)
-        )
-
-else:
-    raise ValueError(f"unknown cam encoder {args.cam_encoder}")
-
-tasks: Dict[str, BEVTask] = {}
-hr_tasks: Dict[str, BEVTask] = {}
-if args.path:
-    tasks["path"] = PathTask(
-        bev_shape=args.bev_shape,
-        bev_dim=args.dim,
-        dim=args.dim,
-        # compile_fn=compile_fn,
-    )
-if args.det:
-    tasks["det"] = DetTask(
-        cameras=dataset.cameras,
-        cam_shape=args.cam_shape,
-        bev_shape=args.bev_shape,
-        dim=args.dim,
-        device=device,
-        compile_fn=compile_fn,
-    )
-if args.ae:
-    tasks["ae"] = AETask(
-        cameras=dataset.cameras,
-        cam_shape=args.cam_shape,
-        bev_shape=args.bev_shape,
-        dim=args.dim,
-    )
-if args.voxel:
-    hr_tasks["voxel"] = VoxelTask(
-        cameras=dataset.cameras,
-        cam_shape=args.cam_shape,
-        dim=args.dim,
-        hr_dim=args.hr_dim,
-        cam_dim=args.cam_dim,
-        cam_feats_shape=cam_feats_shape,
-        height=16,
-        z_offset=0.4,
-        device=device,
-        semantic=args.voxelsem,
-        # camera_overlap=dataset.CAMERA_OVERLAP,
-        compile_fn=compile_fn,
-    )
-
-model = BEVTaskVan(
-    tasks=tasks,
-    hr_tasks=hr_tasks,
-    bev_shape=args.bev_shape,
-    cam_shape=args.cam_shape,
-    cameras=dataset.cameras,
-    dim=args.dim,
-    hr_dim=args.hr_dim,
-    writer=writer,
-    output=args.output,
-    compile_fn=compile_fn,
-    num_encode_frames=args.num_encode_frames,
-    backbone=backbone,
-    cam_encoder=cam_encoder,
-    transform=Compose(
-        NormalizeCarPosition(start_frame=args.num_encode_frames - 1),
-        RandomRotation(),
-        RandomTranslation(distances=(5.0, 5.0, 0.0)),
-    ),
-)
-
-model = model.to(device)
 if False and WORLD_SIZE > 1:
     ddp_model: torch.nn.Module = DistributedDataParallel(
         model,
@@ -349,8 +129,8 @@ else:
 if RANK == 0:
     print(torchinfo.summary(model))
 
-params: List[Dict[str, Union[object, List[object]]]] = model.param_opts(args.lr)
-lr_groups: List[float] = [p["lr"] if "lr" in p else args.lr for p in params]
+params: List[Dict[str, Union[object, List[object]]]] = model.param_opts(config.lr)
+lr_groups: List[float] = [p["lr"] if "lr" in p else config.lr for p in params]
 name_groups: List[str] = [cast(str, p["name"]) for p in params]
 flat_params: Set[object] = set()
 ddp_params: Iterator[Parameter] = ddp_model.parameters()
@@ -361,10 +141,12 @@ for p in ddp_params:
     assert p in flat_params
 optimizer = optim.AdamW(
     params,
-    lr=args.lr,
+    lr=config.lr,
     weight_decay=1e-2,  # 1e-4
 )  # increased to reduce exploding gradients
-lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.1)
+lr_scheduler = optim.lr_scheduler.StepLR(
+    optimizer, step_size=config.step_size, gamma=0.1
+)
 # scaler is only needed for fp16 not bf16
 # scaler: amp.GradScaler = amp.GradScaler()
 scaler: Optional[amp.GradScaler] = None
@@ -443,13 +225,13 @@ sampler: DistributedSampler[Dataset] = DistributedSampler(
 dataloader = DataLoader[Batch](
     dataset,
     batch_size=None,
-    num_workers=args.num_workers,
+    num_workers=config.num_workers,
     # drop_last=True,
     # collate_fn=nonstrict_collate,
     pin_memory=True,
     sampler=sampler,
 )
-collator = TransferCollator(dataloader, batch_size=args.batch_size, device=device)
+collator = TransferCollator(dataloader, batch_size=config.batch_size, device=device)
 
 
 meaned_losses: Dict[str, Union[float, torch.Tensor]] = {}
@@ -505,7 +287,9 @@ for epoch in range(NUM_EPOCHS):
 
         optimizer.zero_grad(set_to_none=True)
 
-        losses = ddp_model(batch, global_step, scaler)
+        losses = ddp_model(
+            batch, global_step, scaler, writer=writer, output=args.output
+        )
         loss: torch.Tensor = cast(torch.Tensor, sum(losses.values()))
         assert not loss.requires_grad
 
@@ -534,9 +318,11 @@ for epoch in range(NUM_EPOCHS):
                 writer.add_scalar("grad/max", max_grad, global_step)
                 writer.add_scalar("grad/max_weight", max_weight, global_step)
                 writer.add_text("grad/max_name", max_param, global_step)
-        if args.grad_clip > 0:
+        if config.grad_clip > 0:
             # clip gradients to avoid loss explosion
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(), max_norm=config.grad_clip
+            )
 
         if scaler:
             scaler.step(optimizer)
