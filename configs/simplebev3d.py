@@ -13,7 +13,7 @@ CONFIG = TrainConfig(
     ],
     dim=256,
     cam_dim=96,
-    hr_dim=128,
+    hr_dim=384,
     backbone="simple_bev3d",
     cam_encoder="simple_regnet",
     num_encode_frames=3,
@@ -29,7 +29,7 @@ CONFIG = TrainConfig(
     dataset_path="/mnt/ext3/nuscenes",
     mask_path="n/a",  # only used for rice dataset
     num_workers=6,
-    batch_size=4,
+    batch_size=2,
     # tasks
     det=False,
     ae=False,

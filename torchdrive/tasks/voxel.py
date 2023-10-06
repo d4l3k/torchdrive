@@ -167,8 +167,9 @@ class VoxelTask(BEVTask):
 
         h, w = cam_shape
 
+        voxel_dim = max(hr_dim//height, 1)
         self.decoder: nn.Module = compile_fn(
-            nn.Conv2d(hr_dim, self.num_elem * height, kernel_size=1)
+            nn.Conv3d(voxel_dim, self.num_elem, kernel_size=1)
         )
         resnet_init(self.decoder)
 
@@ -230,7 +231,7 @@ class VoxelTask(BEVTask):
         bev_shape = bev.shape[2:]
 
         with autocast():
-            embedding = self.decoder(bev).unflatten(1, (self.num_elem, self.height))
+            embedding = self.decoder(bev)#.unflatten(1, (self.num_elem, self.height))
         # convert back to float so sigmoid works
         embedding = embedding.float()
 
@@ -244,7 +245,8 @@ class VoxelTask(BEVTask):
 
         grid = grid.permute(0, 1, 4, 3, 2)
         feat_grid = feat_grid.permute(0, 1, 4, 3, 2)
-        # grid, _ = axis_grid(grid)
+        #agrid, _ = axis_grid(grid)
+        #grid = (grid+agrid).clamp(min=0, max=1)
 
         if ctx.log_text:
             ctx.add_scalars(
@@ -464,8 +466,8 @@ class VoxelTask(BEVTask):
                 dynamic_masks[cam] = torch.zeros(BS, 1, h // 2, w // 2, device=device)
 
         volumes = Volumes(
-            densities=grid.permute(0, 1, 4, 3, 2),
-            features=feat_grid.permute(0, 1, 4, 3, 2).float()
+            densities=grid.permute(0, 1, 4, 2, 3),
+            features=feat_grid.permute(0, 1, 4, 2, 3).float()
             if feat_grid is not None
             else None,
             voxel_size=1 / self.scale,
@@ -513,6 +515,7 @@ class VoxelTask(BEVTask):
         for cam in self.cameras:
             K = batch.K[cam]
             # create world to camera transformation matrix
+            #T = batch.world_to_cam(cam, start_frame)
             T = batch.world_to_cam(cam, start_frame)
             cameras = CustomPerspectiveCameras(
                 T=T,

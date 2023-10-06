@@ -33,6 +33,7 @@ import numpy as np
 import torch
 import torchvision
 from pytorch3d.transforms.transform3d import Transform3d
+from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
 from torchvision import transforms
 from torchvision.models.resnet import resnet18
@@ -909,8 +910,8 @@ class Segnet3DBackbone(BEVBackbone):
         per_voxel_dim = max(hr_dim // (Z * 2), 1)
         assert num_upsamples == 1, "only one upsample supported"
         self.upsample: nn.Module = compile_fn(Upsample3DBlock(cam_dim, per_voxel_dim))
-        self.final_project = nn.Conv2d(per_voxel_dim * Z * 2, hr_dim, 1)
-        self.hr_project = nn.Conv2d(dim // HR_Z * HR_Z, dim, 1)
+        #self.final_project = nn.Conv2d(per_voxel_dim * Z * 2, hr_dim, 1)
+        #self.hr_project = nn.Conv2d(dim // HR_Z * HR_Z, dim, 1)
 
         # pyre-fixme[6]: invalid parameter type
         self.lift_cam_to_voxel_mean: nn.Module = compile_fn(lift_cam_to_voxel_mean)
@@ -922,13 +923,15 @@ class Segnet3DBackbone(BEVBackbone):
         S = len(camera_features) * self.num_frames
         device = batch.device()
 
-        voxel_to_world = (
-            Transform3d(device=device)
-            .translate(*self.center)
-            .scale(1 / self.scale)
-            .get_matrix()
-            .permute(0, 2, 1)
+        self.volume_locator = VolumeLocator(
+            batch_size=BS,
+            grid_sizes=self.grid_shape[::-1], # [z, y, x]
+            voxel_size=1/self.scale,
+            volume_translation=(0, 0, -8*0.4/self.scale), #-self.center,
+            device=device,
         )
+
+        voxel_to_world = self.volume_locator.get_local_to_world_coords_transform().get_matrix().permute(0, 2, 1)
 
         features = []
         Ks = []
@@ -950,13 +953,12 @@ class Segnet3DBackbone(BEVBackbone):
         T = torch.stack(Ts, dim=1)
         feat_mem = self.lift_cam_to_voxel_mean(feature, K, T, self.grid_shape)
 
+
         with autocast():
             # run through FPN
-            x, x4 = self.fpn(feat_mem)
-            x = self.upsample(x)
-            x = x.flatten(1, 2)
-            x = self.final_project(x)
+            x = feat_mem
+            _x, x4 = self.fpn(x)
+            assert x.shape == feat_mem.shape
 
-            x4 = x4.flatten(1, 2)
-            x4 = self.hr_project(x4)
+            x = self.upsample(x)
             return x, x4

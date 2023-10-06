@@ -170,11 +170,11 @@ class BEVTaskVan(torch.nn.Module):
 
         if log_img and writer:
             writer.add_image(
-                "bev/bev", render_color(bev[0].sum(dim=0)), global_step=global_step
+                "bev/bev", render_color(bev[0].sum(dim=(0, 1))), global_step=global_step
             )
             writer.add_image(
                 "bev/hr_bev",
-                render_color(hr_bev[0].sum(dim=0)),
+                render_color(hr_bev[0].sum(dim=(0, 1))),
                 global_step=global_step,
             )
 
