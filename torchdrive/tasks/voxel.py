@@ -1008,7 +1008,7 @@ class VoxelTask(BEVTask):
             scales=3,
             mask=mask,
         )
-        sem_loss = sem_loss * per_pixel_weights * 100 * 1000 / 16
+        sem_loss = sem_loss * per_pixel_weights * 100 * 1000 / 32
 
         if ctx.log_text:
             pred_min, pred_max = semantic_classes.aminmax()
