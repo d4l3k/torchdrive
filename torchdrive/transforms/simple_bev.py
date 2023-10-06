@@ -38,7 +38,7 @@ def lift_cam_to_voxel(
 
     # calculate the x/y/z coordinates for each voxel in the grid
     channels = torch.meshgrid(
-        *(torch.arange(-1, 1-1e-8, 2/dim, device=device) for dim in grid_shape),
+        *(torch.arange(-1, 1 - 1e-8, 2 / dim, device=device) for dim in grid_shape),
         indexing="ij",
     )
     ones = torch.ones(*grid_shape, device=device)

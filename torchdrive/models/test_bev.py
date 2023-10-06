@@ -2,6 +2,8 @@ import unittest
 
 import torch
 
+from torchdrive.data import dummy_batch
+
 from torchdrive.models.bev import (
     BEVMerger,
     BEVUpsampler,
@@ -74,12 +76,17 @@ class TestBEVTransformer(unittest.TestCase):
         self.assertEqual(out.shape, (2, 3, 16, 16))
 
     def test_rice_backbone(self) -> None:
+        batch = dummy_batch()
         cameras = ["left", "right"]
         num_frames = 2
+        latent_dim = 16
+        X = 8
+        Y = 16
+        Z = 24
         m = RiceBackbone(
             cam_dim=15,
             dim=16,
-            bev_shape=(4, 4),
+            grid_shape=(X, Y, Z),
             input_shape=(4, 6),
             hr_dim=4,
             num_upsamples=1,
@@ -89,5 +96,7 @@ class TestBEVTransformer(unittest.TestCase):
         x, x4 = m(
             {cam: [torch.rand(2, 15, 4, 6)] * num_frames for cam in cameras}, None
         )
-        self.assertEqual(x.shape, (2, 4, 8, 8))
-        self.assertEqual(x4.shape, (2, 16, 4, 4))
+        # self.assertEqual(x.shape, (2, 4, 8, 8))
+        # self.assertEqual(x4.shape, (2, 16, 4, 4))
+        self.assertEqual(x.shape, (batch.batch_size(), 1, Z * 2, X * 2, Y * 2))
+        self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X, Y))

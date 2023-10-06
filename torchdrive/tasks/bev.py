@@ -39,8 +39,6 @@ class BEVTaskVan(torch.nn.Module):
         cam_encoder: Callable[[], nn.Module],
         tasks: Dict[str, BEVTask],
         hr_tasks: Dict[str, BEVTask],
-        cam_shape: Tuple[int, int],
-        bev_shape: Tuple[int, int],
         cameras: List[str],
         dim: int,
         hr_dim: int,
@@ -72,7 +70,6 @@ class BEVTaskVan(torch.nn.Module):
             {cam: compile_fn(cam_encoder()) for cam in cameras}
         )
 
-        self.cam_shape = cam_shape
         self.tasks = nn.ModuleDict(tasks)
 
         assert (len(tasks) + len(hr_tasks)) > 0, "no tasks specified"
@@ -170,7 +167,7 @@ class BEVTaskVan(torch.nn.Module):
 
         if log_img and writer:
             writer.add_image(
-                "bev/bev", render_color(bev[0].sum(dim=(0, 1))), global_step=global_step
+                "bev/bev", render_color(bev[0].sum(dim=0)), global_step=global_step
             )
             writer.add_image(
                 "bev/hr_bev",

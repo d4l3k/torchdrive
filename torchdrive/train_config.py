@@ -16,7 +16,8 @@ class TrainConfig:
     dim: int
     cam_dim: int
     hr_dim: int
-    bev_shape: Tuple[int, int]
+    num_upsamples: int  # number of upsamples to do after the backbone
+    grid_shape: Tuple[int, int, int]  # [x, y, z]
     cam_shape: Tuple[int, int]
     backbone: str
     cam_encoder: str
@@ -82,6 +83,9 @@ class TrainConfig:
             RandomTranslation,
         )
 
+        adjust: int = 2**self.num_upsamples
+        adjusted_grid_shape = tuple(v // adjust for v in self.grid_shape)
+
         if self.backbone == "rice":
             from torchdrive.models.bev import RiceBackbone
 
@@ -91,43 +95,37 @@ class TrainConfig:
             backbone: BEVBackbone = RiceBackbone(
                 dim=self.dim,
                 cam_dim=self.cam_dim,
-                bev_shape=self.bev_shape,
-                input_shape=(h // 16, w // 16),
+                grid_shape=adjusted_grid_shape,
+                input_shape=(h // adjust, w // adjust),
                 hr_dim=self.hr_dim,
                 num_frames=3,
                 cameras=self.cameras,
-                num_upsamples=4,
+                num_upsamples=self.num_upsamples,
             )
         elif self.backbone == "simple_bev":
             from torchdrive.models.simple_bev import SegnetBackbone
 
-            num_upsamples: int = 1
-            adjust: int = 2**num_upsamples
-
             backbone = SegnetBackbone(
-                grid_shape=(256 // adjust, 256 // adjust, 8 // adjust),
+                grid_shape=adjusted_grid_shape,
                 dim=self.dim,
                 hr_dim=self.hr_dim,
                 cam_dim=self.cam_dim,
                 num_frames=3,
                 scale=3 / adjust,
-                num_upsamples=num_upsamples,
+                num_upsamples=self.num_upsamples,
                 compile_fn=compile_fn,
             )
         elif self.backbone == "simple_bev3d":
             from torchdrive.models.simple_bev import Segnet3DBackbone
 
-            num_upsamples: int = 1
-            adjust: int = 2**num_upsamples
-
             backbone = Segnet3DBackbone(
-                grid_shape=(256 // adjust, 256 // adjust, 16 // adjust),
+                grid_shape=adjusted_grid_shape,
                 dim=self.dim,
                 hr_dim=self.hr_dim,
                 cam_dim=self.cam_dim,
                 num_frames=3,
                 scale=3 / adjust,
-                num_upsamples=num_upsamples,
+                num_upsamples=self.num_upsamples,
                 compile_fn=compile_fn,
             )
         else:
@@ -208,8 +206,8 @@ class TrainConfig:
                 hr_dim=self.hr_dim,
                 cam_dim=self.cam_dim,
                 cam_feats_shape=cam_feats_shape,
-                height=16,
-                z_offset=0.4,
+                height=self.grid_shape[2],  # z
+                z_offset=0.4,  # TODO: share across SimpleBev and here
                 device=device,
                 semantic=self.voxelsem,
                 # camera_overlap=dataset.CAMERA_OVERLAP,
@@ -219,8 +217,6 @@ class TrainConfig:
         model = BEVTaskVan(
             tasks=tasks,
             hr_tasks=hr_tasks,
-            bev_shape=self.bev_shape,
-            cam_shape=self.cam_shape,
             cameras=self.cameras,
             dim=self.dim,
             hr_dim=self.hr_dim,

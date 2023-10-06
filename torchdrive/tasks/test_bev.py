@@ -41,14 +41,13 @@ class TestBEV(unittest.TestCase):
     def test_bev_task_van(self) -> None:
         cam_shape = (48, 64)
         bev_shape = (4, 4)
+        grid_shape = (4, 4, 4)
         cameras = ["left", "right"]
         dim = 8
         hr_dim = 1
         m = BEVTaskVan(
             tasks={"dummy": DummyBEVTask()},
             hr_tasks={"hr_dummy": DummyBEVTask()},
-            cam_shape=cam_shape,
-            bev_shape=bev_shape,
             cameras=cameras,
             dim=dim,
             hr_dim=hr_dim,
@@ -58,7 +57,7 @@ class TestBEV(unittest.TestCase):
                 dim=dim,
                 cam_dim=dim,
                 hr_dim=hr_dim,
-                bev_shape=bev_shape,
+                grid_shape=grid_shape,
                 input_shape=(48 // 16, 64 // 16),
                 num_frames=2,
                 cameras=cameras,

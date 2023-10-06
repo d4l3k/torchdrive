@@ -99,7 +99,7 @@ class TestSimpleBEV(unittest.TestCase):
             for feat in feats:
                 feat.requires_grad = True
         x, x4 = m(camera_features, batch)
-        self.assertEqual(x.shape, (batch.batch_size(), hr_dim, X * 2, Y * 2))
+        self.assertEqual(x.shape, (batch.batch_size(), 1, Z * 2, X * 2, Y * 2))
         self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X // 8, Y // 8))
         (x.mean() + x4.mean()).backward()
 
@@ -169,7 +169,7 @@ class TestSimpleBEV(unittest.TestCase):
             for feat in feats:
                 feat.requires_grad = True
         x, x4 = m(camera_features, batch)
-        self.assertEqual(x.shape, (batch.batch_size(), hr_dim, X * 2, Y * 2))
+        self.assertEqual(x.shape, (batch.batch_size(), 1, Z * 2, X * 2, Y * 2))
         self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X // 8, Y // 8))
         (x.mean() + x4.mean()).backward()
 

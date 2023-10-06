@@ -220,7 +220,7 @@ class RiceBackbone(BEVBackbone):
         dim: int,
         hr_dim: int,
         cam_dim: int,
-        bev_shape: Tuple[int, int],
+        grid_shape: Tuple[int, int, int],  # [x, y, z]
         input_shape: Tuple[int, int],
         num_frames: int,
         cameras: List[str],
@@ -229,6 +229,9 @@ class RiceBackbone(BEVBackbone):
         super().__init__()
 
         self.num_frames = num_frames
+        bev_shape = grid_shape[:2]  # [x, y]
+        self.out_Z = grid_shape[2] * 2**num_upsamples
+        self.voxel_dim = max(hr_dim // self.out_Z, 1)
 
         self.cam_transformers = nn.ModuleDict(
             {
@@ -254,11 +257,11 @@ class RiceBackbone(BEVBackbone):
             dim=dim,
             output_dim=hr_dim,
         )
+        self.project_voxel = nn.Conv2d(hr_dim, self.voxel_dim * self.out_Z, 1)
 
     def forward(
         self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-
         with autocast():
             bev_grids = []
 
@@ -272,5 +275,7 @@ class RiceBackbone(BEVBackbone):
             bev = self.frame_merger(bev_grids)
 
             hr_bev = self.upsample(bev)
+            hr_bev = self.project_voxel(hr_bev)
+            hr_bev = hr_bev.unflatten(1, (self.voxel_dim, self.out_Z))
 
             return hr_bev, bev
