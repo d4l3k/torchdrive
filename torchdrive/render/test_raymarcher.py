@@ -9,6 +9,7 @@ from pytorch3d.renderer.implicit.utils import RayBundle
 from torchdrive.render.raymarcher import (
     CustomPerspectiveCameras,
     DepthEmissionRaymarcher,
+    DepthEmissionSoftmaxRaymarcher,
 )
 
 
@@ -78,3 +79,26 @@ class TestRaymarcher(unittest.TestCase):
             device=torch.device("cpu"),
         )
         self.assertIsNotNone(cameras.get_world_to_view_transform())
+
+    def test_depth_emission_softmax(self) -> None:
+        BS = 2
+        X = 3
+        Y = 3
+        PTS_PER_RAY = 4
+        FEATS = 5
+        raymarcher = DepthEmissionSoftmaxRaymarcher()
+        ray_densities = torch.rand(BS, X, Y, PTS_PER_RAY, 1, requires_grad=True)
+        ray_features = torch.rand(BS, X, Y, PTS_PER_RAY, FEATS, requires_grad=True)
+        depth, features = raymarcher(
+            rays_densities=ray_densities.clone(),
+            rays_features=ray_features.clone(),
+            ray_bundle=RayBundle(
+                origins=torch.rand(BS, X, Y, 3),
+                directions=torch.rand(BS, X, Y, 3),
+                lengths=torch.rand(BS, X, Y, PTS_PER_RAY),
+                xys=torch.rand(BS, X, Y, 2),
+            ),
+        )
+        self.assertEqual(depth.shape, (BS, X, Y))
+        self.assertEqual(features.shape, (BS, X, Y, FEATS))
+        (depth.mean() + features.mean()).backward()

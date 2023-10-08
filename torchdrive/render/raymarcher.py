@@ -12,6 +12,8 @@ class DepthEmissionRaymarcher(torch.nn.Module):
     This is a Pytorch3D raymarcher that renders out both depth and emission.
     This is useful for doing a joint depth render as well as semantic class
     label rendering for semantic purposes.
+
+    This uses cumsum for the weighting function.
     """
 
     def __init__(
@@ -98,6 +100,57 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         probs = rays_densities[..., 0].cumsum_(dim=-1)
         probs = probs.clamp_(max=1)
         probs = probs.diff(dim=-1, prepend=torch.zeros((*ray_shape, 1), device=device))
+
+        depth = (probs * ray_bundle.lengths).sum(dim=-1)
+        features = (probs.unsqueeze(-1) * rays_features).sum(dim=-2)
+
+        return depth, features
+
+
+class DepthEmissionSoftmaxRaymarcher(torch.nn.Module):
+    """
+    This is a Pytorch3D raymarcher that renders out both depth and emission.
+    This is useful for doing a joint depth render as well as semantic class
+    label rendering for semantic purposes.
+
+    This uses softmax as the weighting function.
+    """
+
+    def forward(
+        self,
+        rays_densities: torch.Tensor,
+        rays_features: torch.Tensor,
+        ray_bundle: "RayBundle",
+        eps: float = 1e-10,
+        **kwargs: object,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            rays_densities: Per-ray density values represented with a tensor
+                of shape `(..., n_points_per_ray, 1)` whose values range in [0, 1].
+            rays_features: Per-ray feature values represented with a tensor
+                of shape `(..., n_points_per_ray, feature_dim)`.
+            ray_bundle: the bundle of rays to use
+            eps: A lower bound added to `rays_densities` before computing
+                the absorption function (cumprod of `1-rays_densities` along
+                each ray). This prevents the cumprod to yield exact 0
+                which would inhibit any gradient-based learning.
+        Returns:
+            features_opacities: A tensor of shape `(..., feature_dim+1)`
+                that concatenates two tensors along the last dimension:
+                    1) features: A tensor of per-ray renders
+                        of shape `(..., feature_dim)`.
+                    2) opacities: A tensor of per-ray opacity values
+                        of shape `(..., 1)`. Its values range between [0, 1] and
+                        denote the total amount of light that has been absorbed
+                        for each ray. E.g. a value of 0 corresponds to the ray
+                        completely passing through a volume. Please refer to the
+                        `AbsorptionOnlyRaymarcher` documentation for the
+                        explanation of the algorithm that computes `opacities`.
+        """
+        device = rays_densities.device
+
+        probs = rays_densities[..., 0].softmax(dim=-1)
 
         depth = (probs * ray_bundle.lengths).sum(dim=-1)
         features = (probs.unsqueeze(-1) * rays_features).sum(dim=-2)
