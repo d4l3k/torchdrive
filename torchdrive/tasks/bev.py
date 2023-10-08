@@ -125,6 +125,7 @@ class BEVTaskVan(torch.nn.Module):
 
             # individual frames
             camera_feats = {cam: [] for cam in dropout_cameras}
+            last_cam_feats_resume = []
 
             # these first set of frames don't use backprop so set them to eval
             # mode and don't collect gradient
@@ -136,8 +137,8 @@ class BEVTaskVan(torch.nn.Module):
                     inp = batch.color[cam][:, 0:first_backprop_frame]
                     feats = encoder(inp.flatten(0, 1)).unflatten(0, inp.shape[0:2])
                     assert not feats.requires_grad
-                    for feat in feats:
-                        camera_feats[cam].append(feat)
+                    for i in range(first_backprop_frame):
+                        camera_feats[cam].append(feats[:, i])
 
             # frames we want backprop for
             for cam in dropout_cameras:
@@ -146,40 +147,44 @@ class BEVTaskVan(torch.nn.Module):
                 encoder.train()
                 inp = batch.color[cam][:, first_backprop_frame : self.num_encode_frames]
                 feats = encoder(inp.flatten(0, 1)).unflatten(0, inp.shape[0:2])
+                num_frames = feats.size(1)
 
-                for i, feat in enumerate(feats):
-                    # pause the last cam encoder backprop for tasks with image
-                    # space losses
-                    if i == (len(feats) - 1):
-                        feat = autograd_pause(feat)
-                        last_cam_feats[cam] = feat
+                # pause the last cam encoder backprop for tasks with image
+                # space losses
+                feats = autograd_pause(feats)
+                last_cam_feats_resume.append(feats)
 
+                for i in range(num_frames):
+                    feat = feats[:, i]
+                    if i == (num_frames - 1):
+                        cam_feat = feat
                         if log_text:
-                            feat = log_grad_norm(
-                                feat,
+                            cam_feat = log_grad_norm(
+                                cam_feat,
                                 writer,
                                 f"grad/norm/encoder/{cam}",
-                                "bev",
+                                "cam_feats",
                                 global_step,
                             )
+                        last_cam_feats[cam] = cam_feat
+
+                    if log_text:
+                        feat = log_grad_norm(
+                            feat,
+                            writer,
+                            f"grad/norm/encoder/{cam}",
+                            "bev",
+                            global_step,
+                        )
                     camera_feats[cam].append(feat)
+
+        for cam_feats in camera_feats.values():
+            assert (
+                len(cam_feats) == self.num_encode_frames
+            ), f"{len(cam_feats)} {self.num_encode_frames}"
 
         with torch.autograd.profiler.record_function("backbone"):
             hr_bev, bev = self.backbone(camera_feats, batch)
-
-        last_cam_feats_resume = last_cam_feats
-
-        if log_text:
-            last_cam_feats = {
-                cam: log_grad_norm(
-                    feat,
-                    writer,
-                    f"grad/norm/encoder/{cam}",
-                    "cam_feats",
-                    global_step,
-                )
-                for cam, feat in last_cam_feats.items()
-            }
 
         if log_img and writer:
             writer.add_image(
@@ -258,6 +263,6 @@ class BEVTaskVan(torch.nn.Module):
         autograd_resume(*to_resume)
 
         # resume autograd on cameras
-        autograd_resume(*last_cam_feats_resume.values())
+        autograd_resume(*last_cam_feats_resume)
 
         return losses
