@@ -19,6 +19,9 @@ class DummyBEVTask(BEVTask):
         bev.mean().backward()
         ctx.add_scalar("test", bev.shape[-1])
 
+        for cam_feat in ctx.cam_feats.values():
+            cam_feat.mean().backward()
+
         # check that start position is at zero
         car_to_world = batch.car_to_world(ctx.start_frame)
         zero = (

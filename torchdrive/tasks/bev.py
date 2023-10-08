@@ -118,24 +118,39 @@ class BEVTaskVan(torch.nn.Module):
         drop_cameras = random.choices(self.cameras, k=self.num_drop_encode_cameras)
         dropout_cameras = set(self.cameras) - set(drop_cameras)
 
-        with autocast():
+        with autocast(), torch.autograd.profiler.record_function("camera_feats"):
             first_backprop_frame = max(
                 self.num_encode_frames - self.num_backprop_frames, 0
             )
-            camera_feats = {cam: [] for cam in dropout_cameras}
-            for frame in range(0, first_backprop_frame):
-                for cam in dropout_cameras:
-                    out = self.camera_encoders[cam](batch.color[cam][:, frame]).detach()
-                    assert not out.requires_grad
-                    camera_feats[cam].append(out)
-            for frame in range(first_backprop_frame, self.num_encode_frames):
-                pause = frame == (self.num_encode_frames - 1)
-                for cam in dropout_cameras:
-                    feat = self.camera_encoders[cam](batch.color[cam][:, frame])
 
+            # individual frames
+            camera_feats = {cam: [] for cam in dropout_cameras}
+
+            # these first set of frames don't use backprop so set them to eval
+            # mode and don't collect gradient
+            with torch.no_grad():
+                for cam in dropout_cameras:
+                    # run frames in parallel
+                    encoder = self.camera_encoders[cam]
+                    encoder.eval()
+                    inp = batch.color[cam][:, 0:first_backprop_frame]
+                    feats = encoder(inp.flatten(0, 1)).unflatten(0, inp.shape[0:2])
+                    assert not feats.requires_grad
+                    for feat in feats:
+                        camera_feats[cam].append(feat)
+
+            # frames we want backprop for
+            for cam in dropout_cameras:
+                # run frames in parallel
+                encoder = self.camera_encoders[cam]
+                encoder.train()
+                inp = batch.color[cam][:, first_backprop_frame : self.num_encode_frames]
+                feats = encoder(inp.flatten(0, 1)).unflatten(0, inp.shape[0:2])
+
+                for i, feat in enumerate(feats):
                     # pause the last cam encoder backprop for tasks with image
                     # space losses
-                    if pause:
+                    if i == (len(feats) - 1):
                         feat = autograd_pause(feat)
                         last_cam_feats[cam] = feat
 
@@ -149,7 +164,8 @@ class BEVTaskVan(torch.nn.Module):
                             )
                     camera_feats[cam].append(feat)
 
-        hr_bev, bev = self.backbone(camera_feats, batch)
+        with torch.autograd.profiler.record_function("backbone"):
+            hr_bev, bev = self.backbone(camera_feats, batch)
 
         last_cam_feats_resume = last_cam_feats
 
