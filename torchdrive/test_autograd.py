@@ -25,6 +25,17 @@ class TestAutograd(unittest.TestCase):
         autograd_resume(t_paused)
         self.assertIsNotNone(t.grad)
 
+    def test_resume_twice(self) -> None:
+        t = torch.zeros(1, 2)
+        t.requires_grad = True
+
+        t_paused = autograd_pause(t)
+        t_paused.sum().backward()
+        autograd_resume(t_paused)
+
+        with self.assertRaisesRegex(RuntimeError, "tensor has already been resumed"):
+            t_paused.sum().backward()
+
     def test_nograd_resume(self) -> None:
         t = torch.zeros(1, 2)
         t.requires_grad = True

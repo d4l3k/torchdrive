@@ -20,6 +20,10 @@ def autograd_pause(tensor: torch.Tensor) -> torch.Tensor:
     return detatched
 
 
+def _fail_resumed(grad: torch.Tensor) -> None:
+    raise RuntimeError("tensor has already been resumed")
+
+
 def autograd_resume(*tensors: torch.Tensor) -> None:
     """
     autograd_resume resumes the backwards pass for the provided tensors that were
@@ -38,6 +42,8 @@ def autograd_resume(*tensors: torch.Tensor) -> None:
         tensors=parents,
         grad_tensors=grad_tensors,
     )
+    for t in tensors:
+        t.register_hook(_fail_resumed)
 
 
 @overload

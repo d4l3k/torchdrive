@@ -203,7 +203,11 @@ def losses_backward(
     loss = sum(weighted_losses.values())
     if scaler:
         loss = scaler.scale(loss)
-    loss.backward()
+    try:
+        loss.backward()
+    except Exception:
+        print(weighted_losses)
+        raise
 
 
 # modified from torchvision to also return the union
