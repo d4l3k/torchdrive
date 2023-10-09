@@ -21,6 +21,7 @@ from torchdrive.render.ray_sampler import LIDARRaySampler
 from torchdrive.render.raymarcher import (
     CustomPerspectiveCameras,
     DepthEmissionRaymarcher,
+    DepthEmissionSoftmaxRaymarcher,
 )
 from torchdrive.render.volume_sampler import VolumeSampler
 from torchdrive.tasks.bev import BEVTask, Context
@@ -191,6 +192,7 @@ class VoxelTask(BEVTask):
             max_depth=self.max_depth,
         )
         self.raymarcher = compile_fn(
+            # DepthEmissionSoftmaxRaymarcher()
             DepthEmissionRaymarcher(
                 floor=None,
                 # background=torch.tensor(background, device=device)
@@ -198,6 +200,7 @@ class VoxelTask(BEVTask):
                 # else None,
                 # wall=False,
                 background=None,
+                voxel_size=1/scale,
             )
         )
         self.renderer = ImplicitRenderer(
@@ -316,7 +319,11 @@ class VoxelTask(BEVTask):
 
             # total variation loss to encourage sharp edges
             tvl1_grid = ctx.log_grad_norm(grid, "grad/norm/grid", "tvl1")
-            losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1)) * 0.25
+            losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1)) * 2.5 * 20
+
+            # we need to run tvl1 loss early as the child losses don't run
+            # backwards on the whole set of losses
+            ctx.backward(losses)
 
             mini_batches = batch.split(self.render_batch_size)
             mini_grids = ctx.log_grad_norm(grid, "grad/norm/grid", "mini_grids")
@@ -486,7 +493,7 @@ class VoxelTask(BEVTask):
                 rays_densities, rays_features = volumetric_function(
                     ray_bundle=ray_bundle,
                 )
-                lidar_depth, _ = self.raymarcher(
+                lidar_depth, _, _ = self.raymarcher(
                     rays_densities=rays_densities,
                     rays_features=rays_features,
                     ray_bundle=ray_bundle,
@@ -526,27 +533,29 @@ class VoxelTask(BEVTask):
                 device=device,
             )
             with torch.autograd.profiler.record_function("render"):
-                (voxel_depth, semantic_img), ray_bundle = self.renderer(
+                (voxel_depth, semantic_img, visible_probs), ray_bundle = self.renderer(
                     cameras=cameras,
                     volumetric_function=volumetric_function,
                     eps=1e-8,
                 )
             semantic_img = semantic_img.permute(0, 3, 1, 2)
 
-            to_pause = [voxel_depth]
+            to_pause = [voxel_depth, visible_probs]
             if self.semantic:
                 to_pause.append(semantic_img)
 
             # pause backwards pass
             with autograd_context(*to_pause) as paused:
                 if self.semantic:
-                    voxel_depth, semantic_img = paused
+                    voxel_depth, visible_probs, semantic_img = paused
                 else:
-                    voxel_depth = paused
+                    voxel_depth, visible_probs = paused
 
                 primary_color = primary_colors[cam]
                 primary_mask = primary_masks[cam]
                 per_pixel_weights = cam_pix_weights[cam]
+
+                losses[f"visible-probs/{cam}"] = visible_probs.sum()
 
                 dynamic_mask = dynamic_masks[cam]
                 if self.semantic:

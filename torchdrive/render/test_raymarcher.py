@@ -30,10 +30,11 @@ class TestRaymarcher(unittest.TestCase):
         raymarcher = DepthEmissionRaymarcher(
             background=torch.tensor([1] + [0] * (FEATS - 1), dtype=torch.float32),
             floor=floor,
+            voxel_size=1/3,
         )
         ray_densities = torch.rand(BS, X, Y, PTS_PER_RAY, 1, requires_grad=True)
         ray_features = torch.rand(BS, X, Y, PTS_PER_RAY, FEATS, requires_grad=True)
-        depth, features = raymarcher(
+        depth, features, visible_probs = raymarcher(
             rays_densities=ray_densities.clone(),
             rays_features=ray_features.clone(),
             ray_bundle=RayBundle(
@@ -54,10 +55,11 @@ class TestRaymarcher(unittest.TestCase):
         FEATS = 5
         raymarcher = DepthEmissionRaymarcher(
             background=torch.tensor([1] + [0] * (FEATS - 1), dtype=torch.float32),
+            voxel_size=1/3,
         )
         ray_densities = torch.rand(BS, X, PTS_PER_RAY, 1, requires_grad=True)
         ray_features = torch.rand(BS, X, PTS_PER_RAY, FEATS, requires_grad=True)
-        depth, features = raymarcher(
+        depth, features, visible_probs = raymarcher(
             rays_densities=ray_densities.clone(),
             rays_features=ray_features.clone(),
             ray_bundle=RayBundle(

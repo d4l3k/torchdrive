@@ -27,6 +27,8 @@ VOXEL_LOSSES = [
     "losssmooth-voxel-disp/right",
     "losssmooth-cam-disp/left",
     "losssmooth-cam-disp/right",
+    "visible-probs/left",
+    "visible-probs/right",
     # "losssmooth-cam-vel/left",
     # "losssmooth-cam-vel/right",
 ]

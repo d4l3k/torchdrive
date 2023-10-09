@@ -18,9 +18,11 @@ class DepthEmissionRaymarcher(torch.nn.Module):
 
     def __init__(
         self,
+        voxel_size: float,
         background: Optional[torch.Tensor] = None,
         floor: Optional[float] = 0,
         wall: bool = True,
+        feature_index: Optional[float] = 0.5,
     ) -> None:
         """
         Args:
@@ -31,12 +33,17 @@ class DepthEmissionRaymarcher(torch.nn.Module):
             wall: whether to make the furthest point density always 1 to avoid
                 failing to sum to 1 and having a too close distance. Optional if
                 the VolumeSampler padding method is not zeros.
+            feature_index: if set uses the depth as a direct index for features
+                and mixes it with the computed features according to the ratio.
+                0.0 means all weighted sum, 1.0 means all index
         """
         super().__init__()
 
         self.floor = floor
         self.background = background
         self.wall = wall
+        self.feature_index = feature_index
+        self.voxel_size = voxel_size
 
     def forward(
         self,
@@ -104,7 +111,23 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         depth = (probs * ray_bundle.lengths).sum(dim=-1)
         features = (probs.unsqueeze(-1) * rays_features).sum(dim=-2)
 
-        return depth, features
+        if self.feature_index is not None:
+            # compute mask of the probs to select the target depth
+            depth_index = torch.zeros_like(probs, dtype=bool).scatter(
+                -1, probs.argmax(-1, keepdim=True), value=True
+            )
+            # get features via index
+            index_features = rays_features[depth_index].reshape(features.shape)
+            # do the weighted sum
+            features = (features * (1 - self.feature_index)) + (
+                index_features * self.feature_index
+            )
+
+        # indexes less than the target depth but not including it
+        visible_indexes =  ray_bundle.lengths < (depth.unsqueeze(-1)-self.voxel_size)
+        visible_probs = probs[visible_indexes]
+
+        return depth, features, visible_probs
 
 
 class DepthEmissionSoftmaxRaymarcher(torch.nn.Module):
