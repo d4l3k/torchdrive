@@ -30,11 +30,11 @@ class TestRaymarcher(unittest.TestCase):
         raymarcher = DepthEmissionRaymarcher(
             background=torch.tensor([1] + [0] * (FEATS - 1), dtype=torch.float32),
             floor=floor,
-            voxel_size=1/3,
+            voxel_size=1 / 3,
         )
         ray_densities = torch.rand(BS, X, Y, PTS_PER_RAY, 1, requires_grad=True)
         ray_features = torch.rand(BS, X, Y, PTS_PER_RAY, FEATS, requires_grad=True)
-        depth, features, visible_probs = raymarcher(
+        depth, features, visible_probs, depth_probs = raymarcher(
             rays_densities=ray_densities.clone(),
             rays_features=ray_features.clone(),
             ray_bundle=RayBundle(
@@ -46,6 +46,7 @@ class TestRaymarcher(unittest.TestCase):
         )
         self.assertEqual(depth.shape, (BS, X, Y))
         self.assertEqual(features.shape, (BS, X, Y, FEATS))
+        self.assertEqual(depth_probs.shape, (BS, X, Y))
         (depth.mean() + features.mean()).backward()
 
     def test_depth_emission_1d(self) -> None:
@@ -55,11 +56,11 @@ class TestRaymarcher(unittest.TestCase):
         FEATS = 5
         raymarcher = DepthEmissionRaymarcher(
             background=torch.tensor([1] + [0] * (FEATS - 1), dtype=torch.float32),
-            voxel_size=1/3,
+            voxel_size=1 / 3,
         )
         ray_densities = torch.rand(BS, X, PTS_PER_RAY, 1, requires_grad=True)
         ray_features = torch.rand(BS, X, PTS_PER_RAY, FEATS, requires_grad=True)
-        depth, features, visible_probs = raymarcher(
+        depth, features, visible_probs, depth_probs = raymarcher(
             rays_densities=ray_densities.clone(),
             rays_features=ray_features.clone(),
             ray_bundle=RayBundle(
@@ -71,6 +72,7 @@ class TestRaymarcher(unittest.TestCase):
         )
         self.assertEqual(depth.shape, (BS, X))
         self.assertEqual(features.shape, (BS, X, FEATS))
+        self.assertEqual(depth_probs.shape, (BS, X))
         (depth.mean() + features.mean()).backward()
 
     def test_cameras(self) -> None:

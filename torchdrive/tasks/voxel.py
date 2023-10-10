@@ -200,7 +200,7 @@ class VoxelTask(BEVTask):
                 # else None,
                 # wall=False,
                 background=None,
-                voxel_size=1/scale,
+                voxel_size=1 / scale,
             )
         )
         self.renderer = ImplicitRenderer(
@@ -493,7 +493,7 @@ class VoxelTask(BEVTask):
                 rays_densities, rays_features = volumetric_function(
                     ray_bundle=ray_bundle,
                 )
-                lidar_depth, _, _ = self.raymarcher(
+                lidar_depth, _, _, _ = self.raymarcher(
                     rays_densities=rays_densities,
                     rays_features=rays_features,
                     ray_bundle=ray_bundle,
@@ -533,29 +533,37 @@ class VoxelTask(BEVTask):
                 device=device,
             )
             with torch.autograd.profiler.record_function("render"):
-                (voxel_depth, semantic_img, visible_probs), ray_bundle = self.renderer(
+                (
+                    voxel_depth,
+                    semantic_img,
+                    visible_probs,
+                    depth_probs,
+                ), ray_bundle = self.renderer(
                     cameras=cameras,
                     volumetric_function=volumetric_function,
                     eps=1e-8,
                 )
             semantic_img = semantic_img.permute(0, 3, 1, 2)
 
-            to_pause = [voxel_depth, visible_probs]
+            to_pause = [voxel_depth, visible_probs, depth_probs]
             if self.semantic:
                 to_pause.append(semantic_img)
 
             # pause backwards pass
             with autograd_context(*to_pause) as paused:
                 if self.semantic:
-                    voxel_depth, visible_probs, semantic_img = paused
+                    voxel_depth, visible_probs, depth_probs, semantic_img = paused
                 else:
-                    voxel_depth, visible_probs = paused
+                    voxel_depth, visible_probs, depth_probs = paused
 
                 primary_color = primary_colors[cam]
                 primary_mask = primary_masks[cam]
                 per_pixel_weights = cam_pix_weights[cam]
 
-                losses[f"visible-probs/{cam}"] = visible_probs.sum()
+                losses[f"visible-probs/{cam}"] = visible_probs.mean() * 1000
+                losses[f"depth-probs/{cam}"] = (
+                    F.l1_loss(depth_probs, torch.ones_like(depth_probs)) * 1000
+                )
 
                 dynamic_mask = dynamic_masks[cam]
                 if self.semantic:

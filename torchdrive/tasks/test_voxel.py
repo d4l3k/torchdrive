@@ -29,6 +29,8 @@ VOXEL_LOSSES = [
     "losssmooth-cam-disp/right",
     "visible-probs/left",
     "visible-probs/right",
+    "depth-probs/left",
+    "depth-probs/right",
     # "losssmooth-cam-vel/left",
     # "losssmooth-cam-vel/right",
 ]

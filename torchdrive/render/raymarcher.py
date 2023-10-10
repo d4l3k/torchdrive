@@ -111,11 +111,14 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         depth = (probs * ray_bundle.lengths).sum(dim=-1)
         features = (probs.unsqueeze(-1) * rays_features).sum(dim=-2)
 
+        # compute mask of the probs to select the target depth
+        depth_index = torch.zeros_like(probs, dtype=bool).scatter(
+            -1, probs.argmax(-1, keepdim=True), value=True
+        )
+
+        depth_probs = probs.amax(dim=-1)
+
         if self.feature_index is not None:
-            # compute mask of the probs to select the target depth
-            depth_index = torch.zeros_like(probs, dtype=bool).scatter(
-                -1, probs.argmax(-1, keepdim=True), value=True
-            )
             # get features via index
             index_features = rays_features[depth_index].reshape(features.shape)
             # do the weighted sum
@@ -124,10 +127,10 @@ class DepthEmissionRaymarcher(torch.nn.Module):
             )
 
         # indexes less than the target depth but not including it
-        visible_indexes =  ray_bundle.lengths < (depth.unsqueeze(-1)-self.voxel_size)
+        visible_indexes = ray_bundle.lengths < (depth.unsqueeze(-1) - self.voxel_size)
         visible_probs = probs[visible_indexes]
 
-        return depth, features, visible_probs
+        return depth, features, visible_probs, depth_probs
 
 
 class DepthEmissionSoftmaxRaymarcher(torch.nn.Module):
