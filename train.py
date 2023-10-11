@@ -28,15 +28,6 @@ from torchdrive.dist import run_ddp_concat
 from torchdrive.train_config import create_parser
 from tqdm import tqdm
 
-
-def tuple_str(s: str) -> Tuple[str, ...]:
-    return tuple(s.split(","))
-
-
-def tuple_int(s: str) -> Tuple[int, ...]:
-    return tuple(int(v) for v in s.split(","))
-
-
 parser = create_parser()
 args: argparse.Namespace = parser.parse_args()
 
@@ -162,6 +153,7 @@ def save(epoch: int) -> None:
     if RANK != 0:
         return
     loss = epoch_loss / batch_idx if batch_idx else 0
+    tmp_path = CHECKPOINT_PATH + ".tmp"
     torch.save(
         {
             MODEL_KEY: model.state_dict(),
@@ -170,8 +162,11 @@ def save(epoch: int) -> None:
             GLOBAL_STEP_KEY: global_step,
             "loss": loss,
         },
-        CHECKPOINT_PATH,
+        tmp_path,
     )
+    # We use a tmp path + rename to ensure we don't end up with a corrupted
+    # checkpoint for errors such as running out of disk space.
+    os.rename(tmp_path, CHECKPOINT_PATH)
     print(f"saved to {CHECKPOINT_PATH}, loss = {loss}")
 
 
