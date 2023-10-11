@@ -21,6 +21,7 @@ class TrainConfig:
     cam_shape: Tuple[int, int]
     backbone: str
     cam_encoder: str
+    num_frames: int
     num_encode_frames: int
 
     # optimizer settings
@@ -43,7 +44,7 @@ class TrainConfig:
     voxelsem: List[str]
     path: bool
 
-    def create_dataset(self) -> Dataset:
+    def create_dataset(self, smoke: bool = False) -> Dataset:
         if self.dataset == Datasets.RICE:
             from torchdrive.datasets.rice import MultiCamDataset
 
@@ -54,7 +55,7 @@ class TrainConfig:
                 dynamic=True,
                 cam_shape=self.cam_shape,
                 # 3 encode frames, 3 decode frames, overlap last frame
-                nframes_per_point=self.num_encode_frames + 2,
+                nframes_per_point=self.num_frames,
                 limit_size=self.limit_size,
             )
         elif self.dataset == Datasets.NUSCENES:
@@ -62,8 +63,9 @@ class TrainConfig:
 
             dataset = NuscenesDataset(
                 data_dir=self.dataset_path,
-                # version="v1.0-mini",
+                version="v1.0-mini" if smoke else "v1.0-trainval",
                 lidar=True,
+                num_frames=self.num_frames,
             )
         else:
             raise ValueError(f"unknown dataset type {self.dataset}")
@@ -98,7 +100,7 @@ class TrainConfig:
                 grid_shape=adjusted_grid_shape,
                 input_shape=(h // adjust, w // adjust),
                 hr_dim=self.hr_dim,
-                num_frames=3,
+                num_frames=self.num_encode_frames,
                 cameras=self.cameras,
                 num_upsamples=self.num_upsamples,
             )
@@ -110,7 +112,7 @@ class TrainConfig:
                 dim=self.dim,
                 hr_dim=self.hr_dim,
                 cam_dim=self.cam_dim,
-                num_frames=3,
+                num_frames=self.num_encode_frames,
                 scale=3 / adjust,
                 num_upsamples=self.num_upsamples,
                 compile_fn=compile_fn,

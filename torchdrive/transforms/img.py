@@ -17,7 +17,7 @@ def normalize_img_cuda(src: torch.Tensor) -> torch.Tensor:
     # q = 0.999
     flat = src.flatten(-2, -1)
     quantiles = torch.quantile(
-        flat, torch.tensor((0.001, 0.99), device=src.device), dim=-1
+        flat.float(), torch.tensor((0.001, 0.99), device=src.device), dim=-1
     )
     max = quantiles[1].unsqueeze(-1).unsqueeze(-1)
     min = quantiles[0].unsqueeze(-1).unsqueeze(-1)

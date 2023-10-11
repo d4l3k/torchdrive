@@ -49,9 +49,6 @@ class SensorTypes(str, Enum):
     LIDAR_TOP = "LIDAR_TOP"
 
 
-NUM_FRAMES = 5
-
-
 def calculate_timestamp_index(
     cam_samples: Dict[str, List[SampleData]]
 ) -> Dict[int, Dict[str, Tuple[SampleData, int]]]:
@@ -188,14 +185,19 @@ class CameraDataset(TorchDataset):
     """A "scene" is all the sample data from first (the one with no prev) to last (the one with no next) for a single camera."""
 
     def __init__(
-        self, dataroot: str, nusc: NuScenes, samples: List[SampleData]
+        self,
+        dataroot: str,
+        nusc: NuScenes,
+        samples: List[SampleData],
+        num_frames: int,
     ) -> None:
         self.dataroot = dataroot
         self.nusc = nusc
         self.samples = samples
+        self.num_frames = num_frames
 
     def __len__(self) -> int:
-        return len(self.samples) - NUM_FRAMES - 1
+        return len(self.samples) - self.num_frames - 1
 
     def _getitem(self, sample_data: SampleData) -> Dict[str, object]:
         cam_T = get_ego_T(self.nusc, sample_data)
@@ -238,7 +240,7 @@ class CameraDataset(TorchDataset):
 
     def __getitem__(self, idx: int) -> Dict[str, object]:
         frame_dicts = []
-        for i in range(idx, idx + NUM_FRAMES):
+        for i in range(idx, idx + self.num_frames):
             sample = self.samples[i]
             frame_dict = self._getitem(sample)
             frame_dicts.append(frame_dict)
@@ -290,19 +292,20 @@ class CameraDataset(TorchDataset):
 
 class LidarDataset(Dataset):
     def __init__(
-        self, dataroot: str, nusc: NuScenes, samples: List[SampleData]
+        self, dataroot: str, nusc: NuScenes, samples: List[SampleData], num_frames: int
     ) -> None:
         self.dataroot = dataroot
         self.nusc = nusc
         self.samples = samples
+        self.num_frames = num_frames
 
     def __len__(self) -> int:
-        return len(self.samples) - NUM_FRAMES - 1
+        return len(self.samples) - self.num_frames - 1
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         # Account for FPS difference between cameras (15ps) and lidar
         # (20fps)
-        idx += NUM_FRAMES // 2 * 15 // 20
+        idx += self.num_frames // 2 * 15 // 20
         sample_data = self.samples[idx]
 
         calibrated_sensor_token = sample_data["calibrated_sensor_token"]
@@ -328,11 +331,16 @@ class NuscenesDataset(Dataset):
     }
 
     def __init__(
-        self, data_dir: str, version: str = "v1.0-trainval", lidar: bool = False
+        self,
+        data_dir: str,
+        num_frames: int,
+        version: str = "v1.0-trainval",
+        lidar: bool = False,
     ) -> None:
         self.data_dir = data_dir
         self.version = version
         self.nusc = NuScenes(version=version, dataroot=data_dir, verbose=True)
+        self.num_frames = num_frames
         self.cam_types: List[str] = [
             CamTypes.CAM_FRONT,
             CamTypes.CAM_FRONT_LEFT,
@@ -391,7 +399,9 @@ class NuscenesDataset(Dataset):
                 kls = LidarDataset
             else:
                 raise RuntimeError(f"unsupported sensor_modality {sensor_modality}")
-            ds_scenes.append(kls(self.data_dir, self.nusc, samples))
+            ds_scenes.append(
+                kls(self.data_dir, self.nusc, samples, num_frames=self.num_frames)
+            )
 
         scene_samples = [sample for scene in scenes for sample in scene]
         ds = ConcatDataset(ds_scenes)
@@ -434,7 +444,7 @@ class NuscenesDataset(Dataset):
             Ks[cam] = sample_dict["K"]
             Ts[cam] = sample_dict["T"]
             cam_colors = []
-            for i in range(NUM_FRAMES):
+            for i in range(self.num_frames):
                 cam_colors.append(sample_dict["color"][i])
             colors[cam] = torch.stack(cam_colors, dim=0)
             masks[cam] = sample_dict["mask"]

@@ -562,7 +562,7 @@ class VoxelTask(BEVTask):
 
                 losses[f"visible-probs/{cam}"] = visible_probs.mean() * 1000
                 losses[f"depth-probs/{cam}"] = (
-                    F.l1_loss(depth_probs, torch.ones_like(depth_probs)) * 1000
+                    F.l1_loss(depth_probs, torch.ones_like(depth_probs)) * 20
                 )
 
                 dynamic_mask = dynamic_masks[cam]

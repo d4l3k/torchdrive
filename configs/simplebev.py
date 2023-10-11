@@ -16,6 +16,7 @@ CONFIG = TrainConfig(
     hr_dim=384,
     backbone="simple_bev",
     cam_encoder="simple_regnet",
+    num_frames=5,
     num_encode_frames=3,
     cam_shape=(480, 640),
     num_upsamples=1,
