@@ -32,6 +32,8 @@ class TestData(unittest.TestCase):
     def test_collate(self) -> None:
         batch = collate([dummy_item(), dummy_item(), None])
 
+        self.assertEqual(batch.token, [["dummy0", "dummy1", "dummy2"]] * 2)
+
     def test_collate_long_cam_T(self) -> None:
         a = dummy_item()
         b = dummy_item()
@@ -123,9 +125,7 @@ class TestData(unittest.TestCase):
         batch = dummy_batch()
         cam = "left"
         frame = 1
-        target = (
-            batch.T[cam].pinverse().matmul(batch.cam_T[:, frame]).pinverse()
-        )
+        target = batch.T[cam].pinverse().matmul(batch.cam_T[:, frame]).pinverse()
         out = batch.cam_to_world(cam, frame)
         self.assertEqual(out.shape, (2, 4, 4))
         torch.testing.assert_allclose(out, target)

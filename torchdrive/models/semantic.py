@@ -148,6 +148,7 @@ class BDD100KSemSeg:
         if half:
             model = model.half()
         model = model.to(device)
+        self.orig_model = model
         model = compile_fn(model)
         self.model: nn.Module = model
         self.transform: nn.Module = compile_fn(

@@ -236,6 +236,7 @@ class CameraDataset(TorchDataset):
             "T": T,
             "color": img,
             "mask": None,
+            "token": sample_data["sample_token"],
         }
 
     def __getitem__(self, idx: int) -> Dict[str, object]:
@@ -264,6 +265,7 @@ class CameraDataset(TorchDataset):
             frame_Ts.append(frame_T)
 
         imgs = [fd["color"] for fd in frame_dicts]
+        token = [fd["token"] for fd in frame_dicts]
 
         # timestamp is in microseconds, need to convert it to seconds and
         # normalize to first frame
@@ -287,6 +289,7 @@ class CameraDataset(TorchDataset):
             ],  # only one cam to car translation matrix is required as it doesn't change during drive
             "color": torch.stack(imgs),
             "mask": torch.ones(1, 480, 640),
+            "token": token,
         }
 
 
@@ -429,6 +432,7 @@ class NuscenesDataset(Dataset):
             data[cam] = cam_scene[adj_idx]
         data[CamTypes.CAM_FRONT] = self.cam_scenes[CamTypes.CAM_FRONT][idx]
 
+        token: Tensor = data[CamTypes.CAM_FRONT]["token"]
         weight: Tensor = data[CamTypes.CAM_FRONT]["weight"]
         distances: Tensor = data[CamTypes.CAM_FRONT]["distance"]
         cam_Ts: Tensor = data[CamTypes.CAM_FRONT]["cam_T"]
@@ -469,6 +473,7 @@ class NuscenesDataset(Dataset):
             long_cam_T=cam_Ts,
             lidar=lidar,
             lidar_T=lidar_T,
+            token=[token],
         )
 
     def __getitem__(self, idx: int) -> Optional[Batch]:

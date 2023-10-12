@@ -21,7 +21,7 @@ from torchdrive.render.ray_sampler import LIDARRaySampler
 from torchdrive.render.raymarcher import (
     CustomPerspectiveCameras,
     DepthEmissionRaymarcher,
-    DepthEmissionSoftmaxRaymarcher,
+    # DepthEmissionSoftmaxRaymarcher,
 )
 from torchdrive.render.volume_sampler import VolumeSampler
 from torchdrive.tasks.bev import BEVTask, Context

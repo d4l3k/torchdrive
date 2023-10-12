@@ -1,3 +1,4 @@
+import random
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, fields
@@ -13,7 +14,6 @@ from typing import (
     TypeVar,
     Union,
 )
-import random
 
 import torch
 from torch.utils.data import DataLoader, default_collate
@@ -21,6 +21,8 @@ from torch.utils.data import DataLoader, default_collate
 
 @dataclass(frozen=True)
 class Batch:
+    # per frame unique token, must be unique across the entire dataset
+    token: List[List[object]]
     # example weight [BS]
     weight: torch.Tensor
     # per frame distance traveled in meters  [BS, num_frames]
@@ -95,6 +97,11 @@ class Batch:
                     out[i][name] = None
                 continue
 
+            if name == "token":
+                for i in range(num_parts):
+                    out[i][name] = original[i * split_size : (i + 1) * split_size]
+                continue
+
             parts = split(original, split_size)
             for i, p in enumerate(parts):
                 out[i][name] = p
@@ -120,7 +127,7 @@ class Batch:
         [batch_size, 4, 4]
         """
         return torch.linalg.solve(self.T[cam], self.world_to_car(frame))
-        #return self.T[cam].pinverse().matmul(self.world_to_car(frame))
+        # return self.T[cam].pinverse().matmul(self.world_to_car(frame))
 
     def cam_to_world(self, cam: str, frame: int) -> torch.Tensor:
         """
@@ -146,6 +153,7 @@ def dummy_item() -> Batch:
 
     long_cam_T = torch.rand(9 * 3, 4, 4)
     return Batch(
+        token=[[f"dummy{i}" for i in range(N)]],
         weight=torch.rand(1)[0],
         distances=torch.rand(N),
         cam_T=long_cam_T[:N],
@@ -199,9 +207,16 @@ def _collate_lidar(
         return None
     min_dim = min(x.size(1) for x in tensors)
     assert min_dim > 5, f"min dimension must not be empty {tensors[0].shape}"
-    return torch.stack([
-        x[:, :min_dim] for x in tensors
-    ])
+    return torch.stack([x[:, :min_dim] for x in tensors])
+
+
+def _collate_token(
+    tokens: List[List[List[object]]],
+) -> Optional[torch.Tensor]:
+    out = []
+    for token in tokens:
+        out += token
+    return out
 
 
 _COLLATE_FIELDS: Mapping[str, Callable[[object], object]] = {
@@ -209,6 +224,7 @@ _COLLATE_FIELDS: Mapping[str, Callable[[object], object]] = {
     "weight": _collate_weight,
     "global_batch_size": sum,
     "lidar": _collate_lidar,
+    "token": _collate_token,
 }
 
 
