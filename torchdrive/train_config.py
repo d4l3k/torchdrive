@@ -36,6 +36,7 @@ class TrainConfig:
     mask_path: str
     batch_size: int
     num_workers: int
+    autolabel_path: str
 
     # tasks
     det: bool

@@ -22,9 +22,20 @@ class Dataset(TorchDataset, ABC):
     Base class for datasets used by TorchDrive.
     """
 
-    NAME: Datasets
-    cameras: List[str]
-    CAMERA_OVERLAP: Dict[str, List[str]]
+    @property
+    @abstractmethod
+    def NAME(self) -> Datasets:
+        ...
+
+    @property
+    @abstractmethod
+    def cameras(self) -> List[str]:
+        ...
+
+    @property
+    @abstractmethod
+    def CAMERA_OVERLAP(self) -> Dict[str, List[str]]:
+        ...
 
     @abstractmethod
     def __getitem__(self, idx: int) -> Optional[Batch]:

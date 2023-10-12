@@ -5,6 +5,7 @@ from torchdrive.datasets.dataset import Dataset, Datasets
 class DummyDataset(Dataset):
     NAME = Datasets.DUMMY
     cameras = ["left", "right"]
+    CAMERA_OVERLAP = {}
 
     def __len__(self) -> int:
         return 10

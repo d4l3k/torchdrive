@@ -24,6 +24,13 @@ class TestAutolabeler(unittest.TestCase):
 
             self.assertEqual(out, want)
 
+    def test_props(self) -> None:
+        dataset = DummyDataset()
+        labeler = AutoLabeler(dataset, "/nonexistant")
+        self.assertEqual(labeler.NAME, dataset.NAME)
+        self.assertEqual(labeler.cameras, dataset.cameras)
+        self.assertEqual(labeler.CAMERA_OVERLAP, dataset.CAMERA_OVERLAP)
+
     def test_autolabeler(self) -> None:
         dataset = DummyDataset()
         with tempfile.TemporaryDirectory() as path:
@@ -53,3 +60,5 @@ class TestAutolabeler(unittest.TestCase):
 
             out = labeler[0]
             self.assertIsNotNone(out.sem_seg)
+            self.assertEqual(out.sem_seg["left"].shape, (3,))
+            self.assertEqual(out.sem_seg["right"].shape, (3,))

@@ -9,7 +9,7 @@ import torch
 import zstd
 
 from torchdrive.data import Batch
-from torchdrive.datasets.dataset import Dataset
+from torchdrive.datasets.dataset import Dataset, Datasets
 
 ZSTD_COMPRESS_LEVEL = 3
 ZSTD_THREADS = 1
@@ -33,7 +33,7 @@ def load_tensors(path: str) -> object:
     return safetensors.torch.load(buf)
 
 
-class AutoLabeler:
+class AutoLabeler(Dataset):
     """
     Autolabeler takes in a dataset and a cache location and automatically loads
     the autolabeled data based off of the batch tokens.
@@ -63,3 +63,15 @@ class AutoLabeler:
         return dataclasses.replace(
             batch, sem_seg={cam: torch.stack(frames) for cam, frames in out.items()}
         )
+
+    @property
+    def NAME(self) -> Datasets:
+        return self.dataset.NAME
+
+    @property
+    def cameras(self) -> Datasets:
+        return self.dataset.cameras
+
+    @property
+    def CAMERA_OVERLAP(self) -> Datasets:
+        return self.dataset.CAMERA_OVERLAP
