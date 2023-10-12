@@ -14,6 +14,7 @@ class Datasets(str, Enum):
 
     RICE = "rice"
     NUSCENES = "nuscenes"
+    DUMMY = "dummy"
 
 
 class Dataset(TorchDataset, ABC):

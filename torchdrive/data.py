@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader, default_collate
 @dataclass(frozen=True)
 class Batch:
     # per frame unique token, must be unique across the entire dataset
-    token: List[List[object]]
+    token: List[List[str]]
     # example weight [BS]
     weight: torch.Tensor
     # per frame distance traveled in meters  [BS, num_frames]
@@ -51,6 +51,10 @@ class Batch:
     lidar_T: torch.Tensor
     # Lidar data [BS, 4, n], channel format is [x, y, z, intensity]
     lidar: Optional[torch.Tensor] = None
+
+    # AutoLabeler fields
+    # semantic segmentation for each camera and the frames
+    sem_seg: Optional[Dict[str, torch.Tensor]] = None
 
     global_batch_size: int = 1
 

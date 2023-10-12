@@ -9,18 +9,16 @@ from tqdm import tqdm
 LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", str(LOCAL_RANK))
 
-import safetensors.torch
-
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
-import zstd
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
+
 from torchdrive.data import Batch, TransferCollator
+from torchdrive.datasets.autolabeler import LabelType, save_tensors
 from torchdrive.datasets.dataset import Dataset
 from torchdrive.models.semantic import BDD100KSemSeg
-
 from torchdrive.train_config import create_parser
 
 parser = create_parser()
@@ -111,18 +109,11 @@ model_int8 = torch.ao.quantization.convert(model_fp32_prepared)
 """
 
 assert os.path.exists(args.output), "output dir must exist"
-sem_seg_path = os.path.join(args.output, config.dataset, "sem_seg")
+sem_seg_path = os.path.join(args.output, config.dataset, LabelType.SEM_SEG)
 print(f"writing to {sem_seg_path}")
 os.makedirs(sem_seg_path, exist_ok=True)
 
 pool = ThreadPool(args.batch_size)
-
-
-def save(path, frame_data):
-    buf = safetensors.torch.save(frame_data)
-    compressed = zstd.ZSTD_compress(buf, 3, 1)  # level, threads
-    with open(path, "wb") as f:
-        f.write(compressed)
 
 
 handles = []
@@ -146,7 +137,7 @@ for batch in tqdm(collator):
         path = os.path.join(sem_seg_path, f"{token}.safetensors.zstd")
         handles.append(
             pool.apply_async(
-                save,
+                save_tensors,
                 (
                     path,
                     frame_data,
