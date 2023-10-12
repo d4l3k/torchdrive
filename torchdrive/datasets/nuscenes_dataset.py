@@ -293,7 +293,7 @@ class CameraDataset(TorchDataset):
         }
 
 
-class LidarDataset(Dataset):
+class LidarDataset(TorchDataset):
     def __init__(
         self, dataroot: str, nusc: NuScenes, samples: List[SampleData], num_frames: int
     ) -> None:
