@@ -333,6 +333,7 @@ class NuscenesDataset(Dataset):
         CamTypes.CAM_BACK_LEFT: [CamTypes.CAM_BACK, CamTypes.CAM_FRONT_LEFT],
         CamTypes.CAM_BACK_RIGHT: [CamTypes.CAM_BACK, CamTypes.CAM_FRONT_RIGHT],
     }
+    cameras: List[str] = list(CamTypes)
 
     def __init__(
         self,
