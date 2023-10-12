@@ -21,6 +21,7 @@ class Dataset(TorchDataset, ABC):
     Base class for datasets used by TorchDrive.
     """
 
+    NAME: Datasets
     cameras: List[str]
     CAMERA_OVERLAP: Dict[str, List[str]]
 

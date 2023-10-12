@@ -4,7 +4,7 @@ import json
 import os
 import os.path
 from collections import defaultdict
-from typing import Callable, cast, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Callable, cast, Dict, Iterator, List, Optional, Set, Union
 
 # set device before loading CUDA/PyTorch
 LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))

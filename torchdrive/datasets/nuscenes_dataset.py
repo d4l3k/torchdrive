@@ -13,7 +13,7 @@ from pytorch3d.transforms import quaternion_to_matrix
 from torch.utils.data import ConcatDataset, DataLoader, Dataset as TorchDataset
 from tqdm import tqdm
 
-from torchdrive.datasets.dataset import Dataset
+from torchdrive.datasets.dataset import Dataset, Datasets
 
 Tensor = torch.Tensor
 
@@ -324,6 +324,7 @@ class LidarDataset(Dataset):
 
 
 class NuscenesDataset(Dataset):
+    NAME = Datasets.NUSCENES
     CAMERA_OVERLAP: Dict[str, List[str]] = {
         CamTypes.CAM_FRONT: [CamTypes.CAM_FRONT_LEFT, CamTypes.CAM_FRONT_RIGHT],
         CamTypes.CAM_FRONT_LEFT: [CamTypes.CAM_FRONT, CamTypes.CAM_BACK_LEFT],

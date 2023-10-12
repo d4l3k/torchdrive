@@ -1,23 +1,27 @@
-import os
-from tqdm import tqdm
 import argparse
 import importlib
+import os
+from multiprocessing.pool import ThreadPool
+
+from tqdm import tqdm
 
 # set device before loading CUDA/PyTorch
 LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", str(LOCAL_RANK))
 
+import safetensors.torch
+
 import torch
-from torchdrive.train_config import create_parser
-from torch.nn.parallel import DistributedDataParallel
-from torch.nn.parameter import Parameter
+import torch.distributed as dist
+import torch.nn.functional as F
+import zstd
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from torch.utils.tensorboard import SummaryWriter
-from torchdrive.checkpoint import remap_state_dict
-from torchdrive.data import Batch, transfer, TransferCollator
+from torchdrive.data import Batch, TransferCollator
 from torchdrive.datasets.dataset import Dataset
 from torchdrive.models.semantic import BDD100KSemSeg
+
+from torchdrive.train_config import create_parser
 
 parser = create_parser()
 parser.add_argument("--num_workers", type=int, required=True)
@@ -55,7 +59,7 @@ sampler: DistributedSampler[Dataset] = DistributedSampler(
     dataset,
     num_replicas=WORLD_SIZE,
     rank=RANK,
-    shuffle=False,
+    shuffle=True,
     drop_last=False,
     seed=0,
 )
@@ -68,15 +72,94 @@ dataloader = DataLoader[Batch](
 )
 collator = TransferCollator(dataloader, batch_size=args.batch_size, device=device)
 
+# model_config = "upernet_convnext-t_fp16_512x1024_80k_sem_seg_bdd100k.py" # 1.02s/it bs12
+# model_config = "upernet_convnext-s_fp16_512x1024_80k_sem_seg_bdd100k.py" # 1.20s/it bs12
+model_config = (
+    "upernet_convnext-b_fp16_512x1024_80k_sem_seg_bdd100k.py"  # 1.39s/it bs12
+)
 model = BDD100KSemSeg(
     device=device,
     compile_fn=torch.compile if args.compile else lambda x: x,
+    mmlab=True,
+    half=True,
+    config=model_config,
 )
 
+"""
+print("Quantizing...")
+
+model_fp32 = model.orig_model
+print(model_fp32)
+model_fp32.qconfig = torch.ao.quantization.get_default_qconfig('x86')
+#model_fp32_fused = torch.ao.quantization.fuse_modules(model_fp32, [['conv', 'relu']])
+model_fp32_prepared = torch.ao.quantization.prepare(model_fp32)
+
+print("Feeding data...")
+
 for batch in tqdm(collator):
+    cam_data = {}
     for cam, frames in batch.color.items():
-        squashed = frames.squeeze(1)
-        out = model(squashed)
-        print(squashed.shape, out.shape)
+        frames = frames.squeeze(1)
+        frames = model.normalize(frames)
+        frames = model.transform(frames)
+        model_fp32_prepared(frames)
 
     break
+
+print("Converting...")
+model_int8 = torch.ao.quantization.convert(model_fp32_prepared)
+"""
+
+assert os.path.exists(args.output), "output dir must exist"
+sem_seg_path = os.path.join(args.output, config.dataset, "sem_seg")
+print(f"writing to {sem_seg_path}")
+os.makedirs(sem_seg_path, exist_ok=True)
+
+pool = ThreadPool(args.batch_size)
+
+
+def save(path, frame_data):
+    buf = safetensors.torch.save(frame_data)
+    compressed = zstd.ZSTD_compress(buf, 3, 1)  # level, threads
+    with open(path, "wb") as f:
+        f.write(compressed)
+
+
+handles = []
+
+for batch in tqdm(collator):
+    cam_data = {}
+    for cam, frames in batch.color.items():
+        squashed = frames.squeeze(1)
+        pred = model(squashed)
+        pred = F.interpolate(pred, scale_factor=1 / 2, mode="bilinear")
+        # pred = pred.argmax(dim=1).byte()
+        pred = (pred.sigmoid() * 255).byte()
+        cam_data[cam] = pred
+
+    for i in range(args.batch_size):
+        frame_data = {}
+        for cam, pred in cam_data.items():
+            frame_data[cam] = pred[i]
+
+        token = batch.token[i][0]
+        path = os.path.join(sem_seg_path, f"{token}.safetensors.zstd")
+        handles.append(
+            pool.apply_async(
+                save,
+                (
+                    path,
+                    frame_data,
+                ),
+            )
+        )
+
+    while len(handles) > args.batch_size * 2:
+        handles.pop(0).get()
+
+for handle in handles:
+    handle.get()
+pool.terminate()
+pool.join()
+# print(i, len(buf), type(buf), len(compressed), pred.dtype)
+# break

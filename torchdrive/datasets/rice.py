@@ -21,7 +21,7 @@ from torch import Tensor
 from torchvision import transforms
 
 from torchdrive.data import Batch
-from torchdrive.datasets.dataset import Dataset
+from torchdrive.datasets.dataset import Dataset, Datasets
 from torchdrive.transforms.mat import transformation_from_parameters
 
 av.logging.set_level(logging.DEBUG)  # pyre-fixme
@@ -107,6 +107,7 @@ def heading_diff(a: float, b: float) -> float:
 
 
 class MultiCamDataset(Dataset):
+    NAME = Datasets.RICE
     CAMERA_OVERLAP = {
         "main": ["narrow", "fisheye"],
         "narrow": ["main"],
@@ -482,9 +483,6 @@ class MultiCamDataset(Dataset):
         return cam_T, frame_T
 
     def _getitem(self, idx: int) -> Batch:
-        path: str
-        camera: str
-        idx: int
         path, idx = self.frames[idx]
 
         # metadata
@@ -557,6 +555,9 @@ class MultiCamDataset(Dataset):
         for camera in self.cameras:
             load(camera, frames)
 
+        path_base = os.path.basename(path)
+        tokens = [f"{path_base}_{frame}" for i in frames]
+
         return Batch(
             weight=torch.tensor(self.heading_weights[self.path_heading_bin[path]]),
             K=Ks,
@@ -568,4 +569,5 @@ class MultiCamDataset(Dataset):
             distances=dists,
             frame_T=frame_T,
             frame_time=frame_time,
+            token=[tokens],
         )
