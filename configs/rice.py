@@ -27,8 +27,9 @@ CONFIG = TrainConfig(
     grad_clip=1.0,
     step_size=1000,
     # dataset
-    dataset=Datasets.NUSCENES,
-    dataset_path="/mnt/ext3/nuscenes",
+    dataset=Datasets.RICE,
+    dataset_path="/mnt/ext3/rice",
+    autolabel_path="/mnt/ext3/autolabel",
     mask_path="n/a",  # only used for rice dataset
     num_workers=6,
     batch_size=2,
