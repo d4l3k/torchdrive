@@ -222,6 +222,11 @@ def _collate_token(
         out += token
     return out
 
+def _collate_optional(items: List[Optional[object]]) -> Optional[List[object]]:
+    if len(items) == 0 or items[0] is None:
+        return None
+    return default_collate(items)
+
 
 _COLLATE_FIELDS: Mapping[str, Callable[[object], object]] = {
     "long_cam_T": _collate_long_cam_T,
@@ -229,6 +234,7 @@ _COLLATE_FIELDS: Mapping[str, Callable[[object], object]] = {
     "global_batch_size": sum,
     "lidar": _collate_lidar,
     "token": _collate_token,
+    "sem_seg": _collate_optional,
 }
 
 
