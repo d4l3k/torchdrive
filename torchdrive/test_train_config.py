@@ -8,6 +8,8 @@ from typing import List
 import torch
 from parameterized import parameterized
 
+from torchdrive.datasets.dataset import Datasets
+
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "configs")
 sys.path.append(CONFIG_DIR)
@@ -30,3 +32,7 @@ class TestTrainConfig(unittest.TestCase):
         config = config_module.CONFIG
         model = config.create_model(device=torch.device("cpu"))
         self.assertIsNotNone(model)
+
+        config.dataset = Datasets.DUMMY
+        dataset = config.create_dataset()
+        dataset[0]

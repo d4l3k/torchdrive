@@ -222,6 +222,7 @@ def _collate_token(
         out += token
     return out
 
+
 def _collate_optional(items: List[Optional[object]]) -> Optional[List[object]]:
     if len(items) == 0 or items[0] is None:
         return None

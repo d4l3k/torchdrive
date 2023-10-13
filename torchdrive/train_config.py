@@ -68,6 +68,11 @@ class TrainConfig:
                 lidar=True,
                 num_frames=self.num_frames,
             )
+        elif self.dataset == Datasets.DUMMY:
+            from torchdrive.datasets.dummy import DummyDataset
+
+            dataset = DummyDataset()
+            dataset.cameras = self.cameras
         else:
             raise ValueError(f"unknown dataset type {self.dataset}")
 
