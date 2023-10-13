@@ -50,21 +50,26 @@ class AutoLabeler(Dataset):
         batch = self.dataset[idx]
         if batch is None:
             return None
-        tokens = batch.token[0]
-        out = {cam: [] for cam in self.dataset.cameras}
-        for token in tokens:
-            path = os.path.join(
-                self.path,
-                self.dataset.NAME,
-                LabelType.SEM_SEG,
-                f"{token}.safetensors.zstd",
+
+        try:
+            tokens = batch.token[0]
+            out = {cam: [] for cam in self.dataset.cameras}
+            for token in tokens:
+                path = os.path.join(
+                    self.path,
+                    self.dataset.NAME,
+                    LabelType.SEM_SEG,
+                    f"{token}.safetensors.zstd",
+                )
+                data = load_tensors(path)
+                for cam, frame in data.items():
+                    out[cam].append(frame.bfloat16() / 255)
+            return dataclasses.replace(
+                batch, sem_seg={cam: torch.stack(frames) for cam, frames in out.items()}
             )
-            data = load_tensors(path)
-            for cam, frame in data.items():
-                out[cam].append(frame.bfloat16() / 255)
-        return dataclasses.replace(
-            batch, sem_seg={cam: torch.stack(frames) for cam, frames in out.items()}
-        )
+        except FileNotFoundError as e:
+            print("autolabeler", e)
+            return None
 
     @property
     def NAME(self) -> Datasets:

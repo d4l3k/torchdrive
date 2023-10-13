@@ -403,7 +403,7 @@ class VoxelTask(BEVTask):
             sub_losses = self._losses_frame(
                 ctx=ctx, batch=batch, grid=grid,
                 feat_grid=feat_grid, frame=ctx.start_frame+offset,
-                dynamic=offset!=0,
+                dynamic=offset==0,
             )
             for k, v in sub_losses.items():
                 assert k not in losses, f"{k} computed multiple times"
@@ -572,7 +572,7 @@ class VoxelTask(BEVTask):
             K = batch.K[cam]
             # create world to camera transformation matrix
             # T = batch.world_to_cam(cam, start_frame)
-            T = batch.world_to_cam(cam, start_frame)
+            T = batch.world_to_cam(cam, frame)
             cameras = CustomPerspectiveCameras(
                 T=T,
                 K=K,
@@ -908,7 +908,7 @@ class VoxelTask(BEVTask):
                 assert (
                     time_max > 0 and time_max < 60
                 ), f"frame_time is bad {offset} {time}"
-                ctx.add_scalar(f"frame_time_max/{label}/{cam}/{offset}", time_max)
+                ctx.add_scalar(f"frame_time_max/{label}/{cam}{frame}/{offset}", time_max)
 
             src_color = batch.color[cam][:, src_frame]
             src_color = F.interpolate(
