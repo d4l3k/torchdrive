@@ -57,6 +57,11 @@ class BDD100KSemSeg:
         18,
     )
 
+    # dynamic object indexes when filtered by NON_SKY
+    DYNAMIC_NON_SKY = tuple(
+        idx-1 for idx in DYNAMIC
+    )
+
     NON_SKY = (
         0,
         1,

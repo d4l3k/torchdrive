@@ -101,6 +101,7 @@ class VoxelTask(BEVTask):
         render_batch_size: int = 5,
         n_pts_per_ray: int = 216,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
+        start_offsets: Tuple[int, ...] = (0,),
         offsets: Tuple[int, ...] = (-2, -1, 1, 2),
         camera_overlap: Optional[Dict[str, List[str]]] = None,
     ) -> None:
@@ -118,6 +119,7 @@ class VoxelTask(BEVTask):
         self.height = height
         self.semantic = semantic
         self.render_batch_size = render_batch_size
+        self.start_offsets = start_offsets
         self.offsets = offsets
         self.camera_overlap = camera_overlap
 
@@ -396,7 +398,16 @@ class VoxelTask(BEVTask):
         """
         compute losses for the provided minibatch.
         """
-        losses = self._losses_frame(ctx=ctx, batch=batch, grid=grid, feat_grid=feat_grid, frame=ctx.start_frame)
+        losses = {}
+        for offset in self.start_offsets:
+            sub_losses = self._losses_frame(
+                ctx=ctx, batch=batch, grid=grid,
+                feat_grid=feat_grid, frame=ctx.start_frame+offset,
+                dynamic=offset!=0,
+            )
+            for k, v in sub_losses.items():
+                assert k not in losses, f"{k} computed multiple times"
+                losses[k] = v
         return losses
 
     def _losses_frame(
@@ -406,6 +417,7 @@ class VoxelTask(BEVTask):
         grid: torch.Tensor,
         feat_grid: Optional[torch.Tensor],
         frame: int,
+        dynamic: bool,
     ) -> Dict[str, torch.Tensor]:
         """
         compute losses for the provided minibatch starting at the specific frame
@@ -470,6 +482,10 @@ class VoxelTask(BEVTask):
                     dynamic_mask = semantic_target[:, BDD100KSemSeg.DYNAMIC]
                     dynamic_mask = dynamic_mask.amax(dim=1).round().unsqueeze(1)
                     dynamic_masks[cam] = dynamic_mask
+                    if not dynamic:
+                        # if we're not computing dynamic losses we need to omit
+                        # them from the primary mask
+                        primary_masks[cam] *= (dynamic_mask*-1+1)
 
                     # Compute per pixel weights based on the inverse frequency
                     # of the classes to counter weight imbalance and normalize
@@ -482,11 +498,11 @@ class VoxelTask(BEVTask):
 
                     if ctx.log_img:
                         ctx.add_image(
-                            f"semantic/per_pixel_weights/{cam}",
+                            f"semantic/per_pixel_weights/{cam}{frame}",
                             render_color(per_pixel_weights[0, 0]),
                         )
 
-            if ctx.log_img:
+            if ctx.log_img and frame == ctx.start_frame:
                 # log distribution of semantic classes
                 bin_frequency = (
                     self.semantic_bin_counts / self.semantic_bin_counts.sum()
@@ -593,8 +609,8 @@ class VoxelTask(BEVTask):
                 primary_mask = primary_masks[cam]
                 per_pixel_weights = cam_pix_weights[cam]
 
-                losses[f"visible-probs/{cam}"] = visible_probs.mean() * 1000
-                losses[f"depth-probs/{cam}"] = (
+                losses[f"visible-probs/{cam}{frame}"] = visible_probs.mean() * 1000
+                losses[f"depth-probs/{cam}{frame}"] = (
                     F.l1_loss(depth_probs, torch.ones_like(depth_probs)) * 20
                 )
 
@@ -618,10 +634,16 @@ class VoxelTask(BEVTask):
                         mode="bilinear",
                         align_corners=False,
                     )
+                    if not dynamic:
+                        # exclude any dynamic voxels if we're not learning
+                        # dynamic
+                        rendered_dynamic_mask = semantic_classes[:, BDD100KSemSeg.DYNAMIC_NON_SKY].detach()
+                        rendered_dynamic_mask = rendered_dynamic_mask.amax(dim=1).round().unsqueeze(1)
+                        primary_mask = primary_mask * (rendered_dynamic_mask*-1+1)
 
                     if ctx.log_text:
                         ctx.add_scalars(
-                            f"semantic_vel/{cam}/abs",
+                            f"semantic_vel/{cam}{frame}/abs",
                             {
                                 "max": semantic_vel.abs().amax(),
                                 "mean": semantic_vel.abs().mean(),
@@ -629,11 +651,11 @@ class VoxelTask(BEVTask):
                         )
                     if ctx.log_img:
                         ctx.add_image(
-                            f"semantic_vel/{cam}",
+                            f"semantic_vel/{cam}{frame}",
                             normalize_img(semantic_vel[0]),
                         )
                         ctx.add_image(
-                            f"{cam}/dynamic_mask",
+                            f"{cam}{frame}/dynamic_mask",
                             render_color(dynamic_mask[0, 0]),
                         )
                     semantic_vel *= dynamic_mask
@@ -643,12 +665,13 @@ class VoxelTask(BEVTask):
                         ctx=ctx,
                         label="voxel",
                         cam=cam,
+                        frame=frame,
                         semantic_classes=semantic_classes,
                         semantic_target=semantic_targets[cam],
                         mask=primary_mask,
                         per_pixel_weights=per_pixel_weights,
                     )
-                    losses[f"semantic-voxel/{cam}"] = semantic_loss.mean(dim=(1, 2, 3))
+                    losses[f"semantic-voxel/{cam}{frame}"] = semantic_loss.mean(dim=(1, 2, 3))
 
                     # update and plot confusion matrix
                     preds = semantic_classes.argmax(dim=1).flatten()
@@ -714,7 +737,7 @@ class VoxelTask(BEVTask):
             del semantic_vel
             del semantic_img
 
-            if cam in ctx.cam_feats:
+            if cam in ctx.cam_feats and not dynamic:
                 with torch.autograd.profiler.record_function(
                     "depth_decoder"
                 ), autocast():
@@ -753,6 +776,7 @@ class VoxelTask(BEVTask):
                             ctx=ctx,
                             label="cam",
                             cam=cam,
+                            frame=frame,
                             semantic_classes=cam_sem.float().sigmoid(),
                             semantic_target=semantic_targets[cam],
                             mask=primary_mask,
@@ -844,7 +868,7 @@ class VoxelTask(BEVTask):
             amin, amax = depth.aminmax()
             assert amin >= 0, (amin, amax)
             ctx.add_scalars(
-                f"depth{label}/{cam}/minmax",
+                f"depth{label}/{cam}{frame}/minmax",
                 {"max": amax, "min": amin},
             )
 
@@ -852,23 +876,23 @@ class VoxelTask(BEVTask):
             if not t.requires_grad:
                 continue
             losssmooth = smooth_loss(t, primary_color) * per_pixel_weights
-            losses[f"losssmooth-{label}-{typ}/{cam}"] = (
+            losses[f"losssmooth-{label}-{typ}/{cam}{frame}"] = (
                 losssmooth.mean(dim=(1, 2, 3)) * 20
             )
             if ctx.log_img:
                 ctx.add_image(
-                    f"losssmooth-{label}-{typ}/{cam}-pixel",
+                    f"losssmooth-{label}-{typ}/{cam}{frame}-pixel",
                     render_color(losssmooth[0].mean(dim=0)),
                 )
 
         if ctx.log_img:
             ctx.add_image(
-                f"depth{label}/{frame}/{cam}",
+                f"depth{label}/{frame}/{cam}{frame}",
                 render_color(-depth[0][0]),
             )
             out_disp = disp[0, 0] * primary_mask[0, 0]
             ctx.add_image(
-                f"disp{label}/{frame}/{cam}",
+                f"disp{label}/{frame}/{cam}{frame}",
                 render_color(out_disp),
             )
 
@@ -879,7 +903,7 @@ class VoxelTask(BEVTask):
             world_to_src_cam = batch.world_to_cam(cam, src_frame)
             time = frame_time[:, src_frame]
 
-            if ctx.log_text and offset != 0:
+            if ctx.log_text and src_frame != ctx.start_frame:
                 time_max = time.abs().amax()
                 assert (
                     time_max > 0 and time_max < 60
@@ -922,13 +946,13 @@ class VoxelTask(BEVTask):
             # min_proj_loss = torch.minimum(proj_loss, identity_proj_loss)
 
             min_proj_loss = min_proj_loss * proj_weights
-            losses[f"lossproj-{label}/{cam}/o{offset}"] = (
+            losses[f"lossproj-{label}/{cam}{frame}/o{offset}"] = (
                 min_proj_loss.mean(dim=(1, 2, 3)) * 40 * 6
             )
 
             if ctx.log_img:
                 ctx.add_image(
-                    f"{label}/{cam}/{offset}/color",
+                    f"{label}/{cam}{frame}/{offset}/color",
                     normalize_img(
                         torch.cat(
                             (
@@ -941,7 +965,7 @@ class VoxelTask(BEVTask):
                     ),
                 )
                 ctx.add_image(
-                    f"{label}/{cam}/{offset}/min_proj_loss",
+                    f"{label}/{cam}{frame}/{offset}/min_proj_loss",
                     render_color(min_proj_loss[0, 0]),
                 )
                 # ctx.add_image(
@@ -1036,6 +1060,7 @@ class VoxelTask(BEVTask):
         ctx: Context,
         label: str,
         cam: str,
+        frame: int,
         semantic_classes: torch.Tensor,
         semantic_target: torch.Tensor,
         mask: torch.Tensor,
@@ -1064,7 +1089,7 @@ class VoxelTask(BEVTask):
             pred_min, pred_max = semantic_classes.aminmax()
             targ_min, targ_max = semantic_target.aminmax()
             ctx.add_scalars(
-                f"semantic-{label}/{cam}/minmax",
+                f"semantic-{label}/{cam}{frame}/minmax",
                 {
                     "pred_min": pred_min,
                     "pred_max": pred_max,
@@ -1079,7 +1104,7 @@ class VoxelTask(BEVTask):
             out_class = torch.argmax(semantic_classes[:1], dim=1)
             target_class = torch.argmax(semantic_target[:1], dim=1)
             ctx.add_image(
-                f"semantic-{label}/{cam}/output_target",
+                f"semantic-{label}/{cam}{frame}/output_target",
                 render_color(
                     torch.cat(
                         (
@@ -1092,7 +1117,7 @@ class VoxelTask(BEVTask):
             )
 
             ctx.add_image(
-                f"semantic-{label}/{cam}/loss",
+                f"semantic-{label}/{cam}{frame}/loss",
                 render_color(sem_loss[0].mean(dim=0)),
             )
 

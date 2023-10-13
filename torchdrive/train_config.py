@@ -45,6 +45,8 @@ class TrainConfig:
     voxelsem: List[str]
     path: bool
 
+    start_offsets: Tuple[int, ...] = (0,)
+
     def create_dataset(self, smoke: bool = False) -> Dataset:
         if self.dataset == Datasets.RICE:
             from torchdrive.datasets.rice import MultiCamDataset
@@ -225,6 +227,7 @@ class TrainConfig:
                 semantic=self.voxelsem,
                 # camera_overlap=dataset.CAMERA_OVERLAP,
                 compile_fn=compile_fn,
+                start_offsets=self.start_offsets,
             )
 
         model = BEVTaskVan(
