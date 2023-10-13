@@ -2,12 +2,14 @@ import os.path
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
+from matplotlib import cm
 
 import torch
 import torch.nn.functional as F
 import torchmetrics
 from pytorch3d.renderer import ImplicitRenderer, NDCMultinomialRaysampler
 from pytorch3d.structures import Volumes
+from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
 
 from torchdrive.amp import autocast
@@ -265,27 +267,42 @@ class VoxelTask(BEVTask):
 
             gz = render_color(grid[0, 0].sum(dim=2))
 
-            vtw = voxel_to_world(
-                center=(-bev_shape[0] // 2, -bev_shape[1] // 2, 0),
-                scale=self.scale,
+            grid_shape = grid.shape[2:] # [x, y, z]
+            volume_locator = VolumeLocator(
+                batch_size=1,
+                grid_sizes=grid_shape[::-1], # [z, y, x]
+                voxel_size=1 / self.scale,
+                volume_translation=self.volume_translation,
                 device=device,
             )
+            voxel_to_world = (
+                volume_locator.get_local_to_world_coords_transform()
+                .get_matrix()
+                .permute(0, 2, 1)
+            )
+
+            start_color = torch.tensor((0, 1, 0))
+            end_color = torch.tensor((0, 0, 1))
+            def get_color(percent: float) -> torch.Tensor:
+                return start_color*(1-percent) + percent*end_color
 
             zero_coord = torch.tensor([[0, 0, 0, 1]], device=device, dtype=torch.float)
             for frame in range(0, frames):
                 # create car to voxel transform
                 T = batch.world_to_car(frame)
-                T = T.matmul(vtw)
-                T = T.pinverse()
-
+                T = T.matmul(voxel_to_world)
+                T = T.inverse()
                 cam_coords = T.matmul(zero_coord.T).squeeze(-1)
                 cam_coords /= cam_coords[:, 3:].clamp(min=1e-8)
                 coord = cam_coords[0, :3]
+
+                # convert from -1 to 1 to the grid range
+                coord = (coord+1)/2 * torch.tensor(grid_shape, device=device)
                 x, y, z = coord.int()
                 _, d, w = gz.shape
                 if x >= d or y >= w or x < 0 or y < 0:
                     continue
-                gz[:, x, y] = torch.tensor((0, 1, 0))
+                gz[:, y, x] = get_color(frame/frames)
 
             ctx.add_image(
                 "grid/z",
@@ -379,10 +396,24 @@ class VoxelTask(BEVTask):
         """
         compute losses for the provided minibatch.
         """
+        losses = self._losses_frame(ctx=ctx, batch=batch, grid=grid, feat_grid=feat_grid, frame=ctx.start_frame)
+        return losses
+
+    def _losses_frame(
+        self,
+        ctx: Context,
+        batch: Batch,
+        grid: torch.Tensor,
+        feat_grid: Optional[torch.Tensor],
+        frame: int,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        compute losses for the provided minibatch starting at the specific frame
+        """
         BS = len(batch.distances)
         frames = batch.distances.shape[1]
         start_frame = ctx.start_frame
-        frame_time = batch.frame_time - batch.frame_time[:, ctx.start_frame].unsqueeze(
+        frame_time = batch.frame_time - batch.frame_time[:, start_frame].unsqueeze(
             1
         )
         device = grid.device
@@ -390,7 +421,6 @@ class VoxelTask(BEVTask):
         losses = {}
 
         h, w = self.cam_shape
-        frame = ctx.start_frame
 
         primary_colors: Dict[str, torch.Tensor] = {}
         primary_masks: Dict[str, torch.Tensor] = {}
@@ -422,8 +452,9 @@ class VoxelTask(BEVTask):
         if self.semantic:
             with torch.autograd.profiler.record_function("segment"):
                 for cam in self.cameras:
+                    semantic_target = batch.sem_seg[cam][:, frame]
                     semantic_target = F.interpolate(
-                        batch.sem_seg[cam].float(),
+                        semantic_target.float(),
                         [h // 2, w // 2],
                         mode="bilinear",
                         align_corners=False,
@@ -489,7 +520,7 @@ class VoxelTask(BEVTask):
             padding_mode="border",
         )
 
-        if batch.lidar is not None:
+        if batch.lidar is not None and False:
             with torch.no_grad():
                 ray_bundle, distances = self.lidar_raysampler(batch)
                 rays_densities, rays_features = volumetric_function(
@@ -832,12 +863,12 @@ class VoxelTask(BEVTask):
 
         if ctx.log_img:
             ctx.add_image(
-                f"depth{label}/{cam}",
+                f"depth{label}/{frame}/{cam}",
                 render_color(-depth[0][0]),
             )
             out_disp = disp[0, 0] * primary_mask[0, 0]
             ctx.add_image(
-                f"disp{label}/{cam}",
+                f"disp{label}/{frame}/{cam}",
                 render_color(out_disp),
             )
 
@@ -853,7 +884,7 @@ class VoxelTask(BEVTask):
                 assert (
                     time_max > 0 and time_max < 60
                 ), f"frame_time is bad {offset} {time}"
-                ctx.add_scalar(f"frame_time_max/{offset}", time_max)
+                ctx.add_scalar(f"frame_time_max/{label}/{cam}/{offset}", time_max)
 
             src_color = batch.color[cam][:, src_frame]
             src_color = F.interpolate(

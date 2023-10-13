@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Mapping, Optional, Union
+from typing import Dict, Mapping, Optional, Union, Set
 
 import torch
 from torch.cuda import amp
@@ -32,12 +32,15 @@ class Context:
 
     name: str = "<unknown>"
 
+    _logged: Set[str] = field(default_factory=set)
+
     def backward(self, losses: Dict[str, torch.Tensor]) -> None:
         losses_backward(losses, scaler=self.scaler, weights=self.weights)
 
     def add_scalars(self, name: str, scalars: Dict[str, torch.Tensor]) -> None:
         if self.writer:
             assert self.log_text
+            self._check_key(name)
             self.writer.add_scalars(
                 f"{self.name}-{name}",
                 {k: _cpu_float(v) for k, v in scalars.items()},
@@ -49,6 +52,7 @@ class Context:
     ) -> None:
         if self.writer:
             assert self.log_text
+            self._check_key(name)
             self.writer.add_scalar(
                 f"{self.name}-{name}", _cpu_float(scalar), global_step=self.global_step
             )
@@ -56,6 +60,7 @@ class Context:
     def add_image(self, name: str, img: torch.Tensor) -> None:
         if self.writer:
             assert self.log_img
+            self._check_key(name)
             self.writer.add_image(
                 f"{self.name}-{name}", img, global_step=self.global_step
             )
@@ -63,6 +68,7 @@ class Context:
     def add_figure(self, name: str, figure: object) -> None:
         if self.writer:
             assert self.log_img
+            self._check_key(name)
             self.writer.add_figure(
                 f"{self.name}-{name}", figure, global_step=self.global_step
             )
@@ -73,3 +79,8 @@ class Context:
         return log_grad_norm(
             tensor, self.writer, f"{self.name}-{key}", tag, self.global_step
         )
+
+    def _check_key(self, key: str) -> None:
+        if key in self._logged:
+            raise RuntimeError(f"already logged {key}")
+        self._logged.add(key)

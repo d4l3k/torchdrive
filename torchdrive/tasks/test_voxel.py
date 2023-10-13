@@ -67,7 +67,7 @@ class TestVoxel(unittest.TestCase):
             cam_dim=6,
             height=12,
             device=device,
-            render_batch_size=1,
+            render_batch_size=5,
             n_pts_per_ray=10,
             offsets=(-1, 0, 1),
         ).to(device)

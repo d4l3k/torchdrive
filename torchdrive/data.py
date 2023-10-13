@@ -170,7 +170,7 @@ def dummy_item() -> Batch:
         mask={cam: torch.rand(1, 48, 64) for cam in cams},
         lidar_T=torch.rand(4, 4),
         lidar=torch.rand(4, random.randint(6, 10)),
-        sem_seg={cam: torch.rand(19, 24, 32) for cam in cams},
+        sem_seg={cam: torch.rand(N, 19, 24, 32) for cam in cams},
     )
 
 
