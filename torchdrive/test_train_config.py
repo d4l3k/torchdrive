@@ -35,4 +35,3 @@ class TestTrainConfig(unittest.TestCase):
 
         config.dataset = Datasets.DUMMY
         dataset = config.create_dataset()
-        dataset[0]

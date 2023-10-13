@@ -135,9 +135,6 @@ class VoxelTask(BEVTask):
             self.vel_elem: int = 3
             background += [0.0, 0.0, 0.0]
             self.num_elem += self.classes_elem + self.vel_elem
-            self.segment: BDD100KSemSeg = BDD100KSemSeg(
-                device=device, compile_fn=compile_fn
-            )
             self.semantic_confusion_matrix = torchmetrics.ConfusionMatrix(
                 task="multiclass",
                 num_classes=self.classes_elem,
@@ -425,7 +422,12 @@ class VoxelTask(BEVTask):
         if self.semantic:
             with torch.autograd.profiler.record_function("segment"):
                 for cam in self.cameras:
-                    semantic_target = self.segment(primary_colors[cam]).sigmoid()
+                    semantic_target = F.interpolate(
+                        batch.sem_seg[cam].float(),
+                        [h // 2, w // 2],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
                     semantic_targets[cam] = semantic_target
 
                     semantic_classes = semantic_target.argmax(dim=1, keepdim=True)

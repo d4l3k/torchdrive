@@ -76,6 +76,11 @@ class TrainConfig:
         else:
             raise ValueError(f"unknown dataset type {self.dataset}")
 
+        if self.voxelsem:
+            from torchdrive.datasets.autolabeler import AutoLabeler
+
+            dataset = AutoLabeler(dataset, path=self.autolabel_path)
+
         assert set(dataset.cameras) == set(self.cameras)
         return dataset
 
@@ -260,5 +265,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--compile", default=False, action="store_true", help="use torch.compile"
     )
     parser.add_argument("--config", required=True, help="the config file name to use")
+    parser.add_argument(
+        "--smoke",
+        default=False,
+        action="store_true",
+        help="run with a smaller smoke test config",
+    )
 
     return parser

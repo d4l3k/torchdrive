@@ -74,7 +74,7 @@ else:
     writer = None
 
 
-dataset: Dataset = config.create_dataset()
+dataset: Dataset = config.create_dataset(smoke=args.smoke)
 
 if RANK == 0:
     print(f"trainset size {len(dataset)}")

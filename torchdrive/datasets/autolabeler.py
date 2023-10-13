@@ -1,7 +1,7 @@
 import dataclasses
 import os.path
 from enum import Enum
-from typing import Dict
+from typing import Dict, Optional
 
 import safetensors.torch
 import torch
@@ -46,8 +46,10 @@ class AutoLabeler(Dataset):
     def __len__(self) -> int:
         return len(self.dataset)
 
-    def __getitem__(self, idx: int) -> Batch:
+    def __getitem__(self, idx: int) -> Optional[Batch]:
         batch = self.dataset[idx]
+        if batch is None:
+            return None
         tokens = batch.token[0]
         out = {cam: [] for cam in self.dataset.cameras}
         for token in tokens:
@@ -59,7 +61,7 @@ class AutoLabeler(Dataset):
             )
             data = load_tensors(path)
             for cam, frame in data.items():
-                out[cam].append(frame)
+                out[cam].append(frame.bfloat16() / 255)
         return dataclasses.replace(
             batch, sem_seg={cam: torch.stack(frames) for cam, frames in out.items()}
         )
