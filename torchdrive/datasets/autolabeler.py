@@ -1,5 +1,6 @@
 import dataclasses
 import os.path
+import sys
 from enum import Enum
 from typing import Dict, Optional
 
@@ -17,6 +18,7 @@ ZSTD_THREADS = 1
 
 class LabelType(str, Enum):
     SEM_SEG = "sem_seg"
+    DET = "det"
 
 
 def save_tensors(path: str, data: Dict[str, torch.Tensor]) -> None:
@@ -26,11 +28,62 @@ def save_tensors(path: str, data: Dict[str, torch.Tensor]) -> None:
         f.write(buf)
 
 
+_SIZE = {
+    torch.int64: 8,
+    torch.float32: 4,
+    torch.int32: 4,
+    torch.bfloat16: 2,
+    torch.float16: 2,
+    torch.int16: 2,
+    torch.uint8: 1,
+    torch.int8: 1,
+    torch.bool: 1,
+    torch.float64: 8,
+}
+
+_TYPES = {
+    "F64": torch.float64,
+    "F32": torch.float32,
+    "F16": torch.float16,
+    "BF16": torch.bfloat16,
+    "I64": torch.int64,
+    # "U64": torch.uint64,
+    "I32": torch.int32,
+    # "U32": torch.uint32,
+    "I16": torch.int16,
+    # "U16": torch.uint16,
+    "I8": torch.int8,
+    "U8": torch.uint8,
+    "BOOL": torch.bool,
+}
+
+
+def _getdtype(dtype_str: str) -> torch.dtype:
+    return _TYPES[dtype_str]
+
+
+def _view2torch(safeview) -> Dict[str, torch.Tensor]:
+    result = {}
+    for k, v in safeview:
+        dtype = _getdtype(v["dtype"])
+        if len(v["data"]) == 0:
+            arr = torch.zeros(*v["shape"], dtype=dtype)
+            assert arr.numel() == 0
+        else:
+            arr = torch.frombuffer(v["data"], dtype=dtype).reshape(v["shape"])
+        if sys.byteorder == "big":
+            arr = torch.from_numpy(arr.numpy().byteswap(inplace=False))
+        result[k] = arr
+
+    return result
+
+
 def load_tensors(path: str) -> object:
     with open(path, "rb") as f:
         buf = f.read()
     buf = zstd.uncompress(buf)
-    return safetensors.torch.load(buf)
+    raw = safetensors.deserialize(buf)
+    return _view2torch(raw)
 
 
 class AutoLabeler(Dataset):

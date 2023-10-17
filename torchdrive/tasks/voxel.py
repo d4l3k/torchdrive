@@ -2,7 +2,6 @@ import os.path
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
-from matplotlib import cm
 
 import torch
 import torch.nn.functional as F
@@ -34,7 +33,6 @@ from torchdrive.transforms.depth import (
     Project3D,
 )
 from torchdrive.transforms.img import normalize_img, normalize_mask, render_color
-from torchdrive.transforms.mat import voxel_to_world
 
 
 def axis_grid(grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -268,10 +266,10 @@ class VoxelTask(BEVTask):
 
             gz = render_color(grid[0, 0].sum(dim=2))
 
-            grid_shape = grid.shape[2:] # [x, y, z]
+            grid_shape = grid.shape[2:]  # [x, y, z]
             volume_locator = VolumeLocator(
                 batch_size=1,
-                grid_sizes=grid_shape[::-1], # [z, y, x]
+                grid_sizes=grid_shape[::-1],  # [z, y, x]
                 voxel_size=1 / self.scale,
                 volume_translation=self.volume_translation,
                 device=device,
@@ -284,8 +282,9 @@ class VoxelTask(BEVTask):
 
             start_color = torch.tensor((0, 1, 0))
             end_color = torch.tensor((0, 0, 1))
+
             def get_color(percent: float) -> torch.Tensor:
-                return start_color*(1-percent) + percent*end_color
+                return start_color * (1 - percent) + percent * end_color
 
             zero_coord = torch.tensor([[0, 0, 0, 1]], device=device, dtype=torch.float)
             for frame in range(0, frames):
@@ -298,12 +297,12 @@ class VoxelTask(BEVTask):
                 coord = cam_coords[0, :3]
 
                 # convert from -1 to 1 to the grid range
-                coord = (coord+1)/2 * torch.tensor(grid_shape, device=device)
+                coord = (coord + 1) / 2 * torch.tensor(grid_shape, device=device)
                 x, y, z = coord.int()
                 _, d, w = gz.shape
                 if x >= d or y >= w or x < 0 or y < 0:
                     continue
-                gz[:, y, x] = get_color(frame/frames)
+                gz[:, y, x] = get_color(frame / frames)
 
             ctx.add_image(
                 "grid/z",
@@ -400,9 +399,12 @@ class VoxelTask(BEVTask):
         losses = {}
         for offset in self.start_offsets:
             sub_losses = self._losses_frame(
-                ctx=ctx, batch=batch, grid=grid,
-                feat_grid=feat_grid, frame=ctx.start_frame+offset,
-                dynamic=offset==0,
+                ctx=ctx,
+                batch=batch,
+                grid=grid,
+                feat_grid=feat_grid,
+                frame=ctx.start_frame + offset,
+                dynamic=offset == 0,
             )
             for k, v in sub_losses.items():
                 assert k not in losses, f"{k} computed multiple times"
@@ -483,7 +485,7 @@ class VoxelTask(BEVTask):
                     if not dynamic:
                         # if we're not computing dynamic losses we need to omit
                         # them from the primary mask
-                        primary_masks[cam] *= (dynamic_mask*-1+1)
+                        primary_masks[cam] *= dynamic_mask * -1 + 1
 
                     # Compute per pixel weights based on the inverse frequency
                     # of the classes to counter weight imbalance and normalize
@@ -635,9 +637,13 @@ class VoxelTask(BEVTask):
                     if not dynamic:
                         # exclude any dynamic voxels if we're not learning
                         # dynamic
-                        rendered_dynamic_mask = semantic_classes[:, BDD100KSemSeg.DYNAMIC_NON_SKY].detach()
-                        rendered_dynamic_mask = rendered_dynamic_mask.amax(dim=1).round().unsqueeze(1)
-                        primary_mask = primary_mask * (rendered_dynamic_mask*-1+1)
+                        rendered_dynamic_mask = semantic_classes[
+                            :, BDD100KSemSeg.DYNAMIC_NON_SKY
+                        ].detach()
+                        rendered_dynamic_mask = (
+                            rendered_dynamic_mask.amax(dim=1).round().unsqueeze(1)
+                        )
+                        primary_mask = primary_mask * (rendered_dynamic_mask * -1 + 1)
 
                     if ctx.log_text:
                         ctx.add_scalars(
@@ -669,7 +675,9 @@ class VoxelTask(BEVTask):
                         mask=primary_mask,
                         per_pixel_weights=per_pixel_weights,
                     )
-                    losses[f"semantic-voxel/{cam}{frame}"] = semantic_loss.mean(dim=(1, 2, 3))
+                    losses[f"semantic-voxel/{cam}{frame}"] = semantic_loss.mean(
+                        dim=(1, 2, 3)
+                    )
 
                     # update and plot confusion matrix
                     preds = semantic_classes.argmax(dim=1).flatten()
@@ -906,7 +914,9 @@ class VoxelTask(BEVTask):
                 assert (
                     time_max > 0 and time_max < 60
                 ), f"frame_time is bad {offset} {time}"
-                ctx.add_scalar(f"frame_time_max/{label}/{cam}{frame}/{offset}", time_max)
+                ctx.add_scalar(
+                    f"frame_time_max/{label}/{cam}{frame}/{offset}", time_max
+                )
 
             src_color = batch.color[cam][:, src_frame]
             src_color = F.interpolate(
