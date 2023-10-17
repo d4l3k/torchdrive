@@ -229,7 +229,6 @@ class VoxelTask(BEVTask):
     ) -> Dict[str, torch.Tensor]:
         BS = len(batch.distances)
         frames = batch.distances.shape[1]
-        start_frame = ctx.start_frame
         device = bev.device
 
         bev_shape = bev.shape[2:]
@@ -335,7 +334,7 @@ class VoxelTask(BEVTask):
 
             # total variation loss to encourage sharp edges
             tvl1_grid = ctx.log_grad_norm(grid, "grad/norm/grid", "tvl1")
-            losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1)) * 2.5 * 20
+            losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1)) * 2.5 * 20 * 0.1
 
             # we need to run tvl1 loss early as the child losses don't run
             # backwards on the whole set of losses
@@ -424,8 +423,7 @@ class VoxelTask(BEVTask):
         """
         BS = len(batch.distances)
         frames = batch.distances.shape[1]
-        start_frame = ctx.start_frame
-        frame_time = batch.frame_time - batch.frame_time[:, start_frame].unsqueeze(
+        frame_time = batch.frame_time - batch.frame_time[:, ctx.start_frame].unsqueeze(
             1
         )
         device = grid.device
@@ -609,7 +607,7 @@ class VoxelTask(BEVTask):
                 primary_mask = primary_masks[cam]
                 per_pixel_weights = cam_pix_weights[cam]
 
-                losses[f"visible-probs/{cam}{frame}"] = visible_probs.mean() * 1000
+                losses[f"visible-probs/{cam}{frame}"] = visible_probs.mean() * 1000 / 10
                 losses[f"depth-probs/{cam}{frame}"] = (
                     F.l1_loss(depth_probs, torch.ones_like(depth_probs)) * 20
                 )
