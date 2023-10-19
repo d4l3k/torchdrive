@@ -134,7 +134,7 @@ class AutoLabeler(Dataset):
                     labels = [data[f"{cam}/{i}"] for i in range(10)]  # 10 labels
                     out[cam][0].append(labels)
             return out
-        except FileNotFoundError as e:
+        except (FileNotFoundError, zstd.Error) as e:
             print("autolabeler", e)
             return None
 
