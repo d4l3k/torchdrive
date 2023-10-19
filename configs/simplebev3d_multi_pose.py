@@ -35,9 +35,9 @@ CONFIG = TrainConfig(
     num_workers=6,
     batch_size=2,
     # tasks
-    det=False,
+    det=True,
     ae=False,
     voxel=True,
     voxelsem=True,
-    path=False,
+    path=True,
 )

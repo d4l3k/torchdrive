@@ -19,7 +19,7 @@ class PathTask(BEVTask):
         dim: int = 128,
         num_heads: int = 8,
         num_layers: int = 6,
-        max_seq_len: int = 120,
+        max_seq_len: int = 6 * 2,
         num_ar_iters: int = 12,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
@@ -44,23 +44,29 @@ class PathTask(BEVTask):
         BS = len(batch.distances)
         device = bev.device
 
-        long_cam_T, mask, lengths = batch.long_cam_T
+        world_to_car, mask, lengths = batch.long_cam_T
+        car_to_world = torch.zeros_like(world_to_car)
+        car_to_world[mask] = world_to_car[mask].inverse()
 
         zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
         zero_coord[:, -1] = 1
 
-        positions = torch.matmul(long_cam_T, zero_coord.T)[..., :3, 0].permute(0, 2, 1)
+        positions = torch.matmul(car_to_world, zero_coord.T)[..., :3, 0].permute(
+            0, 2, 1
+        )
 
         # used for direction bucket
         final_pos = positions[torch.arange(BS), :, lengths - 1]
 
-        # downsample to 1/3 the frame rate
-        positions = positions[..., ::3]
-        mask = mask[..., ::3]
-        lengths //= 3
+        # downsample to 1/6 the frame rate (i.e. 12fps to 2fpss)
+        downsample = 6
+        positions = positions[..., ::downsample]
+        mask = mask[..., ::downsample]
+        lengths //= downsample
 
         pos_len = positions.size(-1)
-        pos_len = pos_len - (pos_len % 8) + 1
+        # if we need to be aligned to size 8
+        # pos_len = pos_len - (pos_len % 8) + 1
         pos_len = min(pos_len, self.max_seq_len + 1)
         positions = positions[..., :pos_len]
         mask = mask[..., 1:pos_len].float()

@@ -165,7 +165,7 @@ def dummy_item() -> Batch:
     for cam in cams:
         color[cam] = torch.rand(N, 3, 48, 64)
 
-    long_cam_T = torch.rand(9 * 3, 4, 4)
+    long_cam_T = torch.rand(random.randint(3, 9) * 3, 4, 4)
     return Batch(
         token=[[f"dummy{i}" for i in range(N)]],
         weight=torch.rand(1)[0],
@@ -187,7 +187,7 @@ def dummy_item() -> Batch:
 
 def dummy_batch() -> Batch:
     BS = 2
-    out = collate([dummy_item()] * BS)
+    out = collate([dummy_item() for i in range(BS)])
     assert out is not None
     return out
 

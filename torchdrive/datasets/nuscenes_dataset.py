@@ -128,6 +128,8 @@ class TimestampMatcher:
 def get_ego_T(nusc: NuScenes, sample_data: SampleData) -> torch.Tensor:
     """
     Get world to car translation matrix cam_T
+
+    Returns [4, 4]
     """
     pose_token = sample_data["ego_pose_token"]
     pose = nusc.get("ego_pose", pose_token)
@@ -275,11 +277,16 @@ class CameraDataset(TorchDataset):
         frame_time = frame_time - frame_time[0]
         frame_time = frame_time.float() / 1e6
 
+        long_cam_Ts = [
+            get_ego_T(self.nusc, sample_data) for sample_data in self.samples[idx:]
+        ]
+
         return {
             "weight": torch.tensor(frame_dicts[0]["weight"]),
             "distance": torch.stack(dists),
             "cam_T": torch.stack(cam_Ts),
             "frame_T": torch.stack(frame_Ts),
+            "long_cam_T": torch.stack(long_cam_Ts),
             "frame_time": frame_time,
             "K": frame_dicts[0][
                 "K"
@@ -438,6 +445,7 @@ class NuscenesDataset(Dataset):
         weight: Tensor = data[CamTypes.CAM_FRONT]["weight"]
         distances: Tensor = data[CamTypes.CAM_FRONT]["distance"]
         cam_Ts: Tensor = data[CamTypes.CAM_FRONT]["cam_T"]
+        long_cam_Ts: Tensor = data[CamTypes.CAM_FRONT]["long_cam_T"]
         frame_Ts: Tensor = data[CamTypes.CAM_FRONT]["frame_T"]
         frame_times: Tensor = data[CamTypes.CAM_FRONT]["frame_time"]
         Ks: Dict[str, Tensor] = {}
@@ -472,7 +480,7 @@ class NuscenesDataset(Dataset):
             T=Ts,
             color=colors,
             mask=masks,
-            long_cam_T=cam_Ts,
+            long_cam_T=long_cam_Ts,
             lidar=lidar,
             lidar_T=lidar_T,
             token=[token],

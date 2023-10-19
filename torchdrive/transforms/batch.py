@@ -52,10 +52,11 @@ class NormalizeCarPosition(BatchTransform):
 
     def __call__(self, batch: Batch) -> Batch:
         start_T = batch.cam_T[:, self.start_frame]
-        inv_start_T = start_T.unsqueeze(1)
-        cam_T = inv_start_T.matmul(batch.cam_T.inverse()).inverse()
+        inv_start_T = start_T.unsqueeze(1).inverse()
+        cam_T = batch.cam_T.matmul(inv_start_T)
         long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
-        long_cam_T = inv_start_T.matmul(long_cam_T.inverse()).inverse()
+
+        long_cam_T = long_cam_T.matmul(inv_start_T)
 
         return replace(
             batch,
@@ -85,11 +86,12 @@ class CenterCar(BatchTransform):
         transform = torch.eye(4).repeat(BS, 1, 1)
         transform[:, :3, 3] = -coord[:, :3]
         transform = transform.unsqueeze(1)  # [BS, 1, 4, 4]
+        transform = transform.inverse()
 
         # apply transformation matrix to car position matrices
-        cam_T = transform.matmul(batch.cam_T.inverse()).inverse()
+        cam_T = batch.cam_T.matmul(transform)
         long_cam_T, long_cam_T_mask, long_cam_T_lengths = batch.long_cam_T
-        long_cam_T = transform.matmul(long_cam_T.inverse()).inverse()
+        long_cam_T = long_cam_T.matmul(transform)
 
         return replace(
             batch,
