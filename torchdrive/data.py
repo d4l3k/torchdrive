@@ -55,6 +55,9 @@ class Batch:
     # AutoLabeler fields
     # semantic segmentation for each camera and the frames
     sem_seg: Optional[Dict[str, torch.Tensor]] = None
+    # object detections for each camera and frames
+    # [cam, batch, frame, class]: tensor[x1, y1, x2, y2, prob]
+    det: Optional[Dict[str, List[List[List[torch.Tensor]]]]] = None
 
     global_batch_size: int = 1
 
@@ -104,6 +107,13 @@ class Batch:
             if name == "token":
                 for i in range(num_parts):
                     out[i][name] = original[i * split_size : (i + 1) * split_size]
+                continue
+            elif name == "det":
+                for i in range(num_parts):
+                    out[i][name] = {
+                        cam: v[i * split_size : (i + 1) * split_size]
+                        for cam, v in original.items()
+                    }
                 continue
 
             parts = split(original, split_size)
@@ -171,6 +181,7 @@ def dummy_item() -> Batch:
         lidar_T=torch.rand(4, 4),
         lidar=torch.rand(4, random.randint(6, 10)),
         sem_seg={cam: torch.rand(N, 19, 24, 32) for cam in cams},
+        det={cam: [[[torch.rand(2, 5)]] * 10 for i in range(N)] for cam in cams},
     )
 
 
@@ -224,6 +235,16 @@ def _collate_token(
     return out
 
 
+def _collate_det(
+    dets: List[Dict[str, List[object]]],
+) -> Optional[torch.Tensor]:
+    out = {cam: [] for cam in dets[0].keys()}
+    for det in dets:
+        for cam, frames in det.items():
+            out[cam] += frames
+    return out
+
+
 def _collate_optional(items: List[Optional[object]]) -> Optional[List[object]]:
     if len(items) == 0 or items[0] is None:
         return None
@@ -237,6 +258,7 @@ _COLLATE_FIELDS: Mapping[str, Callable[[object], object]] = {
     "lidar": _collate_lidar,
     "token": _collate_token,
     "sem_seg": _collate_optional,
+    "det": _collate_det,
 }
 
 

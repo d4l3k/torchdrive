@@ -11,7 +11,7 @@ from torchdrive.amp import autocast
 from torchdrive.data import Batch
 from torchdrive.losses import generalized_box_iou
 from torchdrive.matcher import HungarianMatcher
-from torchdrive.models.det import BDD100KDet, DetBEVDecoder
+from torchdrive.models.det import DetBEVDecoder
 from torchdrive.tasks.bev import BEVTask, Context
 from torchdrive.transforms.bboxes import (
     bboxes3d_to_points,
@@ -62,12 +62,6 @@ class DetTask(BEVTask):
         self.decoder: nn.Module = compile_fn(decoder)
 
         # not a module -- not saved
-        self.det = BDD100KDet(
-            device=device,
-            # config="faster_rcnn_convnext-t_fpn_fp16_3x_det_bdd100k.py",
-            config="atss_r50_fpn_3x_det_bdd100k.py",
-            compile_fn=compile_fn,
-        )
         self.matcher = HungarianMatcher()
 
     def forward(
@@ -114,7 +108,7 @@ class DetTask(BEVTask):
             (w, h, w, h), dtype=torch.float32, device=device
         )
 
-        view_frames = range(ctx.start_frame, num_frames)
+        view_frames = range(0, num_frames)
 
         losses = {}
         unmatched_queries = torch.full((BS, num_queries), True, dtype=torch.bool)
@@ -135,8 +129,7 @@ class DetTask(BEVTask):
                 )
 
                 primary_color = batch.color[cam][:, frame]
-                with torch.inference_mode():
-                    target_preds = self.det(primary_color)
+                target_preds = [batch.det[cam][i][frame] for i in range(BS)]
 
                 targets: List[Dict[str, torch.Tensor]] = []
                 num_targets = 0
@@ -162,9 +155,7 @@ class DetTask(BEVTask):
                                 continue
 
                             labels.append(tkls)
-                            boxes.append(
-                                torch.from_numpy(box[:4]).to(device, non_blocking=True)
-                            )
+                            boxes.append(box[:4].to(device, non_blocking=True))
 
                     labels = (
                         torch.stack(labels)

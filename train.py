@@ -8,7 +8,7 @@ from typing import Callable, cast, Dict, Iterator, List, Optional, Set, Union
 
 # set device before loading CUDA/PyTorch
 LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
-os.environ["CUDA_VISIBLE_DEVICES"] = str(LOCAL_RANK)
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", str(LOCAL_RANK))
 
 import torch
 import torch.distributed as dist
@@ -48,8 +48,11 @@ else:
 
 # since we set CUDA_VISIBLE_DEVICES there should only be max 1 device
 assert torch.cuda.device_count() <= 1
-device_id = 0
-device = torch.device(device_id)
+if torch.cuda.is_available():
+    device_id = 0
+    device = torch.device(device_id)
+else:
+    device = torch.device("cpu")
 
 torch.set_float32_matmul_precision("high")
 

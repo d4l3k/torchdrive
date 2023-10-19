@@ -2,7 +2,7 @@ import dataclasses
 import os.path
 import sys
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import safetensors.torch
 import torch
@@ -99,11 +99,7 @@ class AutoLabeler(Dataset):
     def __len__(self) -> int:
         return len(self.dataset)
 
-    def __getitem__(self, idx: int) -> Optional[Batch]:
-        batch = self.dataset[idx]
-        if batch is None:
-            return None
-
+    def _sem_seg(self, batch: Batch) -> Optional[Dict[str, torch.Tensor]]:
         try:
             tokens = batch.token[0]
             out = {cam: [] for cam in self.dataset.cameras}
@@ -117,12 +113,41 @@ class AutoLabeler(Dataset):
                 data = load_tensors(path)
                 for cam, frame in data.items():
                     out[cam].append(frame.bfloat16() / 255)
-            return dataclasses.replace(
-                batch, sem_seg={cam: torch.stack(frames) for cam, frames in out.items()}
-            )
+            return {cam: torch.stack(frames) for cam, frames in out.items()}
         except FileNotFoundError as e:
             print("autolabeler", e)
             return None
+
+    def _det(self, batch: Batch) -> Optional[Dict[str, List[List[List[torch.Tensor]]]]]:
+        try:
+            tokens = batch.token[0]
+            out = {cam: [[]] for cam in self.dataset.cameras}
+            for token in tokens:
+                path = os.path.join(
+                    self.path,
+                    self.dataset.NAME,
+                    LabelType.DET,
+                    f"{token}.safetensors.zstd",
+                )
+                data = load_tensors(path)
+                for cam in self.dataset.cameras:
+                    labels = [data[f"{cam}/{i}"] for i in range(10)]  # 10 labels
+                    out[cam][0].append(labels)
+            return out
+        except FileNotFoundError as e:
+            print("autolabeler", e)
+            return None
+
+    def __getitem__(self, idx: int) -> Optional[Batch]:
+        batch = self.dataset[idx]
+        if batch is None:
+            return None
+
+        return dataclasses.replace(
+            batch,
+            sem_seg=self._sem_seg(batch),
+            det=self._det(batch),
+        )
 
     @property
     def NAME(self) -> Datasets:

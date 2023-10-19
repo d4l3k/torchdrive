@@ -182,11 +182,12 @@ class TrainConfig:
 
         tasks: Dict[str, BEVTask] = {}
         hr_tasks: Dict[str, BEVTask] = {}
+        bev_shape = tuple(v // 16 for v in self.grid_shape[:2])
         if self.path:
             from torchdrive.tasks.path import PathTask
 
             tasks["path"] = PathTask(
-                bev_shape=self.bev_shape,
+                bev_shape=bev_shape,
                 bev_dim=self.dim,
                 dim=self.dim,
                 # compile_fn=compile_fn,
@@ -197,7 +198,7 @@ class TrainConfig:
             tasks["det"] = DetTask(
                 cameras=self.cameras,
                 cam_shape=self.cam_shape,
-                bev_shape=self.bev_shape,
+                bev_shape=bev_shape,
                 dim=self.dim,
                 device=device,
                 compile_fn=compile_fn,
@@ -208,7 +209,7 @@ class TrainConfig:
             tasks["ae"] = AETask(
                 cameras=self.cameras,
                 cam_shape=self.cam_shape,
-                bev_shape=self.bev_shape,
+                bev_shape=bev_shape,
                 dim=self.dim,
             )
         if self.voxel:

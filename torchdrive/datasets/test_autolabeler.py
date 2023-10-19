@@ -43,6 +43,12 @@ class TestAutolabeler(unittest.TestCase):
                 LabelType.SEM_SEG,
             )
             os.makedirs(sem_seg_path)
+            det_path = os.path.join(
+                path,
+                dataset.NAME,
+                LabelType.DET,
+            )
+            os.makedirs(det_path)
 
             batch = dataset[0]
             for token in batch.token[0]:
@@ -58,7 +64,20 @@ class TestAutolabeler(unittest.TestCase):
                     },
                 )
 
+                tensor_path = os.path.join(
+                    det_path,
+                    f"{token}.safetensors.zstd",
+                )
+                out = {}
+                for cam in dataset.cameras:
+                    for i in range(10):
+                        out[f"{cam}/{i}"] = torch.rand(2, 5)
+
+                save_tensors(tensor_path, out)
+
             out = labeler[0]
             self.assertIsNotNone(out.sem_seg)
             self.assertEqual(out.sem_seg["left"].shape, (3,))
             self.assertEqual(out.sem_seg["right"].shape, (3,))
+
+            self.assertIsNotNone(out.det)
