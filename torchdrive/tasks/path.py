@@ -20,7 +20,7 @@ class PathTask(BEVTask):
         num_heads: int = 8,
         num_layers: int = 6,
         max_seq_len: int = 6 * 2,
-        num_ar_iters: int = 12,
+        num_ar_iters: int = 6,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()

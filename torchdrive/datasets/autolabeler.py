@@ -143,10 +143,15 @@ class AutoLabeler(Dataset):
         if batch is None:
             return None
 
+        sem_seg = self._sem_seg(batch)
+        det = self._det(batch)
+        if sem_seg is None or det is None:
+            return None
+
         return dataclasses.replace(
             batch,
-            sem_seg=self._sem_seg(batch),
-            det=self._det(batch),
+            sem_seg=sem_seg,
+            det=det,
         )
 
     @property

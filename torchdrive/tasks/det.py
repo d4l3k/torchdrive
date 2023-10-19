@@ -108,7 +108,7 @@ class DetTask(BEVTask):
             (w, h, w, h), dtype=torch.float32, device=device
         )
 
-        view_frames = range(0, num_frames)
+        view_frames = range(0, min(5, num_frames))
 
         losses = {}
         unmatched_queries = torch.full((BS, num_queries), True, dtype=torch.bool)
