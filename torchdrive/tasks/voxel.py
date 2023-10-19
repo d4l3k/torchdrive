@@ -245,6 +245,13 @@ class VoxelTask(BEVTask):
         )[:, 1:]
 
         grid = grid.permute(0, 1, 4, 3, 2)
+
+        # set floor
+        # this helps avoid degenerate cases due to dynamic objects, blur and
+        # reflections
+        grid = grid.clone()
+        grid[:, :, :, :, 0] = 1
+
         feat_grid = feat_grid.permute(0, 1, 4, 3, 2)
         # agrid, _ = axis_grid(grid)
         # grid = (grid+agrid).clamp(min=0, max=1)

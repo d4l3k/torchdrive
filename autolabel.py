@@ -126,7 +126,7 @@ class LabelDet(nn.Module):
 
 TASKS = [
     LabelDet(),
-    # LabelSemSeg(),
+    LabelSemSeg(),
 ]
 
 
@@ -185,7 +185,8 @@ for batch in tqdm(collator):
         cam_data = {}
         for cam, frames in batch.color.items():
             squashed = frames[idxs].squeeze(1)
-            cam_data[cam] = task(squashed)
+            with torch.no_grad():
+                cam_data[cam] = task(squashed)
 
         for j, i in enumerate(idxs):
             frame_data = {}
