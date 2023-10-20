@@ -158,6 +158,12 @@ class Batch:
         return self.car_to_world(0).matmul(self.lidar_T)
 
 
+def _rand_det_target() -> torch.Tensor:
+    t = torch.rand(2, 5)
+    t[:, :2] *= -1
+    return t
+
+
 def dummy_item() -> Batch:
     N = 3
     color = {}
@@ -181,7 +187,7 @@ def dummy_item() -> Batch:
         lidar_T=torch.rand(4, 4),
         lidar=torch.rand(4, random.randint(6, 10)),
         sem_seg={cam: torch.rand(N, 19, 24, 32) for cam in cams},
-        det={cam: [[[torch.rand(2, 5)]] * 10 for i in range(N)] for cam in cams},
+        det={cam: [[[_rand_det_target()]] * 10 for i in range(N)] for cam in cams},
     )
 
 

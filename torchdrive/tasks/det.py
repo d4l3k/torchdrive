@@ -114,8 +114,7 @@ class DetTask(BEVTask):
         unmatched_queries = torch.full((BS, num_queries), True, dtype=torch.bool)
 
         for frame in view_frames:
-            d_frame = frame - ctx.start_frame
-            dur = d_frame / 36  # frames / fps = seconds
+            dur = batch.frame_time[:, frame] - batch.frame_time[:, ctx.start_frame]
             points3d = bboxes3d_to_points(bboxes3d, time=dur)
 
             for cam in self.cameras:

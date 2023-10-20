@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Union
 
 import torch
 
@@ -37,15 +37,20 @@ def decode_bboxes3d(
     return xyz, vel, sizes
 
 
-def bboxes3d_to_points(bboxes: torch.Tensor, time: float = 0.0) -> torch.Tensor:
+def bboxes3d_to_points(
+    bboxes: torch.Tensor, time: Union[torch.Tensor, float] = 0.0
+) -> torch.Tensor:
     """
     converts the bboxes array into 3d world coordinates
     input dim: (BS, num_queries, 9)
     output dim: (BS, num_queries, 8, 3)
     """
 
-    xyz, vel, sizes = decode_bboxes3d(bboxes)
+    if not isinstance(time, torch.Tensor):
+        time = torch.tensor(time, dtype=bboxes.dtype, device=bboxes.device)
+    time = time.unsqueeze(-1).unsqueeze(-1)
 
+    xyz, vel, sizes = decode_bboxes3d(bboxes)
     xyz += vel * time
 
     # each corner point

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from torchdrive.amp import autocast
-from torchdrive.models.mlp import ConvMLP
+from torchdrive.models.mlp import MLP
 from torchdrive.models.regnet import ConvPEBlock
 from torchdrive.models.transformer import StockTransformerDecoder, transformer_init
 from torchdrive.positional_encoding import apply_sin_cos_enc2d
@@ -38,12 +38,10 @@ class PathTransformer(nn.Module):
         num_heads: int = 8,
         num_layers: int = 3,
         pos_dim: int = 3,
-        direction_buckets: int = 14,
     ) -> None:
         super().__init__()
 
         self.dim = dim
-        self.direction_buckets = direction_buckets
 
         self.bev_encoder = nn.Conv2d(bev_dim, dim, 1)
 
@@ -54,9 +52,8 @@ class PathTransformer(nn.Module):
         )
         self.pos_decoder = nn.Linear(dim, pos_dim, bias=False)
 
-        static_features = 3
-        self.static_encoder = ConvMLP(static_features, dim, dim)
-        self.direction_embedding = nn.Embedding(direction_buckets, dim)
+        static_features = 3 * 3
+        self.static_encoder = MLP(static_features, dim, dim)
 
         self.transformer = StockTransformerDecoder(
             dim=dim, layers=num_layers, num_heads=num_heads
@@ -74,15 +71,25 @@ class PathTransformer(nn.Module):
         position_emb = self.pos_encoder(positions.permute(0, 2, 1))
         ae_pos = self.pos_decoder(position_emb).permute(0, 2, 1)
 
-        # direction buckets
-        direction_bucket = pos_to_bucket(final_pos, buckets=self.direction_buckets)
-        direction_feats = self.direction_embedding(direction_bucket).unsqueeze(1)
-
+        num_pos = positions.size(2)
         # static features (speed)
-        speed = positions[:, :, 1] - positions[:, :, 0]
+        if num_pos > 1:
+            speed = positions[:, :, 1] - positions[:, :, 0]
+        else:
+            speed = positions[:, :, 0] * 0
+
+        start_position = positions[:, :, 0]
+
+        end_jitter = 5
+        end_position = positions[:, :, -1]
+        end_jitter = (torch.rand_like(end_position) * 2 - 1) * end_jitter
+        end_position = end_position + end_jitter
 
         with autocast():
-            static = self.static_encoder(speed.unsqueeze(-1)).permute(0, 2, 1)
+            static_feats = torch.cat(
+                (speed, start_position, end_position), dim=1
+            ).unsqueeze(-1)
+            static = self.static_encoder(static_feats).permute(0, 2, 1)
 
             # bev features
             bev = self.bev_project(bev)
@@ -90,7 +97,7 @@ class PathTransformer(nn.Module):
             bev = self.bev_encoder(bev).flatten(-2, -1).permute(0, 2, 1)
 
             # cross attention features to decode
-            cross_feats = torch.cat((bev, static, direction_feats), dim=1)
+            cross_feats = torch.cat((bev, static), dim=1)
 
             out_positions = self.transformer(position_emb, cross_feats)
 

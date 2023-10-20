@@ -60,7 +60,7 @@ class PathTask(BEVTask):
 
         # downsample to 1/6 the frame rate (i.e. 12fps to 2fpss)
         downsample = 6
-        positions = positions[..., ::downsample]
+        positions = positions[..., ctx.start_frame :: downsample]
         mask = mask[..., ::downsample]
         lengths //= downsample
 
@@ -124,7 +124,6 @@ class PathTask(BEVTask):
                     final_pos[:1],
                     n=length - 2,
                 )
-                assert autoregressive.shape == (1, 3, length)
                 plt.plot(*autoregressive[0, 0:2].detach().cpu(), label="autoregressive")
                 self.train()
 

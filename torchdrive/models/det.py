@@ -7,9 +7,9 @@ from torchvision import transforms
 
 from torchdrive.amp import autocast
 from torchdrive.attention import attention
-from torchdrive.models.mlp import ConvMLP
+from torchdrive.models.mlp import MLP
 from torchdrive.models.regnet import ConvPEBlock
-from torchdrive.positional_encoding import positional_encoding
+from torchdrive.positional_encoding import apply_sin_cos_enc2d
 from torchdrive.transforms.img import normalize_img_cuda
 
 
@@ -138,19 +138,16 @@ class DetBEVDecoder(nn.Module):
         self.num_heads = num_heads
         self.num_classes = num_classes
 
-        self.register_buffer(
-            "positional_encoding", positional_encoding(*bev_shape), persistent=False
-        )
         self.num_queries = num_queries
 
         self.bev_project = ConvPEBlock(dim, dim, bev_shape, depth=1)
 
         self.query_embed = nn.Embedding(num_queries, dim)
         self.kv_encoder = nn.Sequential(
-            nn.Conv1d(dim + 6, 2 * dim, 1),
+            nn.Conv1d(dim, 2 * dim, 1),
         )
 
-        self.bbox_decoder = ConvMLP(dim, 128, 9)
+        self.bbox_decoder = MLP(dim, 128, 9)
         self.class_decoder = nn.Conv1d(dim, num_classes + 1, 1)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -168,13 +165,7 @@ class DetBEVDecoder(nn.Module):
             query = self.query_embed.weight.to(x.dtype).expand(BS, -1, -1)
             q_seqlen = self.num_queries
 
-            x = torch.cat(
-                (
-                    self.positional_encoding.expand(len(x), -1, -1, -1),
-                    x,
-                ),
-                dim=1,
-            )
+            x = apply_sin_cos_enc2d(x)
             x = x.reshape(*x.shape[:2], -1)
             kv = self.kv_encoder(x).permute(0, 2, 1)
 
@@ -192,8 +183,6 @@ class DetBEVDecoder(nn.Module):
 
 
 if __name__ == "__main__":
-    from functools import partial
-
     m = BDD100KDet(device=torch.device("cpu"))
     model = m.model.__self__
     img, img_meta = m.transform(torch.rand(2, 3, 120, 240))

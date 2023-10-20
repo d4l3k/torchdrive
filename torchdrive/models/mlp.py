@@ -2,23 +2,20 @@ import torch
 from torch import nn
 
 
-class ConvMLP(nn.Module):
+class MLP(nn.Module):
     """
-    ConvMLP is a multilayer perceptron implemented as a set of 1d filter size 1
-    convolutions so you can process many of them at once.
+    MLP is a multilayer perceptron.
     """
 
     def __init__(self, input_dim: int, hidden_dim: int, output_dim: int) -> None:
         super().__init__()
 
         self.decoder = nn.Sequential(
-            nn.Conv1d(input_dim, hidden_dim, 1),
-            nn.BatchNorm1d(hidden_dim),
+            nn.Linear(input_dim, hidden_dim),
             nn.ReLU(inplace=True),
-            nn.Conv1d(hidden_dim, hidden_dim, 1),
-            nn.BatchNorm1d(hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(inplace=True),
-            nn.Conv1d(hidden_dim, output_dim, 1),
+            nn.Linear(hidden_dim, output_dim),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -28,4 +25,4 @@ class ConvMLP(nn.Module):
         Returns:
             [BS, output_dim, queries]
         """
-        return self.decoder(x)
+        return self.decoder(x.permute(0, 2, 1)).permute(0, 2, 1)
