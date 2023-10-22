@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.functional as F
+import torchmetrics
 from torch import nn
 
 from torchdrive.data import Batch
@@ -28,15 +29,16 @@ class PathTask(BEVTask):
         self.max_seq_len = max_seq_len
         self.num_ar_iters = num_ar_iters
 
-        self.transformer: nn.Module = compile_fn(
-            PathTransformer(
-                bev_shape=bev_shape,
-                bev_dim=bev_dim,
-                dim=dim,
-                num_heads=num_heads,
-                num_layers=num_layers,
-            )
+        self.transformer: nn.Module = PathTransformer(
+            bev_shape=bev_shape,
+            bev_dim=bev_dim,
+            dim=dim,
+            num_heads=num_heads,
+            num_layers=num_layers,
+            compile_fn=compile_fn,
         )
+
+        self.ae_mae = torchmetrics.MeanAbsoluteError()
 
     def forward(
         self, ctx: Context, batch: Batch, bev: torch.Tensor
@@ -89,6 +91,11 @@ class PathTask(BEVTask):
 
         for i in range(self.num_ar_iters):
             predicted, ae_prev = self.transformer(bev, prev, final_pos)
+
+            # ensure encoder and decoder are in sync
+            losses[f"ae/{i}"] = F.huber_loss(ae_prev, prev)
+            self.ae_mae.update(ae_prev, prev)
+
             all_predicted.append(predicted)
 
             per_token_loss = F.huber_loss(predicted, target, reduction="none")
@@ -99,7 +106,11 @@ class PathTask(BEVTask):
                 per_token_loss.sum(dim=(1, 2)) * 5 / (num_elements + 1)
             )
 
+            # keep first values the same and shift predicted over by 1
             prev = torch.cat((prev[..., :1], predicted[..., :-1]), dim=-1)
+
+        if ctx.log_text:
+            ctx.add_scalar("ae/mae", self.ae_mae.compute())
 
         if ctx.log_img:
             with torch.no_grad():

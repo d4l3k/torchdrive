@@ -1,5 +1,5 @@
 import math
-from typing import Tuple, Union
+from typing import Callable, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -10,6 +10,8 @@ from torchdrive.models.mlp import MLP
 from torchdrive.models.regnet import ConvPEBlock
 from torchdrive.models.transformer import StockTransformerDecoder, transformer_init
 from torchdrive.positional_encoding import apply_sin_cos_enc2d
+
+MAX_POS = 100  # meters from origin
 
 
 def rel_dists(series: torch.Tensor) -> torch.Tensor:
@@ -38,6 +40,7 @@ class PathTransformer(nn.Module):
         num_heads: int = 8,
         num_layers: int = 3,
         pos_dim: int = 3,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
 
@@ -45,15 +48,25 @@ class PathTransformer(nn.Module):
 
         self.bev_encoder = nn.Conv2d(bev_dim, dim, 1)
 
-        self.bev_project = ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1)
+        self.bev_project = compile_fn(ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1))
 
-        self.pos_encoder = nn.Sequential(
-            nn.Linear(pos_dim, dim, bias=False),
+        self.pos_encoder = compile_fn(
+            nn.Sequential(
+                nn.Linear(pos_dim, dim),
+                nn.ReLU(inplace=True),
+                nn.Linear(dim, dim),
+            )
         )
-        self.pos_decoder = nn.Linear(dim, pos_dim, bias=False)
+        self.pos_decoder = compile_fn(
+            nn.Sequential(
+                nn.Linear(dim, dim),
+                nn.ReLU(inplace=True),
+                nn.Linear(dim, pos_dim),
+            )
+        )
 
         static_features = 3 * 3
-        self.static_encoder = MLP(static_features, dim, dim)
+        self.static_encoder = compile_fn(MLP(static_features, dim, dim))
 
         self.transformer = StockTransformerDecoder(
             dim=dim, layers=num_layers, num_heads=num_heads
@@ -80,6 +93,8 @@ class PathTransformer(nn.Module):
 
         start_position = positions[:, :, 0]
 
+        # feed it the target end position with random jitter added to avoid
+        # overfitting
         end_jitter = 5
         end_position = positions[:, :, -1]
         end_jitter = (torch.rand_like(end_position) * 2 - 1) * end_jitter
@@ -101,7 +116,10 @@ class PathTransformer(nn.Module):
 
             out_positions = self.transformer(position_emb, cross_feats)
 
-        pred_pos = self.pos_decoder(out_positions.float()).permute(0, 2, 1)
+        pred_pos = self.pos_decoder(out_positions.float())
+        pred_pos = pred_pos.permute(0, 2, 1)  # [bs, 3, n]
+        # convert to bounded x/y/z coords
+        pred_pos = (pred_pos.sigmoid() * 2 - 1) * MAX_POS
 
         return pred_pos, ae_pos
 
