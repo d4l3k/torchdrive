@@ -1,12 +1,17 @@
 import os
+import time
 from bisect import bisect_left
 from datetime import timedelta
 from enum import Enum
 from typing import Dict, List, Optional, Tuple, TypedDict
 
+import orjson
+
+import pandas as pd
+import pyarrow as pa
 import torch
 import torchvision.transforms as transforms
-from nuscenes.nuscenes import NuScenes
+from nuscenes.nuscenes import NuScenes as UnpatchedNuScenes
 from nuscenes.utils.data_classes import LidarPointCloud
 from PIL import Image
 from pytorch3d.transforms import quaternion_to_matrix
@@ -18,6 +23,100 @@ from torchdrive.datasets.dataset import Dataset, Datasets
 Tensor = torch.Tensor
 
 from torchdrive.data import Batch, collate
+
+
+def as_str(data: object) -> str:
+    if isinstance(data, str):
+        return data
+    elif isinstance(data, pa.StringScalar):
+        return data.as_py()
+    else:
+        raise TypeError(f"unknown type of {data}")
+
+
+def as_num(data: object) -> str:
+    if isinstance(data, (int, float)):
+        return data
+    elif isinstance(data, pa.Int64Scalar):
+        return data.as_py()
+    else:
+        raise TypeError(f"unknown type of {data}")
+
+
+def as_py(data: object) -> object:
+    if hasattr(data, "as_py"):
+        return data.as_py()
+    return data
+
+
+# NuScenes = UnpatchedNuScenes
+class NuScenes(UnpatchedNuScenes):
+    def __init__(
+        self,
+        version: str = "v1.0-mini",
+        dataroot: str = "/data/sets/nuscenes",
+        verbose: bool = True,
+        map_resolution: float = 0.1,
+    ):
+        super().__init__(version, dataroot, verbose, map_resolution)
+
+        for table in self.table_names:
+            if table == "map":
+                continue
+            setattr(self, table, pa.array(getattr(self, table)))
+
+    def __load_table__(self, table_name) -> dict:
+        """Loads a table."""
+        with open(os.path.join(self.table_root, f"{table_name}.json")) as f:
+            table = orjson.loads(f.read())
+        return table
+
+    def __make_reverse_index__(self, verbose: bool) -> None:
+        """
+        De-normalizes database to create reverse indices for common cases.
+        :param verbose: Whether to print outputs.
+        """
+
+        start_time = time.time()
+        if verbose:
+            print("Reverse indexing ...")
+
+        # Store the mapping from token to table index for each table.
+        self._token2ind = dict()
+        for table in self.table_names:
+            index = {}
+
+            for ind, member in enumerate(getattr(self, table)):
+                index[member["token"]] = ind
+
+            self._token2ind[table] = pd.Series(index.values(), index=index.keys())
+
+        # Decorate (adds short-cut) sample_data with sensor information.
+        for record in self.sample_data:
+            cs_record = self.get("calibrated_sensor", record["calibrated_sensor_token"])
+            sensor_record = self.get("sensor", cs_record["sensor_token"])
+            record["sensor_modality"] = sensor_record["modality"]
+            record["channel"] = sensor_record["channel"]
+
+    def get(self, table_name: str, token: str) -> dict:
+        """
+        Returns a record from table in constant runtime.
+        :param table_name: Table name.
+        :param token: Token of the record.
+        :return: Table record. See README.md for record details for each table.
+        """
+        assert table_name in self.table_names, "Table {} not found".format(table_name)
+
+        return getattr(self, table_name)[self.getind(table_name, as_str(token))]
+
+    def getind(self, table_name: str, token: str) -> int:
+        """
+        This returns the index of the record in a table in constant runtime.
+        :param table_name: Table name.
+        :param token: Token of the record.
+        :return: The index of the record in table, table is an array.
+        """
+        return self._token2ind[table_name][token]
 
 
 class SampleData(TypedDict):
@@ -55,7 +154,7 @@ def calculate_timestamp_index(
     timestamp_index = {}
     for cam, samples in cam_samples.items():
         for i, sample in enumerate(samples):
-            timestamp = sample["timestamp"]
+            timestamp = as_num(sample["timestamp"])
             if timestamp not in timestamp_index:
                 timestamp_index[timestamp] = {}
             timestamp_index[timestamp][cam] = (sample, i)
@@ -104,14 +203,14 @@ class TimestampMatcher:
     ) -> None:
         self.cam_samples = cam_samples
         self.epsilon = int(epsilon.total_seconds() * 1e6)
-        self.timestamp_index: Dict[
+        timestamp_index: Dict[
             int, Dict[str, Tuple[SampleData, int]]
         ] = calculate_timestamp_index(cam_samples)
-        self.sorted_timestamps: List[int] = sorted(self.timestamp_index.keys())
+        sorted_timestamps: List[int] = sorted(timestamp_index.keys())
         self.nearest_data_within_epsilon: Dict[
             int, Tuple[SampleData, Dict[str, int]]
         ] = calculate_nearest_data_within_epsilon(
-            cam_samples, self.epsilon, self.timestamp_index, self.sorted_timestamps
+            cam_samples, self.epsilon, timestamp_index, sorted_timestamps
         )
 
     def get_nearest_data_within_epsilon(
@@ -121,7 +220,7 @@ class TimestampMatcher:
         if idx < 0 or idx >= len(cam_front_samples):
             raise IndexError("Index out of range")
 
-        cam_front_timestamp = cam_front_samples[idx]["timestamp"]
+        cam_front_timestamp = as_num(cam_front_samples[idx]["timestamp"])
         return self.nearest_data_within_epsilon[cam_front_timestamp]
 
 
@@ -134,13 +233,13 @@ def get_ego_T(nusc: NuScenes, sample_data: SampleData) -> torch.Tensor:
     pose_token = sample_data["ego_pose_token"]
     pose = nusc.get("ego_pose", pose_token)
     cam_T = torch.eye(4)
-    translation = torch.tensor(pose["translation"])
+    translation = torch.tensor(as_py(pose["translation"]))
     cam_T[:3, 3] = translation
     # cam_T = cam_T.inverse()  # convert to car_to_world
 
     # apply rotation matrix
     rotation_mat = torch.eye(4)
-    quat = torch.tensor(pose["rotation"])
+    quat = torch.tensor(as_py(pose["rotation"]))
     rotation = quaternion_to_matrix(quat)
     rotation_mat[:3, :3] = rotation
 
@@ -157,7 +256,7 @@ def get_sensor_calibration_K(
 
     calibrated_sensor_token = sample_data["calibrated_sensor_token"]
     calibrated_sensor = nusc.get("calibrated_sensor", calibrated_sensor_token)
-    camera_intrinsic = torch.tensor(calibrated_sensor["camera_intrinsic"])
+    camera_intrinsic = torch.tensor(as_py(calibrated_sensor["camera_intrinsic"]))
     K = torch.eye(4)
     K[:3, :3] = camera_intrinsic
     K[0] /= width
@@ -173,8 +272,8 @@ def get_sensor_calibration_T(nusc: NuScenes, sample_data: SampleData) -> torch.T
     calibrated_sensor_token = sample_data["calibrated_sensor_token"]
     calibrated_sensor = nusc.get("calibrated_sensor", calibrated_sensor_token)
 
-    rotation = quaternion_to_matrix(torch.tensor(calibrated_sensor["rotation"]))
-    translation = calibrated_sensor["translation"]
+    rotation = quaternion_to_matrix(torch.tensor(as_py(calibrated_sensor["rotation"])))
+    translation = as_py(calibrated_sensor["translation"])
     rot_T = torch.eye(4)
     rot_T[:3, :3] = rotation
     trans_T = torch.eye(4)
@@ -203,10 +302,12 @@ class CameraDataset(TorchDataset):
 
     def _getitem(self, sample_data: SampleData) -> Dict[str, object]:
         cam_T = get_ego_T(self.nusc, sample_data)
-        timestamp = sample_data["timestamp"]
+        timestamp = as_py(sample_data["timestamp"])
 
         # Get the image
-        img_path = os.path.join(self.dataroot, sample_data["filename"])  # current image
+        img_path = os.path.join(
+            self.dataroot, as_str(sample_data["filename"])
+        )  # current image
         img = Image.open(img_path)
         width, height = img.size
 
@@ -325,7 +426,7 @@ class LidarDataset(TorchDataset):
         sensor_T = get_sensor_calibration_T(self.nusc, sample_data)
 
         pcl = LidarPointCloud.from_file(
-            os.path.join(self.dataroot, sample_data["filename"])
+            os.path.join(self.dataroot, as_str(sample_data["filename"]))
         )
         return torch.from_numpy(pcl.points), sensor_T.matmul(ego_T)
 
@@ -388,7 +489,7 @@ class NuscenesDataset(Dataset):
         starts = [
             sd
             for sd in self.nusc.sample_data
-            if sd["channel"] == cam and sd["prev"] == ""
+            if as_str(sd["channel"]) == cam and as_str(sd["prev"]) == ""
         ]
 
         assert len(starts) > 0, f"No starts found for {cam}"
@@ -398,24 +499,25 @@ class NuscenesDataset(Dataset):
         for start in starts:
             samples = []
             sample_data = start
-            while sample_data["next"] != "":
+            while as_str(sample_data["next"]) != "":
                 samples.append(sample_data)
                 sample_data = self.nusc.get("sample_data", sample_data["next"])
             samples.append(sample_data)
 
             scenes.append(samples)
-            sensor_modality = sample_data["sensor_modality"]
+            sensor_modality = as_str(sample_data["sensor_modality"])
             if sensor_modality == "camera":
                 kls = CameraDataset
             elif sensor_modality == "lidar":
                 kls = LidarDataset
             else:
                 raise RuntimeError(f"unsupported sensor_modality {sensor_modality}")
+            samples = pa.array(samples)
             ds_scenes.append(
                 kls(self.data_dir, self.nusc, samples, num_frames=self.num_frames)
             )
 
-        scene_samples = [sample for scene in scenes for sample in scene]
+        scene_samples = pa.array([sample for scene in scenes for sample in scene])
         ds = ConcatDataset(ds_scenes)
         return ds, scene_samples
 
