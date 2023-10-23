@@ -311,6 +311,8 @@ class DetTask(BEVTask):
                 F.cross_entropy(unmatched_classes, target_classes) * 32
             )
 
+        losses = {k: v * 100 for k, v in losses.items()}
+
         return losses
 
     # These are modified from

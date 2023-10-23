@@ -236,12 +236,12 @@ class DetBEVTransformerDecoder(nn.Module):
             bev = self.bev_project(bev)
             bev = apply_sin_cos_enc2d(bev)
 
-            mask = torch.ones(
-                self.num_queries, self.num_queries, device=bev.device, dtype=bev.dtype
-            )
             target = self.query_embed.weight.expand(BS, -1, -1)
             bev = bev.flatten(2, 3).permute(0, 2, 1)
-            out = self.transformer_decoder(target, bev, tgt_mask=mask)
+            out = self.transformer_decoder(
+                tgt=target,
+                memory=bev,
+            )
 
             out = out.permute(0, 2, 1)  # (BS, ch, num_queries)
 

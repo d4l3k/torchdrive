@@ -226,6 +226,7 @@ dataloader = DataLoader[Batch](
     num_workers=config.num_workers,
     # drop_last=True,
     # collate_fn=nonstrict_collate,
+    prefetch_factor=1,
     pin_memory=True,
     sampler=sampler,
 )
