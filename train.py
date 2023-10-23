@@ -245,7 +245,7 @@ if args.profile:  # and rank == 0:
     prof: Optional[torch.profiler.profile] = torch.profiler.profile(
         schedule=torch.profiler.schedule(wait=10, warmup=1, active=1, repeat=1),
         on_trace_ready=torch.profiler.tensorboard_trace_handler(
-            os.path.join(args.output, "profile")
+            os.path.join(args.output, f"profile_step_{global_step}")
         ),
         record_shapes=True,
         profile_memory=True,

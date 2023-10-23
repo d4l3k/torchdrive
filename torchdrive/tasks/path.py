@@ -17,9 +17,9 @@ class PathTask(BEVTask):
         self,
         bev_shape: Tuple[int, int],
         bev_dim: int,
-        dim: int = 128,
-        num_heads: int = 8,
-        num_layers: int = 6,
+        dim: int = 768,
+        num_heads: int = 16,
+        num_layers: int = 12,
         max_seq_len: int = 6 * 2,
         num_ar_iters: int = 6,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
@@ -98,7 +98,7 @@ class PathTask(BEVTask):
 
             all_predicted.append(predicted)
 
-            per_token_loss = F.huber_loss(predicted, target, reduction="none")
+            per_token_loss = F.huber_loss(predicted, target, reduction="none", delta=20.0)
             per_token_loss *= mask.unsqueeze(1).expand(-1, 3, -1)
 
             # normalize by number of elements in sequence

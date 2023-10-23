@@ -189,7 +189,7 @@ class TrainConfig:
             tasks["path"] = PathTask(
                 bev_shape=bev_shape,
                 bev_dim=self.dim,
-                dim=self.dim,
+                dim=768,
                 compile_fn=compile_fn,
             )
         if self.det:
