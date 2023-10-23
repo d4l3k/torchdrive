@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchdrive.models.det import BDD100KDet, DetBEVDecoder
+from torchdrive.models.det import BDD100KDet, DetBEVDecoder, DetBEVTransformerDecoder
 
 
 class TestDet(unittest.TestCase):
@@ -20,5 +20,17 @@ class TestDet(unittest.TestCase):
             num_heads=2,
         )
         classes, bboxes = m(torch.rand(2, 16, 4, 4))
+        self.assertEqual(classes.shape, (2, 10, 11))
+        self.assertEqual(bboxes.shape, (2, 10, 9))
+
+    def test_det_bev_transformer_decoder(self) -> None:
+        m = DetBEVTransformerDecoder(
+            bev_shape=(4, 5),
+            dim=16,
+            num_queries=10,
+            num_heads=2,
+            dim_feedforward=32,
+        )
+        classes, bboxes = m(torch.rand(2, 16, 4, 5))
         self.assertEqual(classes.shape, (2, 10, 11))
         self.assertEqual(bboxes.shape, (2, 10, 9))

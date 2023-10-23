@@ -98,7 +98,9 @@ class PathTask(BEVTask):
 
             all_predicted.append(predicted)
 
-            per_token_loss = F.huber_loss(predicted, target, reduction="none", delta=20.0)
+            per_token_loss = F.huber_loss(
+                predicted, target, reduction="none", delta=20.0
+            )
             per_token_loss *= mask.unsqueeze(1).expand(-1, 3, -1)
 
             # normalize by number of elements in sequence

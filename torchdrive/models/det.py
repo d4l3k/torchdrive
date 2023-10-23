@@ -120,7 +120,7 @@ class BDD100KDet:
 class DetBEVDecoder(nn.Module):
     """
     BEV based detection decoder. Consumes a BEV grid and generates detections
-    using a detr style transformer.
+    using a cross attention decoder.
     """
 
     def __init__(
@@ -147,7 +147,7 @@ class DetBEVDecoder(nn.Module):
             nn.Conv1d(dim, 2 * dim, 1),
         )
 
-        self.bbox_decoder = MLP(dim, 128, 9)
+        self.bbox_decoder = MLP(dim, 128, 9, num_layers=3)
         self.class_decoder = nn.Conv1d(dim, num_classes + 1, 1)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -177,6 +177,76 @@ class DetBEVDecoder(nn.Module):
             # (BS, num_queries, ch)
             bboxes = self.bbox_decoder(bev).permute(0, 2, 1)
             classes = self.class_decoder(bev).permute(0, 2, 1)  # logits
+        bboxes = bboxes.float().sigmoid()  # normalized 0 to 1
+
+        return classes, bboxes
+
+
+class DetBEVTransformerDecoder(nn.Module):
+    """
+    BEV based detection decoder. Consumes a BEV grid and generates detections
+    using a detr style transformer.
+    """
+
+    def __init__(
+        self,
+        bev_shape: Tuple[int, int],
+        dim: int,
+        num_queries: int = 100,
+        num_heads: int = 8,
+        num_classes: int = 10,
+        num_layers: int = 6,
+        dim_feedforward: int = 2048,
+    ) -> None:
+        super().__init__()
+
+        self.bev_shape = bev_shape
+        self.dim = dim
+        self.num_heads = num_heads
+        self.num_classes = num_classes
+
+        self.num_queries = num_queries
+
+        self.query_embed = nn.Embedding(num_queries, dim)
+        self.bev_project = nn.Conv2d(dim, dim, 1)
+
+        decoder_layer = nn.TransformerDecoderLayer(
+            d_model=dim,
+            dim_feedforward=dim_feedforward,
+            nhead=num_heads,
+            batch_first=True,
+        )
+        self.transformer_decoder = nn.TransformerDecoder(
+            decoder_layer, num_layers=num_layers
+        )
+
+        self.bbox_decoder = MLP(dim, dim, 9, num_layers=4)
+        self.class_decoder = nn.Conv1d(dim, num_classes + 1, 1)
+
+    def forward(self, bev: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Input:
+            feats: (BS, dim, x, y)
+        Returns:
+            classes: logits (BS, num_queries, 11)
+            bboxes: 0-1 (BS, num_queries, 9)
+        """
+        BS = len(bev)
+        with autocast():
+            bev = self.bev_project(bev)
+            bev = apply_sin_cos_enc2d(bev)
+
+            mask = torch.ones(
+                self.num_queries, self.num_queries, device=bev.device, dtype=bev.dtype
+            )
+            target = self.query_embed.weight.expand(BS, -1, -1)
+            bev = bev.flatten(2, 3).permute(0, 2, 1)
+            out = self.transformer_decoder(target, bev, tgt_mask=mask)
+
+            out = out.permute(0, 2, 1)  # (BS, ch, num_queries)
+
+            bboxes = self.bbox_decoder(out).permute(0, 2, 1)
+            classes = self.class_decoder(out).permute(0, 2, 1)  # logits
         bboxes = bboxes.float().sigmoid()  # normalized 0 to 1
 
         return classes, bboxes

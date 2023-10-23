@@ -66,7 +66,7 @@ class PathTransformer(nn.Module):
         )
 
         static_features = 3 * 3
-        self.static_encoder = compile_fn(MLP(static_features, dim, dim))
+        self.static_encoder = compile_fn(MLP(static_features, dim, dim, num_layers=3))
 
         self.transformer = StockTransformerDecoder(
             dim=dim, layers=num_layers, num_heads=num_heads

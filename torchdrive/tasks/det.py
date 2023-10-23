@@ -11,7 +11,7 @@ from torchdrive.amp import autocast
 from torchdrive.data import Batch
 from torchdrive.losses import generalized_box_iou
 from torchdrive.matcher import HungarianMatcher
-from torchdrive.models.det import DetBEVDecoder
+from torchdrive.models.det import DetBEVTransformerDecoder
 from torchdrive.tasks.bev import BEVTask, Context
 from torchdrive.transforms.bboxes import (
     bboxes3d_to_points,
@@ -54,7 +54,7 @@ class DetTask(BEVTask):
         self.cam_shape = cam_shape
         self.cameras = cameras
 
-        decoder = DetBEVDecoder(
+        decoder = DetBEVTransformerDecoder(
             bev_shape=bev_shape,
             dim=dim,
         )
