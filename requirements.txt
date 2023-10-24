@@ -7,10 +7,10 @@ torch
 torchvision
 matplotlib
 pytorch3d
-mmcv-full==1.7.1
-mmcls==0.25.0
-mmdet==2.27.0
-mmsegmentation==0.30.0
+#mmcv-full==1.7.1
+#mmcls==0.25.0
+#mmdet==2.27.0
+#mmsegmentation==0.30.0
 orjson
 tensorboard
 GitPython
@@ -22,3 +22,8 @@ torchinfo
 nuscenes-devkit
 torchmetrics>=1.1.0
 dataclasses-json
+safetensors
+zstd
+pyarrow
+usort==1.0.2
+flake8==3.9.0

@@ -750,7 +750,7 @@ class VoxelTask(BEVTask):
             del semantic_vel
             del semantic_img
 
-            if cam in ctx.cam_feats and not dynamic:
+            if cam in ctx.cam_feats and dynamic:
                 with torch.autograd.profiler.record_function(
                     "depth_decoder"
                 ), autocast():

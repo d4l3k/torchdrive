@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Mapping, Optional, Union, Set
+from typing import Dict, Mapping, Optional, Set, Union
 
 import torch
 from torch.cuda import amp
@@ -40,9 +40,10 @@ class Context:
     def add_scalars(self, name: str, scalars: Dict[str, torch.Tensor]) -> None:
         if self.writer:
             assert self.log_text
-            self._check_key(name)
+            key = f"{self.name}-{name}"
+            self._check_key(key)
             self.writer.add_scalars(
-                f"{self.name}-{name}",
+                key,
                 {k: _cpu_float(v) for k, v in scalars.items()},
                 global_step=self.global_step,
             )
@@ -52,26 +53,25 @@ class Context:
     ) -> None:
         if self.writer:
             assert self.log_text
-            self._check_key(name)
+            key = f"{self.name}-{name}"
+            self._check_key(key)
             self.writer.add_scalar(
-                f"{self.name}-{name}", _cpu_float(scalar), global_step=self.global_step
+                key, _cpu_float(scalar), global_step=self.global_step
             )
 
     def add_image(self, name: str, img: torch.Tensor) -> None:
         if self.writer:
             assert self.log_img
-            self._check_key(name)
-            self.writer.add_image(
-                f"{self.name}-{name}", img, global_step=self.global_step
-            )
+            key = f"{self.name}-{name}"
+            self._check_key(key)
+            self.writer.add_image(key, img, global_step=self.global_step)
 
     def add_figure(self, name: str, figure: object) -> None:
         if self.writer:
             assert self.log_img
-            self._check_key(name)
-            self.writer.add_figure(
-                f"{self.name}-{name}", figure, global_step=self.global_step
-            )
+            key = f"{self.name}-{name}"
+            self._check_key(key)
+            self.writer.add_figure(key, figure, global_step=self.global_step)
 
     def log_grad_norm(self, tensor: torch.Tensor, key: str, tag: str) -> torch.Tensor:
         if not self.log_text or not self.writer:

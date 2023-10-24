@@ -29,7 +29,8 @@ def get_module_names() -> List[str]:
 class TestTrainConfig(unittest.TestCase):
     @parameterized.expand(get_module_names())
     def test_configs(self, module_name: str) -> None:
-        config_module = importlib.import_module(module_name)
+        config_module = importlib.import_module(f"configs.{module_name}")
+        print(module_name, config_module)
         config = config_module.CONFIG
         model = config.create_model(device=torch.device("cpu"))
         self.assertIsNotNone(model)

@@ -51,6 +51,8 @@ STEREOSCOPIC_LOSSES = [
 
 
 class TestVoxel(unittest.TestCase):
+    maxDiff = None
+
     def _assert_loss_shapes(self, losses: Dict[str, torch.Tensor]) -> None:
         for k, v in losses.items():
             self.assertEqual(v.shape, (), k)
@@ -173,7 +175,8 @@ class TestVoxel(unittest.TestCase):
                     target_keys.add(key.replace("right1", "right2"))
 
         self.assertCountEqual(
-            losses.keys(), target_keys,
+            losses.keys(),
+            target_keys,
         )
         self._assert_loss_shapes(losses)
 

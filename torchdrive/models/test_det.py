@@ -4,8 +4,14 @@ import torch
 
 from torchdrive.models.det import BDD100KDet, DetBEVDecoder, DetBEVTransformerDecoder
 
+try:
+    import mmcv
+except ModuleNotFoundError:
+    mmcv = False
+
 
 class TestDet(unittest.TestCase):
+    @unittest.skipIf(not mmcv, "must have mmcv")
     def test_bdd100kdet(self) -> None:
         device = torch.device("cpu")
         m = BDD100KDet(device)

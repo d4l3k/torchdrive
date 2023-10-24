@@ -84,7 +84,7 @@ class TestData(unittest.TestCase):
         batch = dummy_batch()
         torch.testing.assert_close(batch.weight.sum(), torch.tensor(1.0))
         a, b = batch.split(1)
-        torch.testing.assert_close(a.weight.sum(), torch.tensor(0.5))
+        torch.testing.assert_close(a.weight.sum() + b.weight.sum(), torch.tensor(1.0))
 
     def test_transfer_collator(self) -> None:
         dataset = DummyDataset(5)

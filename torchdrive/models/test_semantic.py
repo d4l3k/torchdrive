@@ -4,8 +4,14 @@ import torch
 
 from torchdrive.models.semantic import BDD100KSemSeg
 
+try:
+    import mmcv
+except ModuleNotFoundError:
+    mmcv = False
+
 
 class TestSemantic(unittest.TestCase):
+    @unittest.skipIf(not mmcv, "must have mmcv")
     def test_bdd100ksemseg(self) -> None:
         device = torch.device("cpu")
         mmlab = BDD100KSemSeg(device, mmlab=True)
