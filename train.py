@@ -11,6 +11,7 @@ from typing import Callable, cast, Dict, Iterator, List, Optional, Set, Union
 LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", str(LOCAL_RANK))
 
+import matplotlib
 import torch
 import torch.distributed as dist
 import torchinfo
@@ -21,13 +22,15 @@ from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
+
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
-
 from torchdrive.datasets.dataset import Dataset
 from torchdrive.dist import run_ddp_concat
 from torchdrive.train_config import create_parser
 from tqdm import tqdm
+
+matplotlib.use("agg")
 
 parser = create_parser()
 args: argparse.Namespace = parser.parse_args()

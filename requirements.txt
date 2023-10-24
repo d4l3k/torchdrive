@@ -27,3 +27,5 @@ zstd
 pyarrow
 usort==1.0.2
 flake8==3.9.0
+torchx
+StrEnum

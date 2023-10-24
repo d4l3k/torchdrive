@@ -1,13 +1,12 @@
 import dataclasses
 import os.path
 import sys
-from enum import Enum
 from typing import Dict, List, Optional
 
 import safetensors.torch
 import torch
-
 import zstd
+from strenum import StrEnum
 
 from torchdrive.data import Batch
 from torchdrive.datasets.dataset import Dataset, Datasets
@@ -16,7 +15,7 @@ ZSTD_COMPRESS_LEVEL = 3
 ZSTD_THREADS = 1
 
 
-class LabelType(str, Enum):
+class LabelType(StrEnum):
     SEM_SEG = "sem_seg"
     DET = "det"
 

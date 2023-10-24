@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import Dict, List, Optional
+
+from strenum import StrEnum
 
 from torch.utils.data import Dataset as TorchDataset
 
 from torchdrive.data import Batch
 
 
-class Datasets(str, Enum):
+class Datasets(StrEnum):
     """
     All the datasets supported by torchdrive.
     """

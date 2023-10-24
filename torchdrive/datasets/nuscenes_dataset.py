@@ -2,11 +2,9 @@ import os
 import time
 from bisect import bisect_left
 from datetime import timedelta
-from enum import Enum
 from typing import Dict, List, Optional, Tuple, TypedDict
 
 import orjson
-
 import pandas as pd
 import pyarrow as pa
 import torch
@@ -15,6 +13,7 @@ from nuscenes.nuscenes import NuScenes as UnpatchedNuScenes
 from nuscenes.utils.data_classes import LidarPointCloud
 from PIL import Image
 from pytorch3d.transforms import quaternion_to_matrix
+from strenum import StrEnum
 from torch.utils.data import ConcatDataset, DataLoader, Dataset as TorchDataset
 from tqdm import tqdm
 
@@ -144,7 +143,7 @@ def normalize01(tensor: Tensor) -> Tensor:
     )
 
 
-class CamTypes(str, Enum):
+class CamTypes(StrEnum):
     CAM_FRONT = "CAM_FRONT"
     CAM_FRONT_LEFT = "CAM_FRONT_LEFT"
     CAM_FRONT_RIGHT = "CAM_FRONT_RIGHT"
@@ -153,7 +152,7 @@ class CamTypes(str, Enum):
     CAM_BACK_RIGHT = "CAM_BACK_RIGHT"
 
 
-class SensorTypes(str, Enum):
+class SensorTypes(StrEnum):
     LIDAR_TOP = "LIDAR_TOP"
 
 
