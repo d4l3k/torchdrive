@@ -1,14 +1,17 @@
 import argparse
-from dataclasses import dataclass
-from typing import Callable, List, Tuple
+import importlib
+from dataclasses import dataclass, fields
+from typing import Callable, List, Optional, Tuple
 
 import torch
+from dataclasses_json import dataclass_json
 from torch import nn
 
 from torchdrive.datasets.dataset import Dataset, Datasets
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 
 
+@dataclass_json
 @dataclass
 class TrainConfig:
     # backbone settings
@@ -67,7 +70,7 @@ class TrainConfig:
             dataset = NuscenesDataset(
                 data_dir=self.dataset_path,
                 version="v1.0-mini" if smoke else "v1.0-trainval",
-                lidar=True,
+                lidar=False,
                 num_frames=self.num_frames,
             )
         elif self.dataset == Datasets.DUMMY:
@@ -252,6 +255,41 @@ class TrainConfig:
         return model
 
 
+class _ConfigAction(argparse.Action):
+    def __init__(self, dest: str, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, dest=dest, **kwargs)
+        self.dest = dest
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        value: str,
+        option_string: Optional[str] = None,
+    ) -> None:
+        config_module = importlib.import_module(f"configs.{value}")
+        config = config_module.CONFIG
+
+        setattr(namespace, self.dest, config)
+
+
+class _ConfigFieldAction(argparse.Action):
+    def __init__(self, dest: str, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, dest=dest, **kwargs)
+        self.dest = dest
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        value: str,
+        option_string: Optional[str] = None,
+    ) -> None:
+        target, _, field = self.dest.partition(".")
+        config = getattr(namespace, target)
+        setattr(config, field, value)
+
+
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="train")
 
@@ -268,12 +306,23 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compile", default=False, action="store_true", help="use torch.compile"
     )
-    parser.add_argument("--config", required=True, help="the config file name to use")
     parser.add_argument(
         "--smoke",
         default=False,
         action="store_true",
         help="run with a smaller smoke test config",
     )
+
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="the config file name to use",
+        action=_ConfigAction,
+    )
+
+    for field in fields(TrainConfig):
+        parser.add_argument(
+            f"--config.{field.name}", type=field.type, action=_ConfigFieldAction
+        )
 
     return parser

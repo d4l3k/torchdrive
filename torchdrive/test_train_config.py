@@ -9,6 +9,7 @@ import torch
 from parameterized import parameterized
 
 from torchdrive.datasets.dataset import Datasets
+from torchdrive.train_config import create_parser, TrainConfig
 
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "configs")
@@ -35,3 +36,17 @@ class TestTrainConfig(unittest.TestCase):
 
         config.dataset = Datasets.DUMMY
         dataset = config.create_dataset()
+
+    def test_parser(self) -> None:
+        parser = create_parser()
+        args = parser.parse_args(
+            [
+                "--output=foo",
+                "--config=simplebev3d",
+                "--config.lr=1234",
+                "--config.ae=true",
+            ]
+        )
+        self.assertIsInstance(args.config, TrainConfig)
+        self.assertEqual(args.config.lr, 1234)
+        self.assertEqual(args.config.ae, True)

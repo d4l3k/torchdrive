@@ -7,7 +7,6 @@ from torch import nn
 
 from torchdrive.amp import autocast
 from torchdrive.models.mlp import MLP
-from torchdrive.models.regnet import ConvPEBlock
 from torchdrive.models.transformer import StockTransformerDecoder, transformer_init
 from torchdrive.positional_encoding import apply_sin_cos_enc2d
 
@@ -48,7 +47,7 @@ class PathTransformer(nn.Module):
 
         self.bev_encoder = nn.Conv2d(bev_dim, dim, 1)
 
-        self.bev_project = compile_fn(ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1))
+        # self.bev_project = compile_fn(ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1))
 
         self.pos_encoder = compile_fn(
             nn.Sequential(
@@ -107,7 +106,7 @@ class PathTransformer(nn.Module):
             static = self.static_encoder(static_feats).permute(0, 2, 1)
 
             # bev features
-            bev = self.bev_project(bev)
+            # bev = self.bev_project(bev)
             bev = apply_sin_cos_enc2d(bev)
             bev = self.bev_encoder(bev).flatten(-2, -1).permute(0, 2, 1)
 

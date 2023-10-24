@@ -3,6 +3,7 @@ import binascii
 import json
 import os
 import os.path
+import sys
 from collections import defaultdict
 from typing import Callable, cast, Dict, Iterator, List, Optional, Set, Union
 
@@ -31,10 +32,7 @@ from tqdm import tqdm
 parser = create_parser()
 args: argparse.Namespace = parser.parse_args()
 
-import importlib
-
-config_module = importlib.import_module("configs." + args.config)
-config = config_module.CONFIG
+config = args.config
 
 os.makedirs(args.output, exist_ok=True)
 
@@ -65,7 +63,8 @@ if RANK == 0:
         max_queue=500,
         flush_secs=60,
     )
-    writer.add_text("args", json.dumps(vars(args), indent=4))
+    writer.add_text("argv", json.dumps(sys.argv, indent=4))
+    writer.add_text("train_config", config.to_json(indent=4))
 
     import git
 
