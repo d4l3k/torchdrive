@@ -63,6 +63,9 @@ class DetTask(BEVTask):
 
         # not a module -- not saved
         self.matcher = HungarianMatcher()
+        self.decode_bboxes3d = compile_fn(decode_bboxes3d)
+        self.bboxes3d_to_points = compile_fn(bboxes3d_to_points)
+        self.points_to_bboxes2d = compile_fn(points_to_bboxes2d)
 
     def forward(
         self, ctx: Context, batch: Batch, bev: torch.Tensor
@@ -71,11 +74,12 @@ class DetTask(BEVTask):
         device = bev.device
         num_frames = batch.distances.shape[1]
 
-        classes_logits, bboxes3d = self.decoder(bev)
-        classes_softmax = F.softmax(classes_logits.float(), dim=-1)
+        with torch.autograd.profiler.record_function("decoding"):
+            classes_logits, bboxes3d = self.decoder(bev)
+            classes_softmax = F.softmax(classes_logits.float(), dim=-1)
 
-        with autocast():
-            xyz, vel, sizes = decode_bboxes3d(bboxes3d)
+            with autocast():
+                xyz, vel, sizes = self.decode_bboxes3d(bboxes3d)
 
         if ctx.log_img:
             json_path = os.path.join(ctx.output, f"det_{ctx.global_step}.json")
@@ -113,138 +117,141 @@ class DetTask(BEVTask):
         losses = {}
         unmatched_queries = torch.full((BS, num_queries), True, dtype=torch.bool)
 
-        for frame in view_frames:
-            dur = batch.frame_time[:, frame] - batch.frame_time[:, ctx.start_frame]
-            points3d = bboxes3d_to_points(bboxes3d, time=dur)
+        with torch.autograd.profiler.record_function("matching"):
+            for frame in view_frames:
+                dur = batch.frame_time[:, frame] - batch.frame_time[:, ctx.start_frame]
+                points3d = self.bboxes3d_to_points(bboxes3d, time=dur)
 
-            for cam in self.cameras:
-                K = batch.K[cam]
-                # always predict from same position so predictions are relative
-                # velocities
-                T = batch.T[cam]
+                for cam in self.cameras:
+                    K = batch.K[cam]
+                    # always predict from same position so predictions are relative
+                    # velocities
+                    T = batch.T[cam]
 
-                pix_coords, bboxes2d, invalid_mask = points_to_bboxes2d(
-                    points3d, K, T, w, h
-                )
-
-                primary_color = batch.color[cam][:, frame]
-                target_preds = [batch.det[cam][i][frame] for i in range(BS)]
-
-                targets: List[Dict[str, torch.Tensor]] = []
-                num_targets = 0
-
-                mask = batch.mask[cam]
-                for i, bpreds in enumerate(target_preds):
-                    num_target_boxes = len(bpreds)
-                    labels = []
-                    boxes = []
-                    for kls, class_boxes in enumerate(bpreds):
-                        tkls = torch.tensor(kls, device=device)
-                        for box in class_boxes:
-                            # don't use low confidence predictions
-                            p = box[4]
-                            if p < 0.5:
-                                continue
-
-                            # filter out boxes in mask
-                            x = int((box[0] + box[2]) // 2)
-                            y = int((box[1] + box[3]) // 2)
-                            mask_p = mask[i, 0, y, x]
-                            if mask_p < 0.5:
-                                continue
-
-                            labels.append(tkls)
-                            boxes.append(box[:4].to(device, non_blocking=True))
-
-                    labels = (
-                        torch.stack(labels)
-                        if len(labels) > 0
-                        else torch.zeros(0, dtype=torch.int64, device=device)
-                    )
-                    boxes = (
-                        torch.stack(boxes)
-                        if len(boxes) > 0
-                        else torch.zeros(0, 4, device=device)
-                    )
-                    targets.append(
-                        {
-                            "labels": labels,
-                            "boxes": boxes / normalize_coords,
-                        }
-                    )
-                    num_targets += len(boxes)
-
-                if num_targets == 0:
-                    continue
-                outputs = {
-                    "pred_logits": classes_logits,
-                    "pred_boxes": bboxes2d / normalize_coords,
-                }
-
-                pairs = self.matcher(
-                    outputs=outputs,
-                    targets=targets,
-                    invalid_mask=invalid_mask,
-                )
-
-                num_boxes = sum(len(t["labels"]) for t in targets)
-                num_boxes = torch.as_tensor(
-                    [num_boxes], dtype=torch.float, device=device
-                )
-                # TODO: for distributed training all reduce?
-                num_boxes = cast(int, torch.clamp(num_boxes, min=1).item())
-
-                if ctx.log_text:
-                    ctx.add_scalar(
-                        f"num_boxes/{cam}/{frame}",
-                        num_boxes,
+                    pix_coords, bboxes2d, invalid_mask = self.points_to_bboxes2d(
+                        points3d, K, T, w, h
                     )
 
-                for batchi, (pred_idxs, target_idxs) in enumerate(pairs):
-                    # mark which queries were used so we can apply penalty
-                    unmatched_queries[batchi, pred_idxs] = False
+                    primary_color = batch.color[cam][:, frame]
+                    target_preds = [batch.det[cam][i][frame] for i in range(BS)]
 
-                losses[f"loss_labels/{cam}/{frame}"] = self.loss_labels(
-                    outputs, targets, pairs, num_boxes
-                )
+                    targets: List[Dict[str, torch.Tensor]] = []
+                    num_targets = 0
 
-                # clamp outputs to image space -- we do this after bbox matching
-                # to avoid matching very far away boxes
-                outputs["pred_boxes"][..., (0, 1)].clamp_(min=0, max=w)
-                outputs["pred_boxes"][..., (2, 3)].clamp_(min=0, max=h)
+                    mask = batch.mask[cam]
+                    for i, bpreds in enumerate(target_preds):
+                        num_target_boxes = len(bpreds)
+                        labels = []
+                        boxes = []
+                        for kls, class_boxes in enumerate(bpreds):
+                            tkls = torch.tensor(kls, device=device)
+                            for box in class_boxes:
+                                # don't use low confidence predictions
+                                p = box[4]
+                                if p < 0.5:
+                                    continue
 
-                boxlosses = self.loss_boxes(outputs, targets, pairs, num_boxes)
-                for k, v in boxlosses.items():
-                    losses[f"loss_{k}/{cam}/{frame}"] = v
+                                # filter out boxes in mask
+                                x = int((box[0] + box[2]) // 2)
+                                y = int((box[1] + box[3]) // 2)
+                                mask_p = mask[i, 0, y, x]
+                                if mask_p < 0.5:
+                                    continue
 
-                if ctx.log_img:
-                    color = (
-                        normalize_img(primary_color.contiguous()).clamp(min=0, max=1)
-                        * 255
-                    ).byte()
-                    color_target = draw_bounding_boxes(
-                        color[0],
-                        boxes=targets[0]["boxes"] * normalize_coords,
-                        labels=[str(i.item()) for i in targets[0]["labels"]],
+                                labels.append(tkls)
+                                boxes.append(box[:4].to(device, non_blocking=True))
+
+                        labels = (
+                            torch.stack(labels)
+                            if len(labels) > 0
+                            else torch.zeros(0, dtype=torch.int64, device=device)
+                        )
+                        boxes = (
+                            torch.stack(boxes)
+                            if len(boxes) > 0
+                            else torch.zeros(0, 4, device=device)
+                        )
+                        targets.append(
+                            {
+                                "labels": labels,
+                                "boxes": boxes / normalize_coords,
+                            }
+                        )
+                        num_targets += len(boxes)
+
+                    if num_targets == 0:
+                        continue
+                    outputs = {
+                        "pred_logits": classes_logits,
+                        "pred_boxes": bboxes2d / normalize_coords,
+                    }
+
+                    pairs = self.matcher(
+                        outputs=outputs,
+                        targets=targets,
+                        invalid_mask=invalid_mask,
                     )
-                    idxs = pairs[0][0]
-                    color_pred = draw_bounding_boxes(
-                        color[0],
-                        boxes=bboxes2d[0, idxs],
-                        labels=[
-                            str(i.item())
-                            for i in classes_logits[0, idxs].argmax(dim=-1)
-                        ],
+
+                    num_boxes = sum(len(t["labels"]) for t in targets)
+                    num_boxes = torch.as_tensor(
+                        [num_boxes], dtype=torch.float, device=device
+                    )
+                    # TODO: for distributed training all reduce?
+                    num_boxes = cast(int, torch.clamp(num_boxes, min=1).item())
+
+                    if ctx.log_text:
+                        ctx.add_scalar(
+                            f"num_boxes/{cam}/{frame}",
+                            num_boxes,
+                        )
+
+                    for batchi, (pred_idxs, target_idxs) in enumerate(pairs):
+                        # mark which queries were used so we can apply penalty
+                        unmatched_queries[batchi, pred_idxs] = False
+
+                    losses[f"loss_labels/{cam}/{frame}"] = self.loss_labels(
+                        outputs, targets, pairs, num_boxes
                     )
 
-                    ctx.add_image(
-                        f"{cam}/{frame}/target",
-                        color_target,
-                    )
-                    ctx.add_image(
-                        f"{cam}/{frame}/pred",
-                        color_pred,
-                    )
+                    # clamp outputs to image space -- we do this after bbox matching
+                    # to avoid matching very far away boxes
+                    outputs["pred_boxes"][..., (0, 1)].clamp_(min=0, max=w)
+                    outputs["pred_boxes"][..., (2, 3)].clamp_(min=0, max=h)
+
+                    boxlosses = self.loss_boxes(outputs, targets, pairs, num_boxes)
+                    for k, v in boxlosses.items():
+                        losses[f"loss_{k}/{cam}/{frame}"] = v
+
+                    if ctx.log_img:
+                        color = (
+                            normalize_img(primary_color.contiguous()).clamp(
+                                min=0, max=1
+                            )
+                            * 255
+                        ).byte()
+                        color_target = draw_bounding_boxes(
+                            color[0],
+                            boxes=targets[0]["boxes"] * normalize_coords,
+                            labels=[str(i.item()) for i in targets[0]["labels"]],
+                        )
+                        idxs = pairs[0][0]
+                        color_pred = draw_bounding_boxes(
+                            color[0],
+                            boxes=bboxes2d[0, idxs],
+                            labels=[
+                                str(i.item())
+                                for i in classes_logits[0, idxs].argmax(dim=-1)
+                            ],
+                        )
+
+                        ctx.add_image(
+                            f"{cam}/{frame}/target",
+                            color_target,
+                        )
+                        ctx.add_image(
+                            f"{cam}/{frame}/pred",
+                            color_pred,
+                        )
 
         unmatched_classes = classes_logits[unmatched_queries]
         # set target to num_classes for unmatched ones
@@ -255,38 +262,41 @@ class DetTask(BEVTask):
             device=device,
         )
 
-        classes = classes_logits.argmax(dim=-1)
-        log_sizes = {}
-        log_heights = {}
-        LOSS_DIM_WEIGHT = 0.1
-        for k in range(self.num_classes + 1):
-            idxs = classes == k
-            class_sizes = sizes[idxs]
-            if class_sizes.numel() == 0:
-                continue
-            length_widths = class_sizes[..., :2]
-            heights = class_sizes[..., 2]
+        with torch.autograd.profiler.record_function("dim"):
+            classes = classes_logits.argmax(dim=-1)
+            log_sizes = {}
+            log_heights = {}
+            LOSS_DIM_WEIGHT = 0.1
+            for k in range(self.num_classes + 1):
+                idxs = classes == k
+                class_sizes = sizes[idxs]
+                if class_sizes.numel() == 0:
+                    continue
+                length_widths = class_sizes[..., :2]
+                heights = class_sizes[..., 2]
 
-            if k in TARGET_SIZES:
-                numel = heights.shape[0]
-                target_l, target_w, target_h = TARGET_SIZES[k]
-                losses[f"lossdim/{k}/height"] = (
-                    F.l1_loss(
-                        heights, torch.tensor(target_h, device=device).expand(numel)
+                if k in TARGET_SIZES:
+                    numel = heights.shape[0]
+                    target_l, target_w, target_h = TARGET_SIZES[k]
+                    losses[f"lossdim/{k}/height"] = (
+                        F.l1_loss(
+                            heights, torch.tensor(target_h, device=device).expand(numel)
+                        )
+                        * LOSS_DIM_WEIGHT
                     )
-                    * LOSS_DIM_WEIGHT
-                )
-                losses[f"lossdim/{k}/length_width"] = (
-                    F.l1_loss(
-                        length_widths.prod(dim=-1),
-                        torch.tensor(target_l * target_w, device=device).expand(numel),
+                    losses[f"lossdim/{k}/length_width"] = (
+                        F.l1_loss(
+                            length_widths.prod(dim=-1),
+                            torch.tensor(target_l * target_w, device=device).expand(
+                                numel
+                            ),
+                        )
+                        * LOSS_DIM_WEIGHT
                     )
-                    * LOSS_DIM_WEIGHT
-                )
 
-            if ctx.log_text:
-                log_sizes[str(k)] = length_widths.mean()
-                log_heights[str(k)] = heights.mean()
+                if ctx.log_text:
+                    log_sizes[str(k)] = length_widths.mean()
+                    log_heights[str(k)] = heights.mean()
 
         if ctx.log_text:
             ctx.add_scalars(
