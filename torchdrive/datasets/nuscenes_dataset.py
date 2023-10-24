@@ -49,8 +49,7 @@ def as_py(data: object) -> object:
     return data
 
 
-# NuScenes = UnpatchedNuScenes
-class NuScenes(UnpatchedNuScenes):
+class CustomNuScenes(UnpatchedNuScenes):
     def __init__(
         self,
         version: str = "v1.0-mini",
@@ -60,8 +59,12 @@ class NuScenes(UnpatchedNuScenes):
     ):
         super().__init__(version, dataroot, verbose, map_resolution)
 
+        to_delete = ["map", "sample_annotation", "instance"]
+        for attr in to_delete:
+            delattr(self, attr)
+
         for table in self.table_names:
-            if table == "map":
+            if table in to_delete:
                 continue
             setattr(self, table, pa.array(getattr(self, table)))
 
@@ -89,8 +92,10 @@ class NuScenes(UnpatchedNuScenes):
             for ind, member in enumerate(getattr(self, table)):
                 index[member["token"]] = ind
 
-            self._token2ind[table] = pd.Series(index.values(), index=index.keys())
+            df = pd.DataFrame({"values": index.values(), "keys": index.keys()})
+            df = df.set_index("keys")["values"]
 
+            self._token2ind[table] = df
         # Decorate (adds short-cut) sample_data with sensor information.
         for record in self.sample_data:
             cs_record = self.get("calibrated_sensor", record["calibrated_sensor_token"])
@@ -117,6 +122,10 @@ class NuScenes(UnpatchedNuScenes):
         :return: The index of the record in table, table is an array.
         """
         return self._token2ind[table_name][token]
+
+
+# NuScenes = CustomNuScenes
+NuScenes = UnpatchedNuScenes
 
 
 class SampleData(TypedDict):
@@ -512,12 +521,13 @@ class NuscenesDataset(Dataset):
                 kls = LidarDataset
             else:
                 raise RuntimeError(f"unsupported sensor_modality {sensor_modality}")
-            samples = pa.array(samples)
+            # samples = pa.array(samples)
             ds_scenes.append(
                 kls(self.data_dir, self.nusc, samples, num_frames=self.num_frames)
             )
 
-        scene_samples = pa.array([sample for scene in scenes for sample in scene])
+        scene_samples = [sample for scene in scenes for sample in scene]
+        # scene_samples = pa.array(scene_samples)
         ds = ConcatDataset(ds_scenes)
         return ds, scene_samples
 
