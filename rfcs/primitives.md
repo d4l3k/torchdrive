@@ -77,3 +77,10 @@ Rendering is somewhat of an inverse operation to the image encoders. This would
 leverage PyTorch3d raymarching/rendering operations in most cases.
 
 Gaussian splatting potentially for direct 3d sparse representations?
+
+## Losses
+
+* Voxel: consumes `Grid3D` and images/segmentation
+* Path: consumes `CrossAttention2d` or `Grid3d`
+* Det: consumes `CrossAttention2d` or `Grid3d` and bbox detections
+
