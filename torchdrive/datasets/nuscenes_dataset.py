@@ -298,12 +298,14 @@ class CameraDataset(TorchDataset):
         dataroot: str,
         nusc: NuScenes,
         samples: List[SampleData],
+        sensor: str,
         num_frames: int,
     ) -> None:
         self.dataroot = dataroot
         self.nusc = nusc
         self.samples = samples
         self.num_frames = num_frames
+        self.sensor = sensor
 
     def __len__(self) -> int:
         return len(self.samples) - self.num_frames - 1
@@ -390,6 +392,24 @@ class CameraDataset(TorchDataset):
             get_ego_T(self.nusc, sample_data) for sample_data in self.samples[idx:]
         ]
 
+
+        mask_transform = transforms.Compose(
+            [
+                transforms.PILToTensor(),
+                transforms.ConvertImageDtype(
+                    torch.bfloat16
+                ),  # drop precision to save memory
+            ]
+        )
+        mask_path = os.path.join(
+            os.path.dirname(__file__),
+            "nuscenes_masks",
+            f"{self.sensor}.png",
+        )
+        mask = Image.open(mask_path).convert("L")
+        mask = mask_transform(mask)
+        assert mask.shape == (1, 480, 640), mask.shape
+
         return {
             "weight": torch.tensor(frame_dicts[0]["weight"]),
             "distance": torch.stack(dists),
@@ -404,14 +424,15 @@ class CameraDataset(TorchDataset):
                 "T"
             ],  # only one cam to car translation matrix is required as it doesn't change during drive
             "color": torch.stack(imgs),
-            "mask": torch.ones(1, 480, 640),
+            "mask": mask,
             "token": token,
         }
 
 
 class LidarDataset(TorchDataset):
     def __init__(
-        self, dataroot: str, nusc: NuScenes, samples: List[SampleData], num_frames: int
+            self, dataroot: str, nusc: NuScenes, samples: List[SampleData],
+            sensor: str, num_frames: int
     ) -> None:
         self.dataroot = dataroot
         self.nusc = nusc
@@ -522,7 +543,7 @@ class NuscenesDataset(Dataset):
                 raise RuntimeError(f"unsupported sensor_modality {sensor_modality}")
             # samples = pa.array(samples)
             ds_scenes.append(
-                kls(self.data_dir, self.nusc, samples, num_frames=self.num_frames)
+                kls(self.data_dir, self.nusc, samples, sensor=cam, num_frames=self.num_frames)
             )
 
         scene_samples = [sample for scene in scenes for sample in scene]
