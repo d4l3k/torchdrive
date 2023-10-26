@@ -262,11 +262,40 @@ class DetTask(BEVTask):
             device=device,
         )
 
-        with torch.autograd.profiler.record_function("dim"):
-            classes = classes_logits.argmax(dim=-1)
+        classes = classes_logits.argmax(dim=-1)
+        if False:
+            with torch.autograd.profiler.record_function("dim"):
+                LOSS_DIM_WEIGHT = 0.1
+                for k in range(self.num_classes + 1):
+                    idxs = classes == k
+                    class_sizes = sizes[idxs]
+                    if class_sizes.numel() == 0:
+                        continue
+                    length_widths = class_sizes[..., :2]
+                    heights = class_sizes[..., 2]
+
+                    if k in TARGET_SIZES:
+                        numel = heights.shape[0]
+                        target_l, target_w, target_h = TARGET_SIZES[k]
+                        losses[f"lossdim/{k}/height"] = (
+                            F.l1_loss(
+                                heights, torch.tensor(target_h, device=device).expand(numel)
+                            )
+                            * LOSS_DIM_WEIGHT
+                        )
+                        losses[f"lossdim/{k}/length_width"] = (
+                            F.l1_loss(
+                                length_widths.prod(dim=-1),
+                                torch.tensor(target_l * target_w, device=device).expand(
+                                    numel
+                                ),
+                            )
+                            * LOSS_DIM_WEIGHT
+                        )
+
+        if ctx.log_text:
             log_sizes = {}
             log_heights = {}
-            LOSS_DIM_WEIGHT = 0.1
             for k in range(self.num_classes + 1):
                 idxs = classes == k
                 class_sizes = sizes[idxs]
@@ -275,30 +304,8 @@ class DetTask(BEVTask):
                 length_widths = class_sizes[..., :2]
                 heights = class_sizes[..., 2]
 
-                if k in TARGET_SIZES:
-                    numel = heights.shape[0]
-                    target_l, target_w, target_h = TARGET_SIZES[k]
-                    losses[f"lossdim/{k}/height"] = (
-                        F.l1_loss(
-                            heights, torch.tensor(target_h, device=device).expand(numel)
-                        )
-                        * LOSS_DIM_WEIGHT
-                    )
-                    losses[f"lossdim/{k}/length_width"] = (
-                        F.l1_loss(
-                            length_widths.prod(dim=-1),
-                            torch.tensor(target_l * target_w, device=device).expand(
-                                numel
-                            ),
-                        )
-                        * LOSS_DIM_WEIGHT
-                    )
-
-                if ctx.log_text:
-                    log_sizes[str(k)] = length_widths.mean()
-                    log_heights[str(k)] = heights.mean()
-
-        if ctx.log_text:
+                log_sizes[str(k)] = length_widths.mean()
+                log_heights[str(k)] = heights.mean()
             ctx.add_scalars(
                 "classes/sizes",
                 log_sizes,

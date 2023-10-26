@@ -340,7 +340,7 @@ class VoxelTask(BEVTask):
 
             # total variation loss to encourage sharp edges
             tvl1_grid = ctx.log_grad_norm(grid, "grad/norm/grid", "tvl1")
-            losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1)) * 2.5 * 20 * 0.1
+            losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1)) * 0.5
 
             # we need to run tvl1 loss early as the child losses don't run
             # backwards on the whole set of losses
