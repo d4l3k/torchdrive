@@ -29,8 +29,16 @@ class BaseGrid(ABC):
     def device(self) -> torch.device:
         return self.data.device
 
+    @property
+    def dtype(self) -> torch.dtype:
+        return self.data.dtype
+
     def __len__(self) -> int:
         return len(self.data)
+
+    @abstractmethod
+    def grid_shape(self) -> Tuple[int, ...]:
+        ...
 
 
 @dataclass
@@ -45,7 +53,7 @@ class Grid3d(BaseGrid):
     ----------
     data: [bs, channels, z, y, x]
         The grid of features.
-    transform:
+    local_to_world:
         The 3d transform option that locates the Grid3d in space
         Voxel (-1 to 1) to world space.
     time: scalar or [bs]
@@ -53,7 +61,7 @@ class Grid3d(BaseGrid):
     """
 
     data: torch.Tensor
-    transform: Transform3d
+    local_to_world: Transform3d
     time: torch.Tensor
 
     def __post_init__(self) -> None:
@@ -64,11 +72,11 @@ class Grid3d(BaseGrid):
                 f"time must be scalar or 1-dimensional, got {self.time.shape}"
             )
 
-        T = self.transform.get_matrix()
+        T = self.local_to_world.get_matrix()
         if (BS := T.size(0)) != 1:
             if BS != self.data.size(0):
                 raise TypeError(
-                    f"data and transform batch sizes don't match: {T.shape, self.data.shape}"
+                    f"data and local_to_world batch sizes don't match: {T.shape, self.data.shape}"
                 )
 
     @classmethod
@@ -108,16 +116,19 @@ class Grid3d(BaseGrid):
             time = torch.tensor(time, dtype=torch.float, device=device)
         return cls(
             data=data,
-            transform=locator.get_local_to_world_coords_transform(),
+            local_to_world=locator.get_local_to_world_coords_transform(),
             time=time,
         )
 
     def to(self, target: Union[torch.device, str]) -> "Grid3d":
         return Grid3d(
             data=self.data.to(target),
-            transform=self.transform.to(target),
+            local_to_world=self.local_to_world.to(target),
             time=self.time.to(target),
         )
+
+    def grid_shape(self) -> Tuple[int, int]:
+        return self.data.shape[2:5]
 
 
 @dataclass
@@ -160,3 +171,6 @@ class GridImage(BaseGrid):
             camera=self.camera.to(target),
             time=self.time.to(target),
         )
+
+    def grid_shape(self) -> Tuple[int, int]:
+        return self.data.shape[2:4]

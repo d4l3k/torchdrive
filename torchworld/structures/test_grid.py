@@ -11,7 +11,7 @@ class TestGrid(unittest.TestCase):
     def test_grid_3d(self) -> None:
         grid = Grid3d(
             data=torch.rand(2, 3, 4, 5, 6),
-            transform=Transform3d(),
+            local_to_world=Transform3d(),
             time=torch.rand(2),
         )
 
@@ -20,6 +20,8 @@ class TestGrid(unittest.TestCase):
 
         self.assertEqual(len(grid), 2)
         self.assertEqual(grid.device, grid.data.device)
+        self.assertEqual(grid.dtype, torch.float)
+        self.assertEqual(grid.grid_shape(), (4, 5, 6))
 
     def test_grid_image(self) -> None:
         grid = GridImage(
@@ -30,6 +32,7 @@ class TestGrid(unittest.TestCase):
 
         grid = grid.to("cpu")
         grid = grid.cpu()
+        self.assertEqual(grid.grid_shape(), (4, 5))
 
     def test_grid_3d_from_volume(self) -> None:
         grid = Grid3d.from_volume(

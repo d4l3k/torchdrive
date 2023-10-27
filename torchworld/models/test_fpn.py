@@ -13,7 +13,7 @@ class TestFPN(unittest.TestCase):
     def test_resnet18_fpn_3d(self) -> None:
         grid = Grid3d(
             data=torch.rand(2, 3, 8, 16, 24),
-            transform=Transform3d(),
+            local_to_world=Transform3d(),
             time=torch.rand(2),
         )
         m = Resnet18FPN3d(in_channels=3)
