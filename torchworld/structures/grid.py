@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 
 import torch
-from pytorch3d.transforms import Transform3d
 from pytorch3d.renderer.cameras import CamerasBase
+from pytorch3d.transforms import Transform3d
+
 
 @dataclass
 class Grid3d:
@@ -14,13 +15,15 @@ class Grid3d:
 
     Attributes
     ----------
-    data: [bs, channels, x, y, z]
+    data: [bs, channels, z, y, x]
         The grid of features.
     transform:
-        The 3d transform option that locates the Grid3d in space, world to voxel.
+        The 3d transform option that locates the Grid3d in space
+        World to voxel space (-1 to 1).
     time: scalar or [bs]
         Time corresponding to the grid
     """
+
     data: torch.Tensor
     transform: Transform3d
     time: torch.Tensor
@@ -29,12 +32,16 @@ class Grid3d:
         if self.data.dim() != 5:
             raise TypeError(f"data must be 5 dimensional, got {self.data.shape}")
         if self.time.dim() not in (0, 1):
-            raise TypeError(f"time must be scalar or 1-dimensional, got {self.time.shape}")
+            raise TypeError(
+                f"time must be scalar or 1-dimensional, got {self.time.shape}"
+            )
 
         T = self.transform.get_matrix()
         if (BS := T.size(0)) != 1:
             if BS != self.data.size(0):
-                raise TypeError(f"data and transform batch sizes don't match: {T.shape, self.data.shape}")
+                raise TypeError(
+                    f"data and transform batch sizes don't match: {T.shape, self.data.shape}"
+                )
 
 
 @dataclass
@@ -44,14 +51,15 @@ class GridImage:
 
     Attributes
     ----------
-    data: [bs, channels, x, y]
+    data: [bs, channels, y, x]
         Grid of features.
     camera:
         camera corresponding to the image space features.
     time: [bs]
         Time corresponding to the grid.
     """
-    data: torch.Tensor # [bs, channels, x, y]
+
+    data: torch.Tensor
     camera: CamerasBase
     time: torch.Tensor
 
@@ -59,9 +67,13 @@ class GridImage:
         if self.data.dim() != 4:
             raise TypeError(f"data must be 4 dimensional, got {data.shape}")
         if self.time.dim() not in (0, 1):
-            raise TypeError(f"time must be scalar or 1-dimensional, got {self.time.shape}")
+            raise TypeError(
+                f"time must be scalar or 1-dimensional, got {self.time.shape}"
+            )
 
         T = self.camera.get_projection_transform().get_matrix()
         if (BS := T.size(0)) != 1:
             if BS != self.data.size(0):
-                raise TypeError(f"data and transform batch sizes don't match: {T.shape, self.data.shape}")
+                raise TypeError(
+                    f"data and transform batch sizes don't match: {T.shape, self.data.shape}"
+                )

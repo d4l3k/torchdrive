@@ -36,12 +36,12 @@ from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
 from torchvision import transforms
 from torchvision.models.resnet import resnet18
+from torchworld.models.resnet_3d import resnet3d18, Upsample3DBlock
 
 from torchdrive.amp import autocast
 from torchdrive.data import Batch
 from torchdrive.models.bev import BEVUpsampler
 from torchdrive.models.bev_backbone import BEVBackbone
-from torchdrive.models.resnet_3d import resnet3d18, Upsample3DBlock
 from torchdrive.transforms.mat import voxel_to_world
 from torchdrive.transforms.simple_bev import lift_cam_to_voxel
 
@@ -74,8 +74,6 @@ class UpsamplingConcat(nn.Module):
         )
 
     def forward(self, x_to_upsample: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        # upsample doesn't support bfloat16 -- explicit cast
-        x_to_upsample = x_to_upsample.float()
         x_to_upsample = self.upsample(x_to_upsample)
         x_to_upsample = torch.cat([x, x_to_upsample], dim=1)
         return self.conv(x_to_upsample)
@@ -104,8 +102,6 @@ class UpsamplingAdd2d(nn.Module):
             x: [batch_size, in_channels, h, w]
             x_skip: [batch_size, out_channels, h*2, w*2]
         """
-        # upsample doesn't support bfloat16 -- explicit cast
-        x = x.float()
         x = self.upsample_layer(x)
         return x + x_skip
 
@@ -133,8 +129,6 @@ class UpsamplingAdd3d(nn.Module):
             x: [batch_size, in_channels, h, w, d]
             x_skip: [batch_size, out_channels, h*2, w*2, d*2]
         """
-        # upsample doesn't support bfloat16 -- explicit cast
-        x = x.float()
         x = self.upsample_layer(x)
         return x + x_skip
 

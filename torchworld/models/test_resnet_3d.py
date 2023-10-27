@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchdrive.models.resnet_3d import resnet3d18
+from torchworld.models.resnet_3d import resnet3d18
 
 
 class TestResNet3d(unittest.TestCase):
