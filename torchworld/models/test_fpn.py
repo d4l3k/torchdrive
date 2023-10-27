@@ -1,11 +1,13 @@
 import unittest
 
 import torch
-from pytorch3d.transforms import Transform3d
 from pytorch3d.renderer.cameras import PerspectiveCameras
+from pytorch3d.transforms import Transform3d
+
+from torchworld.models.fpn import Resnet18FPN3d, Resnet18FPNImage
 
 from torchworld.structures.grid import Grid3d, GridImage
-from torchworld.models.fpn import Resnet18FPNImage, Resnet18FPN3d
+
 
 class TestFPN(unittest.TestCase):
     def test_resnet18_fpn_3d(self) -> None:
@@ -30,4 +32,3 @@ class TestFPN(unittest.TestCase):
         self.assertEqual(len(out), 4)
         for grid in out:
             self.assertIsInstance(grid, GridImage)
-

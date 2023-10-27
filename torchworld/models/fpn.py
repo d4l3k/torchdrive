@@ -5,8 +5,10 @@ import torch
 from torch import nn
 from torchvision.models.resnet import resnet18
 
-from torchworld.structures.grid import GridImage, Grid3d
 from torchworld.models.resnet_3d import resnet3d18
+
+from torchworld.structures.grid import Grid3d, GridImage
+
 
 class Resnet18FPNImage(nn.Module):
     """
@@ -31,7 +33,9 @@ class Resnet18FPNImage(nn.Module):
         self.up2_skip = UpsamplingAdd2d(128, 64, scale_factor=2)
         self.up1_skip = UpsamplingAdd2d(64, in_channels, scale_factor=2)
 
-    def forward(self, grid: GridImage) -> Tuple[GridImage, GridImage, GridImage, GridImage]:
+    def forward(
+        self, grid: GridImage
+    ) -> Tuple[GridImage, GridImage, GridImage, GridImage]:
         """
         Args:
             x: [BS, in_channels, H, W]
@@ -84,12 +88,10 @@ class Resnet18FPN3d(nn.Module):
     def __init__(self, in_channels: int) -> None:
         super().__init__()
 
-        backbone = resnet3d18(
-            zero_init_residual=True, final_channels=in_channels*16
-        )
+        backbone = resnet3d18(zero_init_residual=True, final_channels=in_channels * 16)
         self.first_conv = nn.Conv3d(
             in_channels,
-            in_channels*2,
+            in_channels * 2,
             kernel_size=7,
             stride=2,
             padding=3,
@@ -103,16 +105,16 @@ class Resnet18FPN3d(nn.Module):
         self.layer3: nn.Module = backbone.layer3
 
         self.up3_skip = UpsamplingAdd3d(
-            in_channels*8, in_channels*4, scale_factor=2
+            in_channels * 8, in_channels * 4, scale_factor=2
         )
         self.up2_skip = UpsamplingAdd3d(
-            in_channels*4, in_channels*2, scale_factor=2
+            in_channels * 4, in_channels * 2, scale_factor=2
         )
-        self.up1_skip = UpsamplingAdd3d(
-            in_channels*2, in_channels, scale_factor=2
-        )
+        self.up1_skip = UpsamplingAdd3d(in_channels * 2, in_channels, scale_factor=2)
 
-    def forward(self, grid: Grid3d) -> Tuple[GridImage, GridImage, GridImage, GridImage]:
+    def forward(
+        self, grid: Grid3d
+    ) -> Tuple[GridImage, GridImage, GridImage, GridImage]:
         """
         Args:
             x: [BS, in_channels, Z, Y, X]
@@ -155,6 +157,7 @@ class Resnet18FPN3d(nn.Module):
             replace(grid, data=x3),
             replace(grid, data=x4),
         )
+
 
 class UpsamplingAdd2d(nn.Module):
     """
@@ -208,4 +211,3 @@ class UpsamplingAdd3d(nn.Module):
         """
         x = self.upsample_layer(x)
         return x + x_skip
-

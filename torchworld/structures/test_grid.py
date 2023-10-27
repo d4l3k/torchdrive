@@ -15,9 +15,24 @@ class TestGrid(unittest.TestCase):
             time=torch.rand(2),
         )
 
+        grid = grid.to("cpu")
+        grid = grid.cpu()
+
     def test_grid_image(self) -> None:
         grid = GridImage(
             data=torch.rand(2, 3, 4, 5),
             camera=PerspectiveCameras(),
             time=torch.rand(2),
         )
+
+        grid = grid.to("cpu")
+        grid = grid.cpu()
+
+    def test_grid_3d_from_volume(self) -> None:
+        grid = Grid3d.from_volume(
+            data=torch.rand(2, 3, 4, 5, 6),
+            voxel_size=1.0,
+            volume_translation=(1.0, -1.0, 0.1),
+            time=1.0,
+        )
+        self.assertIsInstance(grid, Grid3d)
