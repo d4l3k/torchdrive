@@ -18,6 +18,9 @@ class TestGrid(unittest.TestCase):
         grid = grid.to("cpu")
         grid = grid.cpu()
 
+        self.assertEqual(len(grid), 2)
+        self.assertEqual(grid.device, grid.data.device)
+
     def test_grid_image(self) -> None:
         grid = GridImage(
             data=torch.rand(2, 3, 4, 5),

@@ -12,6 +12,9 @@ T = TypeVar("T")
 
 @dataclass
 class BaseGrid(ABC):
+    data: torch.Tensor
+    time: torch.Tensor
+
     @abstractmethod
     def to(self: T, target: Union[torch.device, str]) -> T:
         ...
@@ -21,6 +24,13 @@ class BaseGrid(ABC):
 
     def cpu(self) -> T:
         return self.to(torch.device("cpu"))
+
+    @property
+    def device(self) -> torch.device:
+        return self.data.device
+
+    def __len__(self) -> int:
+        return len(self.data)
 
 
 @dataclass
