@@ -111,9 +111,7 @@ class Resnet18FPN3d(nn.Module):
         )
         self.up1_skip = UpsamplingAdd3d(in_channels * 2, in_channels, scale_factor=2)
 
-    def forward(
-        self, grid: Grid3d
-    ) -> Tuple[GridImage, GridImage, GridImage, GridImage]:
+    def forward(self, grid: Grid3d) -> Tuple[Grid3d, Grid3d, Grid3d, Grid3d]:
         """
         Args:
             x: [BS, in_channels, Z, Y, X]
@@ -150,8 +148,6 @@ class Resnet18FPN3d(nn.Module):
         # Third upsample to (H, W)
         x1 = self.up1_skip(x2, skip_x["1"])
 
-        # pyre-fixme[7]: Expected `Tuple[GridImage, GridImage, GridImage,
-        #  GridImage]` but got `Tuple[Grid3d, Grid3d, Grid3d, Grid3d]`.
         return (
             grid.replace(data=x1),
             grid.replace(data=x2),

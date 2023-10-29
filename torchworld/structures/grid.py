@@ -161,11 +161,14 @@ class GridImage(BaseGrid):
         camera corresponding to the image space features.
     time: [bs]
         Time corresponding to the grid.
+    mask: [bs, 1, y, x]
+        Optional mask for the features.
     """
 
     data: torch.Tensor
     camera: CamerasBase
     time: torch.Tensor
+    mask: Optional[torch.Tensor] = None
 
     def __post_init__(self) -> None:
         if self.data.dim() != 4:
@@ -174,6 +177,12 @@ class GridImage(BaseGrid):
             raise TypeError(
                 f"time must be scalar or 1-dimensional, got {self.time.shape}"
             )
+
+        if (mask := self.mask) is not None:
+            if self.data.shape[2:] != mask.shape[2:]:
+                raise TypeError(
+                    f"mask is not the same shape as data {self.data.shape} {mask.shape}"
+                )
 
         T = self.camera.get_projection_transform().get_matrix()
         if (BS := T.size(0)) != 1:
@@ -199,9 +208,11 @@ class GridImage(BaseGrid):
         data: Optional[torch.Tensor] = None,
         camera: Optional[CamerasBase] = None,
         time: Optional[torch.Tensor] = None,
+        mask: Optional[torch.Tensor] = None,
     ) -> "GridImage":
         return GridImage(
             data=data if data is not None else self.data,
             camera=camera if camera is not None else self.camera,
             time=time if time is not None else self.time,
+            mask=mask if mask is not None else self.mask,
         )

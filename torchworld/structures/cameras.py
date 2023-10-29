@@ -1805,11 +1805,7 @@ def get_ndc_to_screen_transform(
     # pyre-fixme[2]: Parameter must be annotated.
     cameras,
     with_xyflip: bool = False,
-    # pyre-fixme[24]: Generic type `list` expects 1 type parameter, received 2, use
-    #  `typing.List[<element type>]` to avoid runtime subscripting errors.
-    image_size: Optional[
-        Union[List[float, float], Tuple[float, float], torch.Tensor]
-    ] = None,
+    image_size: Optional[Union[List[float], Tuple[float, float], torch.Tensor]] = None,
 ) -> Transform3d:
     """
     PyTorch3D NDC to screen conversion.

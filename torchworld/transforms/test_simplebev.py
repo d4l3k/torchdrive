@@ -5,7 +5,6 @@ import torch
 from torchworld.structures.cameras import PerspectiveCameras
 from torchworld.structures.grid import Grid3d, GridImage
 from torchworld.transforms.simplebev import lift_image_to_3d
-
 from torchworld.transforms.transform3d import Transform3d
 
 

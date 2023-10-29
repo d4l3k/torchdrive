@@ -21,7 +21,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torchdrive.data import Batch, TransferCollator
 from torchdrive.datasets.autolabeler import LabelType, save_tensors
 from torchdrive.datasets.dataset import Dataset
-from torchdrive.train_config import create_parser
+from torchdrive.train_config import create_parser, TrainConfig
 
 # pyre-fixme[5]: Global expression must be annotated.
 parser = create_parser()
@@ -32,8 +32,7 @@ args: argparse.Namespace = parser.parse_args()
 
 # pyre-fixme[5]: Global expression must be annotated.
 config_module = importlib.import_module("configs." + args.config)
-# pyre-fixme[5]: Global expression must be annotated.
-config = config_module.CONFIG
+config: TrainConfig = config_module.CONFIG
 
 # overrides
 config.num_frames = 1
