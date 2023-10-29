@@ -128,7 +128,7 @@ class PathTask(BEVTask):
                 length = lengths[0] - 1
                 plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
                 plt.plot(*prev[0, 0:2, 0].detach().cpu(), "go", label="origin")
-                plt.plot(*final_pos[0, 0:2].detach().cpu(), "go", label="final")
+                plt.plot(*final_pos[0, 0:2].detach().cpu(), "ro", label="final")
 
                 for i, predicted in enumerate(all_predicted):
                     if i % max(1, self.num_ar_iters // 4) != 0:
@@ -148,16 +148,20 @@ class PathTask(BEVTask):
                 autoregressive = PathTransformer.infer(
                     self.transformer,
                     bev[:1],
-                    positions[:1, ..., :2],
+                    positions[:1, ..., :1],
                     final_pos[:1],
-                    n=length - 2,
+                    n=length - 1,
+                )
+                assert autoregressive.shape == (1, 3, length), (
+                    autoregressive.shape,
+                    length,
                 )
                 plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
                 plt.plot(
                     *autoregressive[0, 0:2, 1:].detach().cpu(), label="autoregressive"
                 )
                 plt.plot(*prev[0, 0:2, 0].detach().cpu(), "go", label="origin")
-                plt.plot(*final_pos[0, 0:2].detach().cpu(), "go", label="final")
+                plt.plot(*final_pos[0, 0:2].detach().cpu(), "ro", label="final")
                 self.train()
 
                 fig.legend()
