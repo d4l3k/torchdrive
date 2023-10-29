@@ -30,7 +30,7 @@ def lift_image_to_3d(
     mask: grid of the mask where the camera could see
     """
     if dst.data.numel() != 0:
-        raise TypeError(f"dst should be batch size zero {dst.shape}")
+        raise TypeError(f"dst should be batch size zero {dst.data.shape}")
 
     device = src.device
     BS = len(src)

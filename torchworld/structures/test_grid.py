@@ -1,10 +1,10 @@
 import unittest
 
 import torch
-from pytorch3d.renderer.cameras import PerspectiveCameras
-from pytorch3d.transforms import Transform3d
 
+from torchworld.structures.cameras import PerspectiveCameras
 from torchworld.structures.grid import Grid3d, GridImage
+from torchworld.transforms.transform3d import Transform3d
 
 
 class TestGrid(unittest.TestCase):

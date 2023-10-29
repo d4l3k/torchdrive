@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Tuple, TypeVar, Union
+from typing import Optional, Self, Tuple, TypeVar, Union
 
 import torch
 from pytorch3d.structures.volumes import VolumeLocator
@@ -17,13 +17,13 @@ class BaseGrid(ABC):
     time: torch.Tensor
 
     @abstractmethod
-    def to(self: T, target: Union[torch.device, str]) -> T:
+    def to(self, target: Union[torch.device, str]) -> Self:
         ...
 
-    def cuda(self) -> T:
+    def cuda(self) -> Self:
         return self.to(torch.device("cuda"))
 
-    def cpu(self) -> T:
+    def cpu(self) -> Self:
         return self.to(torch.device("cpu"))
 
     @property
@@ -105,7 +105,7 @@ class Grid3d(BaseGrid):
             The center of the volume in world coordinates.
         """
         device = data.device
-        grid_sizes = data.shape[2:5]
+        grid_sizes = tuple(data.shape[2:5])
         locator = VolumeLocator(
             batch_size=len(data),
             grid_sizes=grid_sizes,
@@ -129,7 +129,7 @@ class Grid3d(BaseGrid):
         )
 
     def grid_shape(self) -> Tuple[int, int]:
-        return self.data.shape[2:5]
+        return tuple(self.data.shape[2:5])
 
     def replace(
         self,
@@ -167,7 +167,7 @@ class GridImage(BaseGrid):
 
     def __post_init__(self) -> None:
         if self.data.dim() != 4:
-            raise TypeError(f"data must be 4 dimensional, got {data.shape}")
+            raise TypeError(f"data must be 4 dimensional, got {self.data.shape}")
         if self.time.dim() not in (0, 1):
             raise TypeError(
                 f"time must be scalar or 1-dimensional, got {self.time.shape}"
@@ -188,14 +188,14 @@ class GridImage(BaseGrid):
         )
 
     def grid_shape(self) -> Tuple[int, int]:
-        return self.data.shape[2:4]
+        return tuple(self.data.shape[2:4])
 
     def replace(
         self,
         data: Optional[torch.Tensor] = None,
         camera: Optional[CamerasBase] = None,
         time: Optional[torch.Tensor] = None,
-    ) -> "Grid3d":
+    ) -> "GridImage":
         return GridImage(
             data=data if data is not None else self.data,
             camera=camera if camera is not None else self.camera,
