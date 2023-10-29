@@ -8,7 +8,7 @@ import torchmetrics
 from torch import nn
 
 from torchdrive.data import Batch
-from torchdrive.models.path import PathTransformer
+from torchdrive.models.path import PathTransformer, rel_dists
 from torchdrive.tasks.bev import BEVTask, Context
 
 
@@ -108,6 +108,14 @@ class PathTask(BEVTask):
                 per_token_loss.sum(dim=(1, 2)) * 5 / (num_elements + 1)
             )
 
+            pred_dists = rel_dists(predicted)
+            target_dists = rel_dists(target)
+            rel_dist_loss = F.huber_loss(
+                pred_dists, target_dists, reduction="none", delta=20.0
+            )
+            rel_dist_loss *= mask
+            losses[f"rel_dists/{i}"] = rel_dist_loss.sum(dim=1) / (num_elements + 1)
+
             # keep first values the same and shift predicted over by 1
             prev = torch.cat((prev[..., :1], predicted[..., :-1]), dim=-1)
 
@@ -119,6 +127,8 @@ class PathTask(BEVTask):
                 fig = plt.figure()
                 length = lengths[0] - 1
                 plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
+                plt.plot(*prev[0, 0:2, 0].detach().cpu(), "go", label="origin")
+                plt.plot(*final_pos[0, 0:2].detach().cpu(), "go", label="final")
 
                 for i, predicted in enumerate(all_predicted):
                     if i % max(1, self.num_ar_iters // 4) != 0:
@@ -128,6 +138,11 @@ class PathTask(BEVTask):
                         label=f"predicted {i}",
                     )
 
+                fig.legend()
+                plt.gca().set_aspect("equal")
+                ctx.add_figure("paths/predicted", fig)
+
+                fig = plt.figure()
                 # autoregressive
                 self.eval()
                 autoregressive = PathTransformer.infer(
@@ -137,11 +152,16 @@ class PathTask(BEVTask):
                     final_pos[:1],
                     n=length - 2,
                 )
-                plt.plot(*autoregressive[0, 0:2].detach().cpu(), label="autoregressive")
+                plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
+                plt.plot(
+                    *autoregressive[0, 0:2, 1:].detach().cpu(), label="autoregressive"
+                )
+                plt.plot(*prev[0, 0:2, 0].detach().cpu(), "go", label="origin")
+                plt.plot(*final_pos[0, 0:2].detach().cpu(), "go", label="final")
                 self.train()
 
                 fig.legend()
                 plt.gca().set_aspect("equal")
-                ctx.add_figure("paths", fig)
+                ctx.add_figure("paths/autoregressive", fig)
 
         return losses

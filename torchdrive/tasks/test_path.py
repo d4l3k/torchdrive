@@ -42,6 +42,9 @@ class TestPath(unittest.TestCase):
                 "ae/0",
                 "ae/1",
                 "ae/2",
+                "rel_dists/0",
+                "rel_dists/1",
+                "rel_dists/2",
             ],
         )
         self.assertEqual(losses["position/0"].shape, (2,))

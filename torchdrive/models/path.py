@@ -13,6 +13,12 @@ from torchdrive.positional_encoding import apply_sin_cos_enc2d
 MAX_POS = 100  # meters from origin
 
 
+class PathSigmoidMeters(nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # convert to bounded x/y/z coords
+        return (x.float().sigmoid() * 2 - 1) * MAX_POS
+
+
 def rel_dists(series: torch.Tensor) -> torch.Tensor:
     """
     rel_dists returns the distances between each point in the series.
@@ -39,11 +45,13 @@ class PathTransformer(nn.Module):
         num_heads: int = 8,
         num_layers: int = 3,
         pos_dim: int = 3,
+        final_jitter: float = 5.0,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
 
         self.dim = dim
+        self.final_jitter = final_jitter
 
         self.bev_encoder = nn.Conv2d(bev_dim, dim, 1)
 
@@ -61,6 +69,7 @@ class PathTransformer(nn.Module):
                 nn.Linear(dim, dim),
                 nn.ReLU(inplace=True),
                 nn.Linear(dim, pos_dim),
+                PathSigmoidMeters(),
             )
         )
 
@@ -94,14 +103,13 @@ class PathTransformer(nn.Module):
 
         # feed it the target end position with random jitter added to avoid
         # overfitting
-        end_jitter = 5
-        end_position = positions[:, :, -1]
-        end_jitter = (torch.rand_like(end_position) * 2 - 1) * end_jitter
-        end_position = end_position + end_jitter
+        if self.training:
+            final_jitter = (torch.rand_like(final_pos) * 2 - 1) * self.final_jitter
+            final_pos = final_pos + final_jitter
 
         with autocast():
             static_feats = torch.cat(
-                (speed, start_position, end_position), dim=1
+                (speed, start_position, final_pos), dim=1
             ).unsqueeze(-1)
             static = self.static_encoder(static_feats).permute(0, 2, 1)
 
@@ -115,10 +123,9 @@ class PathTransformer(nn.Module):
 
             out_positions = self.transformer(position_emb, cross_feats)
 
-        pred_pos = self.pos_decoder(out_positions.float())
-        pred_pos = pred_pos.permute(0, 2, 1)  # [bs, 3, n]
-        # convert to bounded x/y/z coords
-        pred_pos = (pred_pos.sigmoid() * 2 - 1) * MAX_POS
+        pred_pos = self.pos_decoder(out_positions.float()).permute(
+            0, 2, 1
+        )  # [bs, 3, n]
 
         return pred_pos, ae_pos
 
