@@ -27,15 +27,16 @@ from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
 from torchdrive.datasets.dataset import Dataset
 from torchdrive.dist import run_ddp_concat
-from torchdrive.train_config import create_parser
+from torchdrive.tasks.bev import BEVTaskVan
+from torchdrive.train_config import create_parser, TrainConfig
 from tqdm import tqdm
 
 matplotlib.use("agg")
 
-parser = create_parser()
+parser: argparse.ArgumentParser = create_parser()
 args: argparse.Namespace = parser.parse_args()
 
-config = args.config
+config: TrainConfig = args.config
 
 os.makedirs(args.output, exist_ok=True)
 
@@ -67,6 +68,7 @@ if RANK == 0:
         flush_secs=60,
     )
     writer.add_text("argv", json.dumps(sys.argv, indent=4))
+    # pyre-fixme[16]: to_json
     writer.add_text("train_config", config.to_json(indent=4))
 
     import git
@@ -82,6 +84,7 @@ else:
 dataset: Dataset = config.create_dataset(smoke=args.smoke)
 
 if RANK == 0:
+    # pyre-fixme[6]: len
     print(f"trainset size {len(dataset)}")
 
 if args.anomaly_detection:
@@ -106,11 +109,13 @@ if args.compile:
     parent_fn: Callable[[nn.Module], nn.Module] = compile_fn
 
     def compile_parent(m: nn.Module) -> nn.Module:
-        return torch.compile(parent_fn(m), dynamic=False)  # pyre-ignore[7]: Expected Module
+        return torch.compile(
+            parent_fn(m), dynamic=False
+        )  # pyre-ignore[7]: Expected Module
 
     compile_fn = compile_parent
 
-model = config.create_model(device=device, compile_fn=compile_fn)
+model: BEVTaskVan = config.create_model(device=device, compile_fn=compile_fn)
 
 if False and WORLD_SIZE > 1:
     ddp_model: torch.nn.Module = DistributedDataParallel(
@@ -126,6 +131,7 @@ if RANK == 0:
     print(torchinfo.summary(model))
 
 params: List[Dict[str, Union[object, List[object]]]] = model.param_opts(config.lr)
+# pyre-fixme[9]: object
 lr_groups: List[float] = [p["lr"] if "lr" in p else config.lr for p in params]
 name_groups: List[str] = [cast(str, p["name"]) for p in params]
 flat_params: Set[object] = set()
@@ -147,11 +153,11 @@ lr_scheduler = optim.lr_scheduler.StepLR(
 # scaler: amp.GradScaler = amp.GradScaler()
 scaler: Optional[amp.GradScaler] = None
 
-global_step = 0
-CHECKPOINT_PATH = os.path.join(args.output, "model.pt")
-GLOBAL_STEP_KEY = "global_step"
-MODEL_KEY = "model"
-OPTIM_KEY = "optim"
+global_step: int = 0
+CHECKPOINT_PATH: str = os.path.join(args.output, "model.pt")
+GLOBAL_STEP_KEY: str = "global_step"
+MODEL_KEY: str = "model"
+OPTIM_KEY: str = "optim"
 
 
 def save(epoch: int) -> None:
@@ -175,9 +181,9 @@ def save(epoch: int) -> None:
     print(f"saved to {CHECKPOINT_PATH}, loss = {loss}")
 
 
-load_path = args.load
+load_path: str = args.load
 
-LOAD_FAULT_TOLERANCE = os.path.exists(CHECKPOINT_PATH)
+LOAD_FAULT_TOLERANCE: bool = os.path.exists(CHECKPOINT_PATH)
 
 if LOAD_FAULT_TOLERANCE:
     print(f"loading from fault tolerance checkpoint {CHECKPOINT_PATH}")
@@ -200,9 +206,10 @@ if load_path:
             og["lr"] = lr
 
         if GLOBAL_STEP_KEY in ckpt:
+            # pyre-fixme[9]: int vs Tensor
             global_step = ckpt[GLOBAL_STEP_KEY]
 
-    state_dict = ckpt[MODEL_KEY]  # pyre-fixme
+    state_dict: Dict[str, torch.Tensor] = ckpt[MODEL_KEY]  # pyre-fixme
 
     # remap state_dict
     state_dict = remap_state_dict(state_dict, model)
