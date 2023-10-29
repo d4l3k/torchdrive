@@ -1,4 +1,3 @@
-from dataclasses import replace
 from typing import Tuple
 
 import torch
@@ -31,7 +30,7 @@ def lift_image_to_3d(
     mask: grid of the mask where the camera could see
     """
     if dst.data.numel() != 0:
-        raise TypeError(f"dst should be batch size zero")
+        raise TypeError(f"dst should be batch size zero {dst.shape}")
 
     device = src.device
     BS = len(src)
@@ -75,6 +74,6 @@ def lift_image_to_3d(
     values *= valid
 
     return (
-        replace(dst, data=values, time=src.time),
-        replace(dst, data=valid, time=src.time),
+        dst.replace(data=values, time=src.time),
+        dst.replace(data=valid, time=src.time),
     )

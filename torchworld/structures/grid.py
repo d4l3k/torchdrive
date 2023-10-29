@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Tuple, TypeVar, Union
+from typing import Optional, Tuple, TypeVar, Union
 
 import torch
 from pytorch3d.renderer.cameras import CamerasBase
 from pytorch3d.structures.volumes import VolumeLocator
-from pytorch3d.transforms import Transform3d
+
+from torchworld.transforms.transform3d import Transform3d
 
 T = TypeVar("T")
 
@@ -129,6 +130,20 @@ class Grid3d(BaseGrid):
 
     def grid_shape(self) -> Tuple[int, int]:
         return self.data.shape[2:5]
+
+    def replace(
+        self,
+        data: Optional[torch.Tensor] = None,
+        local_to_world: Optional[Transform3d] = None,
+        time: Optional[torch.Tensor] = None,
+    ) -> "Grid3d":
+        return Grid3d(
+            data=data if data is not None else self.data,
+            local_to_world=local_to_world
+            if local_to_world is not None
+            else self.local_to_world,
+            time=time if time is not None else self.time,
+        )
 
 
 @dataclass
