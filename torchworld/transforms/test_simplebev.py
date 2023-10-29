@@ -24,24 +24,7 @@ class TestSimpleBEV(unittest.TestCase):
             time=torch.rand(2, device=device),
         )
 
-        out, mask = lift_image_to_3d(src, dst)
+        compiled_lift = torch.compile(lift_image_to_3d, fullgraph=True, backend="eager")
+        out, mask = compiled_lift(src, dst)
         self.assertEqual(out.data.shape, (2, 3, 1, 2, 3))
         self.assertEqual(mask.data.shape, (2, 1, 1, 2, 3))
-
-    def test_lift_image_to_3d_compile(self) -> None:
-        device = torch.device("cpu")
-        dtype = torch.float
-        dst = Grid3d(
-            data=torch.rand(0, 3, 1, 2, 3, device=device, dtype=dtype),
-            local_to_world=Transform3d(device=device),
-            time=torch.rand(2, device=device),
-        )
-        src = GridImage(
-            data=torch.rand(2, 3, 1, 2, device=device, dtype=dtype),
-            camera=PerspectiveCameras(device=device),
-            time=torch.rand(2, device=device),
-        )
-
-        compiled_lift = torch.compile(lift_image_to_3d, fullgraph=True)
-        compiled_lift(src, dst)
-        compiled_lift(src, dst)

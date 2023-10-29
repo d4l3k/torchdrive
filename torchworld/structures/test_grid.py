@@ -17,6 +17,7 @@ class TestGrid(unittest.TestCase):
 
         grid = grid.to("cpu")
         grid = grid.cpu()
+        grid = grid.replace()
 
         self.assertEqual(len(grid), 2)
         self.assertEqual(grid.device, grid.data.device)
@@ -32,6 +33,8 @@ class TestGrid(unittest.TestCase):
 
         grid = grid.to("cpu")
         grid = grid.cpu()
+        grid = grid.replace()
+
         self.assertEqual(grid.grid_shape(), (4, 5))
 
     def test_grid_3d_from_volume(self) -> None:

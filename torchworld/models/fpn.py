@@ -1,4 +1,3 @@
-from dataclasses import replace
 from typing import Tuple
 
 import torch
@@ -73,10 +72,10 @@ class Resnet18FPNImage(nn.Module):
         x1 = self.up1_skip(x2, skip_x["1"])
 
         return (
-            replace(grid, data=x1),
-            replace(grid, data=x2),
-            replace(grid, data=x3),
-            replace(grid, data=x4),
+            grid.replace(data=x1),
+            grid.replace(data=x2),
+            grid.replace(data=x3),
+            grid.replace(data=x4),
         )
 
 
@@ -152,10 +151,10 @@ class Resnet18FPN3d(nn.Module):
         x1 = self.up1_skip(x2, skip_x["1"])
 
         return (
-            replace(grid, data=x1),
-            replace(grid, data=x2),
-            replace(grid, data=x3),
-            replace(grid, data=x4),
+            grid.replace(data=x1),
+            grid.replace(data=x2),
+            grid.replace(data=x3),
+            grid.replace(data=x4),
         )
 
 

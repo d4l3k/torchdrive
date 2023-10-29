@@ -3,9 +3,9 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, TypeVar, Union
 
 import torch
-from pytorch3d.renderer.cameras import CamerasBase
 from pytorch3d.structures.volumes import VolumeLocator
 
+from torchworld.structures.cameras import CamerasBase
 from torchworld.transforms.transform3d import Transform3d
 
 T = TypeVar("T")
@@ -189,3 +189,15 @@ class GridImage(BaseGrid):
 
     def grid_shape(self) -> Tuple[int, int]:
         return self.data.shape[2:4]
+
+    def replace(
+        self,
+        data: Optional[torch.Tensor] = None,
+        camera: Optional[CamerasBase] = None,
+        time: Optional[torch.Tensor] = None,
+    ) -> "Grid3d":
+        return GridImage(
+            data=data if data is not None else self.data,
+            camera=camera if camera is not None else self.camera,
+            time=time if time is not None else self.time,
+        )
