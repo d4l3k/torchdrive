@@ -11,6 +11,7 @@ class TestRaySampler(unittest.TestCase):
         sampler = LIDARRaySampler(n_pts_per_ray=5, min_depth=0.1, max_depth=4.0)
         batch = dummy_batch()
 
+        # pyre-fixme[16]: Optional type has no attribute `size`.
         N_PTS = batch.lidar.size(2)
 
         ray_bundle, distances = sampler(batch)

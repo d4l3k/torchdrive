@@ -41,10 +41,19 @@ class BDD100KDet:
         config: str = "cascade_rcnn_convnext-t_fpn_fp16_3x_det_bdd100k.py",
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
+        # pyre-fixme[21]: Could not find module `mmcv`.
         import mmcv
+
+        # pyre-fixme[21]: Could not find module `mmcv.cnn.utils.sync_bn`.
         from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
+
+        # pyre-fixme[21]: Could not find module `mmcv.runner`.
         from mmcv.runner import load_checkpoint, wrap_fp16_model
+
+        # pyre-fixme[21]: Could not find module `mmdet.models`.
         from mmdet.models import build_detector
+
+        # pyre-fixme[21]: Could not find module `mmdet.models.detectors`.
         from mmdet.models.detectors import TwoStageDetector
 
         cfg_file = os.path.join(
@@ -67,7 +76,6 @@ class BDD100KDet:
         if fp16_cfg is not None and half:
             wrap_fp16_model(model)
 
-        # pyre-fixme[6]: map_location device
         checkpoint = load_checkpoint(model, cfg.load_from, map_location=device)
         model = revert_sync_batchnorm(model)
         model = model.eval()
@@ -75,7 +83,6 @@ class BDD100KDet:
             model = model.half()
 
         model = model.to(device)
-        # pyre-fixme[6]: invalid parameter
         self.model: nn.Module = compile_fn(model.simple_test)
 
         if isinstance(model, TwoStageDetector):
@@ -254,11 +261,17 @@ class DetBEVTransformerDecoder(nn.Module):
 
 if __name__ == "__main__":
     m = BDD100KDet(device=torch.device("cpu"))
+    # pyre-fixme[5]: Global expression must be annotated.
     model = m.model.__self__
+    # pyre-fixme[5]: Global expression must be annotated.
     img, img_meta = m.transform(torch.rand(2, 3, 120, 240))
+    # pyre-fixme[5]: Global expression must be annotated.
     img_meta_list = [img_meta]
+    # pyre-fixme[5]: Global expression must be annotated.
     original_forward = model.forward
 
+    # pyre-fixme[3]: Return type must be annotated.
+    # pyre-fixme[2]: Parameter must be annotated.
     def forward(imgs):
         return original_forward(
             [imgs], img_metas=img_meta_list, return_loss=False, rescale=False
@@ -277,6 +290,7 @@ if __name__ == "__main__":
     model(img)
 
     # scripted = torch.jit.script(model, example_inputs=[[[img]]])
+    # pyre-fixme[5]: Global expression must be annotated.
     scripted = torch.jit.trace(model, img)
 
     breakpoint()

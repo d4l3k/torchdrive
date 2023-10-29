@@ -5,12 +5,15 @@ import torch
 from torchdrive.models.semantic import BDD100KSemSeg
 
 try:
+    # pyre-fixme[21]: Could not find module `mmcv`.
     import mmcv
 except ModuleNotFoundError:
     mmcv = False
 
 
 class TestSemantic(unittest.TestCase):
+    # pyre-fixme[56]: Pyre was not able to infer the type of argument `not mmcv` to
+    #  decorator factory `unittest.skipIf`.
     @unittest.skipIf(not mmcv, "must have mmcv")
     def test_bdd100ksemseg(self) -> None:
         device = torch.device("cpu")

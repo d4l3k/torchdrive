@@ -17,7 +17,6 @@ class BackprojectDepth(nn.Module):
         self.height = height
         self.width = width
 
-        # pyre-fixme[6]: numpy types don't like range
         meshgrid = np.meshgrid(range(self.width), range(self.height), indexing="xy")
         id_coords = np.stack(meshgrid, axis=0).astype(np.float32)
         self.register_buffer(

@@ -19,7 +19,6 @@ from torchdrive.transforms.img import render_color
 
 def _get_orig_mod(m: nn.Module) -> nn.Module:
     if hasattr(m, "_orig_mod"):
-        # pyre-fixme[7]: Union[Module, Tensor]
         return m._orig_mod
     return m
 

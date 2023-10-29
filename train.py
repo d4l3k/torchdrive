@@ -109,9 +109,8 @@ if args.compile:
     parent_fn: Callable[[nn.Module], nn.Module] = compile_fn
 
     def compile_parent(m: nn.Module) -> nn.Module:
-        return torch.compile(
-            parent_fn(m), dynamic=False
-        )  # pyre-ignore[7]: Expected Module
+        # pyre-ignore[7]: Expected Module
+        return torch.compile(parent_fn(m), dynamic=False)
 
     compile_fn = compile_parent
 

@@ -117,6 +117,8 @@ class Grid3d(BaseGrid):
             time = torch.tensor(time, dtype=torch.float, device=device)
         return cls(
             data=data,
+            # pyre-fixme[6]: For 2nd argument expected `Transform3d` but got
+            #  `Transform3d`.
             local_to_world=locator.get_local_to_world_coords_transform(),
             time=time,
         )
@@ -183,6 +185,8 @@ class GridImage(BaseGrid):
     def to(self, target: Union[torch.device, str]) -> "GridImage":
         return GridImage(
             data=self.data.to(target),
+            # pyre-fixme[6]: For 2nd argument expected `CamerasBase` but got
+            #  `TensorProperties`.
             camera=self.camera.to(target),
             time=self.time.to(target),
         )

@@ -12,6 +12,7 @@ from torchdrive.datasets.dataset import Datasets
 from torchdrive.train_config import create_parser, TrainConfig
 
 
+# pyre-fixme[5]: Global expression must be annotated.
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "configs")
 sys.path.append(CONFIG_DIR)
 
@@ -27,6 +28,10 @@ def get_module_names() -> List[str]:
 
 
 class TestTrainConfig(unittest.TestCase):
+    # pyre-fixme[56]: Pyre was not able to infer the type of argument
+    #  `torchdrive.test_train_config.get_module_names()` to decorator factory
+    #  `parameterized.parameterized.expand`.
+    # pyre-fixme[16]: Module `parameterized` has no attribute `expand`.
     @parameterized.expand(get_module_names())
     def test_configs(self, module_name: str) -> None:
         config_module = importlib.import_module(f"configs.{module_name}")

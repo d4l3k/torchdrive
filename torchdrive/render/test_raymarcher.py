@@ -67,6 +67,7 @@ class TestRaymarcher(unittest.TestCase):
                 origins=torch.rand(BS, X, 3),
                 directions=torch.rand(BS, X, 3),
                 lengths=torch.rand(BS, X, PTS_PER_RAY),
+                # pyre-fixme[6]: For 4th argument expected `Tensor` but got `None`.
                 xys=None,
             ),
         )

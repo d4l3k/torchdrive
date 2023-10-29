@@ -45,6 +45,7 @@ def get_pytorch3d_dir() -> Path:
         return Path(__file__).resolve().parent.parent
 
 
+# pyre-fixme[3]: Return type must be annotated.
 def load_rgb_image(filename: str, data_dir: Union[str, Path]):
     filepath = os.path.join(data_dir, filename)
     with Image.open(filepath) as raw_image:
@@ -53,6 +54,7 @@ def load_rgb_image(filename: str, data_dir: Union[str, Path]):
     return image[..., :3]
 
 
+# pyre-fixme[24]: Generic type `np.ndarray` expects 2 type parameters.
 TensorOrArray = Union[torch.Tensor, np.ndarray]
 
 
@@ -71,18 +73,21 @@ def get_random_cuda_device() -> str:
 
 
 class TestCaseMixin(unittest.TestCase):
+    # pyre-fixme[2]: Parameter must be annotated.
     def assertSeparate(self, tensor1, tensor2) -> None:
         """
         Verify that tensor1 and tensor2 have their data in distinct locations.
         """
         self.assertNotEqual(tensor1.storage().data_ptr(), tensor2.storage().data_ptr())
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def assertNotSeparate(self, tensor1, tensor2) -> None:
         """
         Verify that tensor1 and tensor2 have their data in the same locations.
         """
         self.assertEqual(tensor1.storage().data_ptr(), tensor2.storage().data_ptr())
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def assertAllSeparate(self, tensor_list) -> None:
         """
         Verify that all tensors in tensor_list have their data in

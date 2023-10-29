@@ -3,8 +3,10 @@ from torchdrive.datasets.dataset import Dataset, Datasets
 
 
 class DummyDataset(Dataset):
+    # pyre-fixme[4]: Attribute must be annotated.
     NAME = Datasets.DUMMY
     cameras = ["left", "right"]
+    # pyre-fixme[4]: Attribute must be annotated.
     CAMERA_OVERLAP = {}
 
     def __len__(self) -> int:

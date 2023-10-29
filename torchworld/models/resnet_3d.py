@@ -277,6 +277,8 @@ class Upsample3DBlock(nn.Module):
         ]
         for i in range(depth):
             layers.append(
+                # pyre-fixme[6]: For 1st argument expected `Union[BatchNorm3d,
+                #  Conv3d]` but got `BasicBlock3d`.
                 BasicBlock3d(
                     inplanes=out_ch,
                     planes=out_ch,

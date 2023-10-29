@@ -481,7 +481,7 @@ class Transform3d:
 
     def to(
         self,
-        device: torch.device,
+        device: Union[str, torch.device],
         copy: bool = False,
         dtype: Optional[torch.dtype] = None,
     ) -> "Transform3d":
@@ -534,9 +534,9 @@ class Transform3d:
 class Translate(Transform3d):
     def __init__(
         self,
-        x: torch.Tensor,
-        y: Optional[torch.Tensor] = None,
-        z: Optional[torch.Tensor] = None,
+        x: Union[float, torch.Tensor],
+        y: Optional[Union[float, torch.Tensor]] = None,
+        z: Optional[Union[float, torch.Tensor]] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[torch.device] = None,
     ) -> None:
@@ -575,9 +575,9 @@ class Translate(Transform3d):
 class Scale(Transform3d):
     def __init__(
         self,
-        x: torch.Tensor,
-        y: Optional[torch.Tensor] = None,
-        z: Optional[torch.Tensor] = None,
+        x: Union[float, torch.Tensor],
+        y: Optional[Union[float, torch.Tensor]] = None,
+        z: Optional[Union[float, torch.Tensor]] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[torch.device] = None,
     ) -> None:
@@ -666,7 +666,7 @@ class Rotate(Transform3d):
 class RotateAxisAngle(Rotate):
     def __init__(
         self,
-        angle: torch.Tensor,
+        angle: Union[float, torch.Tensor],
         axis: str = "X",
         degrees: bool = True,
         dtype: torch.dtype = torch.float32,
@@ -704,7 +704,7 @@ class RotateAxisAngle(Rotate):
 
 
 def _handle_coord(
-    c: torch.Tensor, dtype: torch.dtype, device: torch.device
+    c: Union[float, torch.Tensor], dtype: torch.dtype, device: torch.device
 ) -> torch.Tensor:
     """
     Helper function for _handle_input.
@@ -715,7 +715,7 @@ def _handle_coord(
     Returns:
         c_vec: 1D torch tensor
     """
-    if not torch.is_tensor(c):
+    if not isinstance(c, torch.Tensor):
         c = torch.tensor(c, dtype=dtype, device=device)
     if c.dim() == 0:
         c = c.view(1)
@@ -725,9 +725,9 @@ def _handle_coord(
 
 
 def _handle_input(
-    x: torch.Tensor,
-    y: Optional[torch.Tensor],
-    z: Optional[torch.Tensor],
+    x: Union[float, torch.Tensor],
+    y: Optional[Union[float, torch.Tensor]],
+    z: Optional[Union[float, torch.Tensor]],
     dtype: torch.dtype,
     device: Optional[torch.device],
     name: str,
@@ -767,7 +767,7 @@ def _handle_input(
         device_ = torch.device("cpu")
 
     # If x is actually a tensor of shape (N, 3) then just return it
-    if torch.is_tensor(x) and x.dim() == 2:
+    if isinstance(x, torch.Tensor) and x.dim() == 2:
         if x.shape[1] != 3:
             msg = "Expected tensor of shape (N, 3); got %r (in %s)"
             raise ValueError(msg % (x.shape, name))
@@ -796,7 +796,10 @@ def _handle_input(
 
 
 def _handle_angle_input(
-    x: torch.Tensor, dtype: torch.dtype, device: Optional[torch.device], name: str
+    x: Union[float, torch.Tensor],
+    dtype: torch.dtype,
+    device: Optional[torch.device],
+    name: str,
 ) -> torch.Tensor:
     """
     Helper function for building a rotation function using angles.
@@ -815,7 +818,7 @@ def _handle_angle_input(
         device_ = x.device
     else:
         device_ = torch.device("cpu")
-    if torch.is_tensor(x) and x.dim() > 1:
+    if isinstance(x, torch.Tensor) and x.dim() > 1:
         msg = "Expected tensor of shape (N,); got %r (in %s)"
         raise ValueError(msg % (x.shape, name))
     else:

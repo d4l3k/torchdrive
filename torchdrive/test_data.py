@@ -32,6 +32,7 @@ class TestData(unittest.TestCase):
     def test_collate(self) -> None:
         batch = collate([dummy_item(), dummy_item(), None])
 
+        # pyre-fixme[16]: Optional type has no attribute `token`.
         self.assertEqual(batch.token, [["dummy0", "dummy1", "dummy2"]] * 2)
 
     def test_collate_long_cam_T(self) -> None:

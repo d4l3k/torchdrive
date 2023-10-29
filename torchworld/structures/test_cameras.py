@@ -1,3 +1,5 @@
+# pyre-unsafe
+
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -34,6 +36,7 @@ import math
 import pickle
 import unittest
 from itertools import product
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -65,7 +68,7 @@ from torchworld.transforms.transform3d import Transform3d
 
 
 # Naive function adapted from SoftRasterizer for test purposes.
-def perspective_project_naive(points, fov=60.0):
+def perspective_project_naive(points: torch.Tensor, fov: float = 60.0) -> torch.Tensor:
     """
     Compute perspective projection from a given viewing angle.
     Args:
@@ -86,7 +89,13 @@ def perspective_project_naive(points, fov=60.0):
     return points
 
 
-def sfm_perspective_project_naive(points, fx=1.0, fy=1.0, p0x=0.0, p0y=0.0):
+def sfm_perspective_project_naive(
+    points: torch.Tensor,
+    fx: float = 1.0,
+    fy: float = 1.0,
+    p0x: float = 0.0,
+    p0y: float = 0.0,
+):
     """
     Compute perspective projection using focal length and principal point.
 
@@ -102,6 +111,9 @@ def sfm_perspective_project_naive(points, fx=1.0, fy=1.0, p0x=0.0, p0y=0.0):
     z = points[:, :, 2]
     x = (points[:, :, 0] * fx) / z + p0x
     y = (points[:, :, 1] * fy) / z + p0y
+    # pyre-fixme[6]: For 1st argument expected `Union[List[Tensor],
+    #  typing.Tuple[Tensor, ...]]` but got `Tuple[Tensor, Tensor, float]`.
+    # pyre-fixme[58]: `/` is not supported for operand types `float` and `Tensor`.
     points = torch.stack((x, y, 1.0 / z), dim=2)
     return points
 
@@ -157,7 +169,7 @@ class TestCameraHelpers(TestCaseMixin, unittest.TestCase):
         super().setUp()
         torch.manual_seed(42)
 
-    def test_look_at_view_transform_from_eye_point_tuple(self):
+    def test_look_at_view_transform_from_eye_point_tuple(self) -> None:
         dist = math.sqrt(2)
         elev = math.pi / 4
         azim = 0.0
@@ -174,7 +186,7 @@ class TestCameraHelpers(TestCaseMixin, unittest.TestCase):
         self.assertTrue(torch.allclose(R, R_eye_only, atol=2e-7))
         self.assertTrue(torch.allclose(t, t_eye_only, atol=2e-7))
 
-    def test_look_at_view_transform_default_values(self):
+    def test_look_at_view_transform_default_values(self) -> None:
         dist = 1.0
         elev = 0.0
         azim = 0.0
@@ -186,7 +198,7 @@ class TestCameraHelpers(TestCaseMixin, unittest.TestCase):
         self.assertTrue(torch.allclose(R, R_default, atol=2e-7))
         self.assertTrue(torch.allclose(t, t_default, atol=2e-7))
 
-    def test_look_at_view_transform_non_default_at_position(self):
+    def test_look_at_view_transform_non_default_at_position(self) -> None:
         dist = 1.0
         elev = 0.0
         azim = 0.0
@@ -201,7 +213,7 @@ class TestCameraHelpers(TestCaseMixin, unittest.TestCase):
         self.assertTrue(torch.allclose(R, R_default, atol=2e-7))
         self.assertTrue(torch.allclose(t, t_default + t_trans, atol=2e-7))
 
-    def test_camera_position_from_angles_python_scalar(self):
+    def test_camera_position_from_angles_python_scalar(self) -> None:
         dist = 2.7
         elev = 90.0
         azim = 0.0
@@ -211,7 +223,7 @@ class TestCameraHelpers(TestCaseMixin, unittest.TestCase):
         position = camera_position_from_spherical_angles(dist, elev, azim)
         self.assertClose(position, expected_position, atol=2e-7)
 
-    def test_camera_position_from_angles_python_scalar_radians(self):
+    def test_camera_position_from_angles_python_scalar_radians(self) -> None:
         dist = 2.7
         elev = math.pi / 2
         azim = 0.0
@@ -222,128 +234,164 @@ class TestCameraHelpers(TestCaseMixin, unittest.TestCase):
         )
         self.assertClose(position, expected_position, atol=2e-7)
 
-    def test_camera_position_from_angles_torch_scalars(self):
+    def test_camera_position_from_angles_torch_scalars(self) -> None:
         dist = torch.tensor(2.7)
         elev = torch.tensor(0.0)
         azim = torch.tensor(90.0)
         expected_position = torch.tensor([2.7, 0.0, 0.0], dtype=torch.float32).view(
             1, 3
         )
+        # pyre-fixme[6]: For 1st argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 2nd argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 3rd argument expected `float` but got `Tensor`.
         position = camera_position_from_spherical_angles(dist, elev, azim)
         self.assertClose(position, expected_position, atol=2e-7)
 
-    def test_camera_position_from_angles_mixed_scalars(self):
+    def test_camera_position_from_angles_mixed_scalars(self) -> None:
         dist = 2.7
         elev = torch.tensor(0.0)
         azim = 90.0
         expected_position = torch.tensor([2.7, 0.0, 0.0], dtype=torch.float32).view(
             1, 3
         )
+        # pyre-fixme[6]: For 2nd argument expected `float` but got `Tensor`.
         position = camera_position_from_spherical_angles(dist, elev, azim)
         self.assertClose(position, expected_position, atol=2e-7)
 
-    def test_camera_position_from_angles_torch_scalar_grads(self):
+    def test_camera_position_from_angles_torch_scalar_grads(self) -> None:
         dist = torch.tensor(2.7, requires_grad=True)
         elev = torch.tensor(45.0, requires_grad=True)
         azim = torch.tensor(45.0)
+        # pyre-fixme[6]: For 1st argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 2nd argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 3rd argument expected `float` but got `Tensor`.
         position = camera_position_from_spherical_angles(dist, elev, azim)
         position.sum().backward()
         self.assertTrue(hasattr(elev, "grad"))
         self.assertTrue(hasattr(dist, "grad"))
+        # pyre-fixme[16]: `Optional` has no attribute `clone`.
         elev_grad = elev.grad.clone()
         dist_grad = dist.grad.clone()
         elev = math.pi / 180.0 * elev.detach()
         azim = math.pi / 180.0 * azim
         grad_dist = (
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             torch.cos(elev) * torch.sin(azim)
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             + torch.sin(elev)
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             + torch.cos(elev) * torch.cos(azim)
         )
         grad_elev = (
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             -(torch.sin(elev)) * torch.sin(azim)
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             + torch.cos(elev)
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             - torch.sin(elev) * torch.cos(azim)
         )
         grad_elev = dist * (math.pi / 180.0) * grad_elev
         self.assertClose(elev_grad, grad_elev)
         self.assertClose(dist_grad, grad_dist)
 
-    def test_camera_position_from_angles_vectors(self):
+    def test_camera_position_from_angles_vectors(self) -> None:
         dist = torch.tensor([2.0, 2.0])
         elev = torch.tensor([0.0, 90.0])
         azim = torch.tensor([90.0, 0.0])
         expected_position = torch.tensor(
             [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]], dtype=torch.float32
         )
+        # pyre-fixme[6]: For 1st argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 2nd argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 3rd argument expected `float` but got `Tensor`.
         position = camera_position_from_spherical_angles(dist, elev, azim)
         self.assertClose(position, expected_position, atol=2e-7)
 
-    def test_camera_position_from_angles_vectors_broadcast(self):
+    def test_camera_position_from_angles_vectors_broadcast(self) -> None:
         dist = torch.tensor([2.0, 3.0, 5.0])
         elev = torch.tensor([0.0])
         azim = torch.tensor([90.0])
         expected_position = torch.tensor(
             [[2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [5.0, 0.0, 0.0]], dtype=torch.float32
         )
+        # pyre-fixme[6]: For 1st argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 2nd argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 3rd argument expected `float` but got `Tensor`.
         position = camera_position_from_spherical_angles(dist, elev, azim)
         self.assertClose(position, expected_position, atol=3e-7)
 
-    def test_camera_position_from_angles_vectors_mixed_broadcast(self):
+    def test_camera_position_from_angles_vectors_mixed_broadcast(self) -> None:
         dist = torch.tensor([2.0, 3.0, 5.0])
         elev = 0.0
         azim = torch.tensor(90.0)
         expected_position = torch.tensor(
             [[2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [5.0, 0.0, 0.0]], dtype=torch.float32
         )
+        # pyre-fixme[6]: For 1st argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 3rd argument expected `float` but got `Tensor`.
         position = camera_position_from_spherical_angles(dist, elev, azim)
         self.assertClose(position, expected_position, atol=3e-7)
 
-    def test_camera_position_from_angles_vectors_mixed_broadcast_grads(self):
+    def test_camera_position_from_angles_vectors_mixed_broadcast_grads(self) -> None:
         dist = torch.tensor([2.0, 3.0, 5.0], requires_grad=True)
         elev = torch.tensor(45.0, requires_grad=True)
         azim = 45.0
+        # pyre-fixme[6]: For 1st argument expected `float` but got `Tensor`.
+        # pyre-fixme[6]: For 2nd argument expected `float` but got `Tensor`.
         position = camera_position_from_spherical_angles(dist, elev, azim)
         position.sum().backward()
         self.assertTrue(hasattr(elev, "grad"))
         self.assertTrue(hasattr(dist, "grad"))
+        # pyre-fixme[16]: `Optional` has no attribute `clone`.
         elev_grad = elev.grad.clone()
         dist_grad = dist.grad.clone()
         azim = torch.tensor(azim)
         elev = math.pi / 180.0 * elev.detach()
         azim = math.pi / 180.0 * azim
         grad_dist = (
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             torch.cos(elev) * torch.sin(azim)
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             + torch.sin(elev)
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             + torch.cos(elev) * torch.cos(azim)
         )
         grad_elev = (
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             -(torch.sin(elev)) * torch.sin(azim)
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             + torch.cos(elev)
+            # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
             - torch.sin(elev) * torch.cos(azim)
         )
         grad_elev = (dist * (math.pi / 180.0) * grad_elev).sum()
         self.assertClose(elev_grad, grad_elev)
+        # pyre-fixme[6]: For 2nd argument expected `Union[bool, complex, float,
+        #  int]` but got `Tensor`.
         self.assertClose(dist_grad, torch.full([3], grad_dist))
 
-    def test_camera_position_from_angles_vectors_bad_broadcast(self):
+    def test_camera_position_from_angles_vectors_bad_broadcast(self) -> None:
         # Batch dim for broadcast must be N or 1
         dist = torch.tensor([2.0, 3.0, 5.0])
         elev = torch.tensor([0.0, 90.0])
         azim = torch.tensor([90.0])
         with self.assertRaises(ValueError):
+            # pyre-fixme[6]: For 1st argument expected `float` but got `Tensor`.
+            # pyre-fixme[6]: For 2nd argument expected `float` but got `Tensor`.
+            # pyre-fixme[6]: For 3rd argument expected `float` but got `Tensor`.
             camera_position_from_spherical_angles(dist, elev, azim)
 
-    def test_look_at_rotation_python_list(self):
+    def test_look_at_rotation_python_list(self) -> None:
         camera_position = [[0.0, 0.0, -1.0]]  # camera pointing along negative z
         rot_mat = look_at_rotation(camera_position)
         self.assertClose(rot_mat, torch.eye(3)[None], atol=2e-7)
 
-    def test_look_at_rotation_input_fail(self):
+    def test_look_at_rotation_input_fail(self) -> None:
         camera_position = [-1.0]  # expected to have xyz positions
         with self.assertRaises(ValueError):
             look_at_rotation(camera_position)
 
-    def test_look_at_rotation_list_broadcast(self):
+    def test_look_at_rotation_list_broadcast(self) -> None:
         # fmt: off
         camera_positions = [[0.0, 0.0, -1.0], [0.0, 0.0, 1.0]]
         rot_mats_expected = torch.tensor(
@@ -365,7 +413,7 @@ class TestCameraHelpers(TestCaseMixin, unittest.TestCase):
         rot_mats = look_at_rotation(camera_positions)
         self.assertClose(rot_mats, rot_mats_expected, atol=2e-7)
 
-    def test_look_at_rotation_tensor_broadcast(self):
+    def test_look_at_rotation_tensor_broadcast(self) -> None:
         # fmt: off
         camera_positions = torch.tensor([
             [0.0, 0.0, -1.0],
@@ -390,22 +438,26 @@ class TestCameraHelpers(TestCaseMixin, unittest.TestCase):
         rot_mats = look_at_rotation(camera_positions)
         self.assertClose(rot_mats, rot_mats_expected, atol=2e-7)
 
-    def test_look_at_rotation_tensor_grad(self):
+    def test_look_at_rotation_tensor_grad(self) -> None:
         camera_position = torch.tensor([[0.0, 0.0, -1.0]], requires_grad=True)
         rot_mat = look_at_rotation(camera_position)
         rot_mat.sum().backward()
         self.assertTrue(hasattr(camera_position, "grad"))
         self.assertClose(
-            camera_position.grad, torch.zeros_like(camera_position), atol=2e-7
+            # pyre-fixme[6]: For 1st argument expected `Union[ndarray[typing.Any,
+            #  typing.Any], Tensor]` but got `Optional[Tensor]`.
+            camera_position.grad,
+            torch.zeros_like(camera_position),
+            atol=2e-7,
         )
 
-    def test_view_transform(self):
+    def test_view_transform(self) -> None:
         T = torch.tensor([0.0, 0.0, -1.0], requires_grad=True).view(1, -1)
         R = look_at_rotation(T)
         RT = get_world_to_view_transform(R=R, T=T)
         self.assertTrue(isinstance(RT, Transform3d))
 
-    def test_look_at_view_transform_corner_case(self):
+    def test_look_at_view_transform_corner_case(self) -> None:
         dist = 2.7
         elev = 90
         azim = 90
@@ -435,7 +487,7 @@ class TestCamerasCommon(TestCaseMixin, unittest.TestCase):
             cam.get_projection_transform()
             # Just checking that we don't crash or anything
 
-    def test_view_transform_class_method(self):
+    def test_view_transform_class_method(self) -> None:
         T = torch.tensor([0.0, 0.0, -1.0], requires_grad=True).view(1, -1)
         R = look_at_rotation(T)
         RT = get_world_to_view_transform(R=R, T=T)
@@ -497,6 +549,7 @@ class TestCamerasCommon(TestCaseMixin, unittest.TestCase):
             screen_cam_params["principal_point"] = (
                 image_size[:, [1, 0]]
             ) / 2.0 - prc * scale
+            # pyre-fixme[6]: For 2nd argument expected `Tensor` but got `bool`.
             screen_cam_params["in_ndc"] = False
         else:
             raise ValueError(str(cam_type))
@@ -718,19 +771,23 @@ class TestCamerasCommon(TestCaseMixin, unittest.TestCase):
                 else:
                     self.assertTrue(val == val_clone)
 
-    def test_join_cameras_as_batch_errors(self):
+    def test_join_cameras_as_batch_errors(self) -> None:
+        # pyre-fixme[6]: For 1st argument expected `device` but got `str`.
         cam0 = PerspectiveCameras(device="cuda:0")
+        # pyre-fixme[6]: For 1st argument expected `device` but got `str`.
         cam1 = OrthographicCameras(device="cuda:0")
 
         # Cameras not of the same type
         with self.assertRaisesRegex(ValueError, "same type"):
             join_cameras_as_batch([cam0, cam1])
 
+        # pyre-fixme[6]: For 1st argument expected `device` but got `str`.
         cam2 = OrthographicCameras(device="cpu")
         # Cameras not on the same device
         with self.assertRaisesRegex(ValueError, "same device"):
             join_cameras_as_batch([cam1, cam2])
 
+        # pyre-fixme[6]: For 2nd argument expected `device` but got `str`.
         cam3 = OrthographicCameras(in_ndc=False, device="cuda:0")
         # Different coordinate systems -- all should be in ndc or in screen
         with self.assertRaisesRegex(
@@ -803,15 +860,15 @@ class TestCamerasCommon(TestCaseMixin, unittest.TestCase):
             torch.cat([f1, f2.expand(-1, 2)], dim=0),
         )
 
-    def test_join_batch_perspective(self):
+    def test_join_batch_perspective(self) -> None:
         self.join_cameras_as_batch_fov(FoVPerspectiveCameras)
         self.join_cameras_as_batch(PerspectiveCameras)
 
-    def test_join_batch_orthographic(self):
+    def test_join_batch_orthographic(self) -> None:
         self.join_cameras_as_batch_fov(FoVOrthographicCameras)
         self.join_cameras_as_batch(OrthographicCameras)
 
-    def test_iterable(self):
+    def test_iterable(self) -> None:
         for camera_type in [PerspectiveCameras, OrthographicCameras]:
             a_list = list(camera_type())
             self.assertEqual(len(a_list), 1)
@@ -823,7 +880,7 @@ class TestCamerasCommon(TestCaseMixin, unittest.TestCase):
 
 
 class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
-    def test_perspective(self):
+    def test_perspective(self) -> None:
         far = 10.0
         near = 1.0
         cameras = FoVPerspectiveCameras(znear=near, zfar=far, fov=60.0)
@@ -850,7 +907,7 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         self.assertClose(v1[..., :2], v2[..., :2])
         self.assertClose(v1.squeeze(), projected_verts)
 
-    def test_perspective_kwargs(self):
+    def test_perspective_kwargs(self) -> None:
         cameras = FoVPerspectiveCameras(znear=5.0, zfar=100.0, fov=0.0)
         # Override defaults by passing in values to get_projection_transform
         far = 10.0
@@ -863,7 +920,7 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         v1 = P.transform_points(vertices)
         self.assertClose(v1.squeeze(), projected_verts)
 
-    def test_perspective_mixed_inputs_broadcast(self):
+    def test_perspective_mixed_inputs_broadcast(self) -> None:
         far = torch.tensor([10.0, 20.0], dtype=torch.float32)
         near = 1.0
         fov = torch.tensor(60.0)
@@ -885,7 +942,7 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         self.assertClose(v1[..., :2], torch.cat([v2, v2])[..., :2])
         self.assertClose(v1.squeeze(), projected_verts)
 
-    def test_perspective_mixed_inputs_grad(self):
+    def test_perspective_mixed_inputs_grad(self) -> None:
         far = torch.tensor([10.0])
         near = 1.0
         fov = torch.tensor(60.0, requires_grad=True)
@@ -896,14 +953,17 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         v1 = P.transform_points(vertices_batch).squeeze()
         v1.sum().backward()
         self.assertTrue(hasattr(fov, "grad"))
+        # pyre-fixme[16]: `Optional` has no attribute `clone`.
         fov_grad = fov.grad.clone()
         half_fov_rad = (math.pi / 180.0) * fov.detach() / 2.0
+        # pyre-fixme[58]: `**` is not supported for operand types `Tensor` and `float`.
+        # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
         grad_cotan = -(1.0 / (torch.sin(half_fov_rad) ** 2.0) * 1 / 2.0)
         grad_fov = (math.pi / 180.0) * grad_cotan
         grad_fov = (vertices[0] + vertices[1]) * grad_fov / 10.0
         self.assertClose(fov_grad, grad_fov)
 
-    def test_camera_class_init(self):
+    def test_camera_class_init(self) -> None:
         device = torch.device("cuda:0")
         cam = FoVPerspectiveCameras(znear=10.0, zfar=(100.0, 200.0))
 
@@ -915,7 +975,7 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         new_cam = cam.to(device=device)
         self.assertTrue(new_cam.device == device)
 
-    def test_getitem(self):
+    def test_getitem(self) -> None:
         N_CAMERAS = 6
         R_matrix = torch.randn((N_CAMERAS, 3, 3))
         cam = FoVPerspectiveCameras(znear=10.0, zfar=100.0, R=R_matrix)
@@ -943,6 +1003,8 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         # Check torch.LongTensor index
         SLICE = [1, 3, 5]
         index = torch.tensor(SLICE, dtype=torch.int64)
+        # pyre-fixme[6]: For 1st argument expected `Union[List[int], int,
+        #  BoolTensor, LongTensor]` but got `Tensor`.
         c135 = cam[index]
         self.assertEqual(len(c135), 3)
         self.assertClose(c135.zfar, torch.tensor([100.0] * 3))
@@ -952,6 +1014,8 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         # Check torch.BoolTensor index
         bool_slice = [i in SLICE for i in range(N_CAMERAS)]
         index = torch.tensor(bool_slice, dtype=torch.bool)
+        # pyre-fixme[6]: For 1st argument expected `Union[List[int], int,
+        #  BoolTensor, LongTensor]` but got `Tensor`.
         c135 = cam[index]
         self.assertEqual(len(c135), 3)
         self.assertClose(c135.zfar, torch.tensor([100.0] * 3))
@@ -964,9 +1028,13 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "does not match cameras"):
             index = torch.tensor([1, 0, 1], dtype=torch.bool)
+            # pyre-fixme[6]: For 1st argument expected `Union[List[int], int,
+            #  BoolTensor, LongTensor]` but got `Tensor`.
             cam[index]
 
         with self.assertRaisesRegex(ValueError, "Invalid index type"):
+            # pyre-fixme[6]: For 1st argument expected `Union[List[int], int,
+            #  BoolTensor, LongTensor]` but got `slice`.
             cam[slice(0, 1)]
 
         with self.assertRaisesRegex(ValueError, "Invalid index type"):
@@ -974,9 +1042,11 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Invalid index type"):
             index = torch.tensor(SLICE, dtype=torch.float32)
+            # pyre-fixme[6]: For 1st argument expected `Union[List[int], int,
+            #  BoolTensor, LongTensor]` but got `Tensor`.
             cam[index]
 
-    def test_get_full_transform(self):
+    def test_get_full_transform(self) -> None:
         T = torch.tensor([0.0, 0.0, 1.0]).view(1, -1)
         R = look_at_rotation(T)
         cam = FoVPerspectiveCameras(R=R, T=T)
@@ -985,7 +1055,7 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         self.assertClose(cam.R, R)
         self.assertClose(cam.T, T)
 
-    def test_transform_points(self):
+    def test_transform_points(self) -> None:
         # Check transform_points methods works with default settings for
         # RT and P
         far = 10.0
@@ -999,7 +1069,7 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         new_points = cam.transform_points(points)
         self.assertClose(new_points, projected_points)
 
-    def test_perspective_type(self):
+    def test_perspective_type(self) -> None:
         cam = FoVPerspectiveCameras(znear=1.0, zfar=10.0, fov=60.0)
         self.assertTrue(cam.is_perspective())
         self.assertEqual(cam.get_znear(), 1.0)
@@ -1011,7 +1081,7 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
 
 
 class TestFoVOrthographicProjection(TestCaseMixin, unittest.TestCase):
-    def test_orthographic(self):
+    def test_orthographic(self) -> None:
         far = 10.0
         near = 1.0
         cameras = FoVOrthographicCameras(znear=near, zfar=far)
@@ -1032,7 +1102,7 @@ class TestFoVOrthographicProjection(TestCaseMixin, unittest.TestCase):
         self.assertClose(v1[..., :2], v2[..., :2])
         self.assertClose(v1.squeeze(), projected_verts)
 
-    def test_orthographic_scaled(self):
+    def test_orthographic_scaled(self) -> None:
         vertices = torch.tensor([1, 2, 0.5], dtype=torch.float32)
         vertices = vertices[None, None, :]
         scale = torch.tensor([[2.0, 0.5, 20]])
@@ -1046,7 +1116,7 @@ class TestFoVOrthographicProjection(TestCaseMixin, unittest.TestCase):
         self.assertClose(v1[..., :2], v2[..., :2])
         self.assertClose(v1, projected_verts[None, None])
 
-    def test_orthographic_kwargs(self):
+    def test_orthographic_kwargs(self) -> None:
         cameras = FoVOrthographicCameras(znear=5.0, zfar=100.0)
         far = 10.0
         P = cameras.get_projection_transform(znear=1.0, zfar=far)
@@ -1056,7 +1126,7 @@ class TestFoVOrthographicProjection(TestCaseMixin, unittest.TestCase):
         v1 = P.transform_points(vertices)
         self.assertClose(v1.squeeze(), projected_verts)
 
-    def test_orthographic_mixed_inputs_broadcast(self):
+    def test_orthographic_mixed_inputs_broadcast(self) -> None:
         far = torch.tensor([10.0, 20.0])
         near = 1.0
         cameras = FoVOrthographicCameras(znear=near, zfar=far)
@@ -1072,7 +1142,7 @@ class TestFoVOrthographicProjection(TestCaseMixin, unittest.TestCase):
         self.assertClose(v1[..., :2], torch.cat([v2, v2])[..., :2])
         self.assertClose(v1.squeeze(), projected_verts)
 
-    def test_orthographic_mixed_inputs_grad(self):
+    def test_orthographic_mixed_inputs_grad(self) -> None:
         far = torch.tensor([10.0])
         near = 1.0
         scale = torch.tensor([[1.0, 1.0, 1.0]], requires_grad=True)
@@ -1083,6 +1153,7 @@ class TestFoVOrthographicProjection(TestCaseMixin, unittest.TestCase):
         v1 = P.transform_points(vertices_batch)
         v1.sum().backward()
         self.assertTrue(hasattr(scale, "grad"))
+        # pyre-fixme[16]: `Optional` has no attribute `clone`.
         scale_grad = scale.grad.clone()
         grad_scale = torch.tensor(
             [
@@ -1095,12 +1166,12 @@ class TestFoVOrthographicProjection(TestCaseMixin, unittest.TestCase):
         )
         self.assertClose(scale_grad, grad_scale)
 
-    def test_perspective_type(self):
+    def test_perspective_type(self) -> None:
         cam = FoVOrthographicCameras(znear=1.0, zfar=10.0)
         self.assertFalse(cam.is_perspective())
         self.assertEqual(cam.get_znear(), 1.0)
 
-    def test_getitem(self):
+    def test_getitem(self) -> None:
         R_matrix = torch.randn((6, 3, 3))
         scale = torch.tensor([[1.0, 1.0, 1.0]], requires_grad=True)
         cam = FoVOrthographicCameras(
@@ -1115,6 +1186,8 @@ class TestFoVOrthographicProjection(TestCaseMixin, unittest.TestCase):
 
         # Check torch.LongTensor index
         index = torch.tensor([1, 3, 5], dtype=torch.int64)
+        # pyre-fixme[6]: For 1st argument expected `Union[List[int], int,
+        #  BoolTensor, LongTensor]` but got `Tensor`.
         c135 = cam[index]
         self.assertEqual(len(c135), 3)
         self.assertClose(c135.zfar, torch.tensor([100.0] * 3))
@@ -1131,7 +1204,7 @@ class TestFoVOrthographicProjection(TestCaseMixin, unittest.TestCase):
 
 
 class TestOrthographicProjection(TestCaseMixin, unittest.TestCase):
-    def test_orthographic(self):
+    def test_orthographic(self) -> None:
         cameras = OrthographicCameras()
         P = cameras.get_projection_transform()
 
@@ -1143,7 +1216,7 @@ class TestOrthographicProjection(TestCaseMixin, unittest.TestCase):
         self.assertClose(v1[..., :2], v2[..., :2])
         self.assertClose(v1, projected_verts)
 
-    def test_orthographic_scaled(self):
+    def test_orthographic_scaled(self) -> None:
         focal_length_x = 10.0
         focal_length_y = 15.0
 
@@ -1163,7 +1236,7 @@ class TestOrthographicProjection(TestCaseMixin, unittest.TestCase):
         self.assertClose(v3[..., :2], v2[..., :2])
         self.assertClose(v1, projected_verts)
 
-    def test_orthographic_kwargs(self):
+    def test_orthographic_kwargs(self) -> None:
         cameras = OrthographicCameras(focal_length=5.0, principal_point=((2.5, 2.5),))
         P = cameras.get_projection_transform(
             focal_length=2.0, principal_point=((2.5, 3.5),)
@@ -1176,12 +1249,12 @@ class TestOrthographicProjection(TestCaseMixin, unittest.TestCase):
         v1 = P.transform_points(vertices)
         self.assertClose(v1, projected_verts)
 
-    def test_perspective_type(self):
+    def test_perspective_type(self) -> None:
         cam = OrthographicCameras(focal_length=5.0, principal_point=((2.5, 2.5),))
         self.assertFalse(cam.is_perspective())
         self.assertIsNone(cam.get_znear())
 
-    def test_getitem(self):
+    def test_getitem(self) -> None:
         R_matrix = torch.randn((6, 3, 3))
         principal_point = torch.randn((6, 2, 1))
         focal_length = 5.0
@@ -1199,6 +1272,8 @@ class TestOrthographicProjection(TestCaseMixin, unittest.TestCase):
 
         # Check torch.LongTensor index
         index = torch.tensor([1, 3, 5], dtype=torch.int64)
+        # pyre-fixme[6]: For 1st argument expected `Union[List[int], int,
+        #  BoolTensor, LongTensor]` but got `Tensor`.
         c135 = cam[index]
         self.assertEqual(len(c135), 3)
         self.assertClose(c135.focal_length, torch.tensor([[5.0, 5.0]] * 3))
@@ -1212,7 +1287,7 @@ class TestOrthographicProjection(TestCaseMixin, unittest.TestCase):
 
 
 class TestPerspectiveProjection(TestCaseMixin, unittest.TestCase):
-    def test_perspective(self):
+    def test_perspective(self) -> None:
         cameras = PerspectiveCameras()
         P = cameras.get_projection_transform()
 
@@ -1221,7 +1296,7 @@ class TestPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         v2 = sfm_perspective_project_naive(vertices)
         self.assertClose(v1, v2)
 
-    def test_perspective_scaled(self):
+    def test_perspective_scaled(self) -> None:
         focal_length_x = 10.0
         focal_length_y = 15.0
         p0x = 15.0
@@ -1242,7 +1317,7 @@ class TestPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         self.assertClose(v1, v2)
         self.assertClose(v3[..., :2], v2[..., :2])
 
-    def test_perspective_kwargs(self):
+    def test_perspective_kwargs(self) -> None:
         cameras = PerspectiveCameras(focal_length=5.0, principal_point=((2.5, 2.5),))
         P = cameras.get_projection_transform(
             focal_length=2.0, principal_point=((2.5, 3.5),)
@@ -1252,12 +1327,12 @@ class TestPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         v2 = sfm_perspective_project_naive(vertices, fx=2.0, fy=2.0, p0x=2.5, p0y=3.5)
         self.assertClose(v1, v2, atol=1e-6)
 
-    def test_perspective_type(self):
+    def test_perspective_type(self) -> None:
         cam = PerspectiveCameras(focal_length=5.0, principal_point=((2.5, 2.5),))
         self.assertTrue(cam.is_perspective())
         self.assertIsNone(cam.get_znear())
 
-    def test_getitem(self):
+    def test_getitem(self) -> None:
         R_matrix = torch.randn((6, 3, 3))
         principal_point = torch.randn((6, 2, 1))
         focal_length = 5.0
@@ -1275,6 +1350,8 @@ class TestPerspectiveProjection(TestCaseMixin, unittest.TestCase):
 
         # Check torch.LongTensor index
         index = torch.tensor([1, 3, 5], dtype=torch.int64)
+        # pyre-fixme[6]: For 1st argument expected `Union[List[int], int,
+        #  BoolTensor, LongTensor]` but got `Tensor`.
         c135 = cam[index]
         self.assertEqual(len(c135), 3)
         self.assertClose(c135.focal_length, torch.tensor([[5.0, 5.0]] * 3))
@@ -1284,7 +1361,7 @@ class TestPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         # Check in_ndc is handled correctly
         self.assertEqual(cam._in_ndc, c0._in_ndc)
 
-    def test_clone_picklable(self):
+    def test_clone_picklable(self) -> None:
         camera = PerspectiveCameras()
         pickle.dumps(camera)
         pickle.dumps(camera.clone())
@@ -1296,7 +1373,7 @@ class TestPerspectiveProjection(TestCaseMixin, unittest.TestCase):
 
 
 class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
-    def setUpSimpleCase(self) -> None:
+    def setUpSimpleCase(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         super().setUp()
         focal = torch.tensor([[240]], dtype=torch.float32)
         principal_point = torch.tensor([[320, 240]])
@@ -1309,7 +1386,7 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
         )
         return focal, principal_point, p_3d
 
-    def setUpAriaCase(self) -> None:
+    def setUpAriaCase(self) -> Tuple[torch.Tensor, ...]:
         super().setUp()
         torch.manual_seed(42)
         focal = torch.tensor([[608.9255557152]], dtype=torch.float32)
@@ -1346,7 +1423,9 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
             thin_prism_params,
         )
 
-    def setUpBatchCameras(self, combination: None) -> None:
+    def setUpBatchCameras(
+        self, combination: Optional[Tuple[bool, bool, bool]]
+    ) -> CamerasBase:
         super().setUp()
         focal, principal_point, p_3d = self.setUpSimpleCase()
         radial_params = torch.tensor(
@@ -1382,9 +1461,9 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
             thin_prism_params=thin_prism_params,
         )
 
-        return cameras
+        return cameras  # pyre-fixme[7]: CamerasBase
 
-    def test_distortion_params_set_to_zeors(self):
+    def test_distortion_params_set_to_zeors(self) -> None:
         # test case 1: all distortion params are 0. Note that
         # setting radial_params to zeros is not equivalent to
         # disabling radial distortions, set use_radial=False does
@@ -1411,7 +1490,7 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
         uv_case2 = cameras.transform_points(p_3d)
         self.assertClose(uv_case2, uv_case1)
 
-    def test_fisheye_against_perspective_cameras(self):
+    def test_fisheye_against_perspective_cameras(self) -> None:
         # test case: check equivalence with PerspectiveCameras
         # by disabling all distortions
         focal, principal_point, p_3d = self.setUpSimpleCase()
@@ -1433,10 +1512,10 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
         uv = cameras.transform_points(p_3d)
         self.assertClose(uv, uv_perspective)
 
-    def test_project_shape_broadcasts(self):
+    def test_project_shape_broadcasts(self) -> None:
         focal, principal_point, p_3d = self.setUpSimpleCase()
         torch.set_printoptions(precision=6)
-        combinations = product([0, 1], repeat=3)
+        combinations = product([False, True], repeat=3)
         for combination in combinations:
             cameras = FishEyeCameras(
                 use_radial=combination[0],
@@ -1561,6 +1640,8 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
         )
         combinations = product([0, 1], repeat=3)
         for i, combination in enumerate(combinations):
+            # pyre-fixme[6]: For 1st argument expected `Optional[Tuple[bool, bool,
+            #  bool]]` but got `Tuple[int, ...]`.
             cameras = self.setUpBatchCameras(combination)
             uv_point_batch = cameras.transform_points(p_3d)
             self.assertClose(uv_point_batch, expected_res[i])
@@ -1568,7 +1649,7 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
             uv_point_batch = cameras.transform_points(p_3d.repeat(1, 1, 1))
             self.assertClose(uv_point_batch, expected_res[i].repeat(1, 1, 1))
 
-    def test_cuda(self):
+    def test_cuda(self) -> None:
         """
         Test cuda device
         """
@@ -1587,7 +1668,7 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
         rep_3d = cameras_cuda.unproject_points(uv)
         self.assertClose(rep_3d, p_3d.to("cuda:0"))
 
-    def test_unproject_shape_broadcasts(self):
+    def test_unproject_shape_broadcasts(self) -> None:
         # test case 1:
         # 1 transform with points of (P, 3) -> (P, 3)
         # 1 transform with points of (M, P, 3) -> (M, P, 3)
@@ -1625,7 +1706,7 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
             ]
         )
         torch.set_printoptions(precision=6)
-        combinations = product([0, 1], repeat=3)
+        combinations = product([False, True], repeat=3)
         for i, combination in enumerate(combinations):
             cameras = FishEyeCameras(
                 use_radial=combination[0],
@@ -1658,7 +1739,7 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
             rep_3d = cameras.unproject_points(xy_depth)
             self.assertClose(rep_3d, expected_res[i].repeat(2, 1, 1))
 
-    def test_unhandled_shape(self):
+    def test_unhandled_shape(self) -> None:
         """
         Test error handling when shape of transforms
         and points are not expected.
@@ -1668,7 +1749,7 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
         with self.assertRaises(ValueError):
             cameras.transform_points(points)
 
-    def test_getitem(self):
+    def test_getitem(self) -> None:
         # Check get item returns an instance of the same class
         # with all the same keys
         cam = self.setUpBatchCameras(None)

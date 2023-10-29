@@ -93,6 +93,7 @@ def link_nodes(*nodes: Optional["av.filter.FilterContext"]) -> None:
     # pyre-fixme[9]: Unable to unpack List[FilterContext]
     nodes = [node for node in nodes if node is not None]
     for c, n in zip(nodes, nodes[1:]):
+        # pyre-fixme[16]: `Optional` has no attribute `link_to`.
         c.link_to(n)
 
 
@@ -107,6 +108,7 @@ def heading_diff(a: float, b: float) -> float:
 
 
 class MultiCamDataset(Dataset):
+    # pyre-fixme[4]: Attribute must be annotated.
     NAME = Datasets.RICE
     CAMERA_OVERLAP = {
         "main": ["narrow", "fisheye"],
@@ -536,6 +538,7 @@ class MultiCamDataset(Dataset):
         colors: Dict[str, torch.Tensor] = {}
         masks: Dict[str, torch.Tensor] = {}
 
+        # pyre-fixme[53]: Captured variable `path` is not annotated.
         def load(cam: str, frames: List[int]) -> None:
             label = cam
 
@@ -556,8 +559,10 @@ class MultiCamDataset(Dataset):
             load(camera, frames)
 
         path_base = os.path.basename(path)
+        # pyre-fixme[10]: Name `frame` is used but not defined.
         tokens = [f"{path_base}_{frame}" for i in frames]
 
+        # pyre-fixme[20]: Argument `lidar_T` expected.
         return Batch(
             weight=torch.tensor(self.heading_weights[self.path_heading_bin[path]]),
             K=Ks,

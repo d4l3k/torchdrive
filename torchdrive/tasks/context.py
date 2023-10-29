@@ -42,6 +42,7 @@ class Context:
             assert self.log_text
             key = f"{self.name}-{name}"
             self._check_key(key)
+            # pyre-fixme[16]: `Optional` has no attribute `add_scalars`.
             self.writer.add_scalars(
                 key,
                 {k: _cpu_float(v) for k, v in scalars.items()},
@@ -55,6 +56,7 @@ class Context:
             assert self.log_text
             key = f"{self.name}-{name}"
             self._check_key(key)
+            # pyre-fixme[16]: `Optional` has no attribute `add_scalar`.
             self.writer.add_scalar(
                 key, _cpu_float(scalar), global_step=self.global_step
             )
@@ -64,6 +66,7 @@ class Context:
             assert self.log_img
             key = f"{self.name}-{name}"
             self._check_key(key)
+            # pyre-fixme[16]: `Optional` has no attribute `add_image`.
             self.writer.add_image(key, img, global_step=self.global_step)
 
     def add_figure(self, name: str, figure: object) -> None:
@@ -71,6 +74,7 @@ class Context:
             assert self.log_img
             key = f"{self.name}-{name}"
             self._check_key(key)
+            # pyre-fixme[16]: `Optional` has no attribute `add_figure`.
             self.writer.add_figure(key, figure, global_step=self.global_step)
 
     def log_grad_norm(self, tensor: torch.Tensor, key: str, tag: str) -> torch.Tensor:

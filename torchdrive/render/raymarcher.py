@@ -112,6 +112,8 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         features = (probs.unsqueeze(-1) * rays_features).sum(dim=-2)
 
         # compute mask of the probs to select the target depth
+        # pyre-fixme[6]: For 2nd argument expected `Optional[dtype]` but got
+        #  `Type[bool]`.
         depth_index = torch.zeros_like(probs, dtype=bool).scatter(
             -1, probs.argmax(-1, keepdim=True), value=True
         )
@@ -122,6 +124,8 @@ class DepthEmissionRaymarcher(torch.nn.Module):
             # get features via index
             index_features = rays_features[depth_index].reshape(features.shape)
             # do the weighted sum
+            # pyre-fixme[58]: `-` is not supported for operand types `int` and
+            #  `Optional[float]`.
             features = (features * (1 - self.feature_index)) + (
                 index_features * self.feature_index
             )
@@ -130,6 +134,8 @@ class DepthEmissionRaymarcher(torch.nn.Module):
         visible_indexes = ray_bundle.lengths < (depth.unsqueeze(-1) - self.voxel_size)
         visible_probs = probs[visible_indexes]
 
+        # pyre-fixme[7]: Expected `Tuple[Tensor, Tensor]` but got `Tuple[Tensor,
+        #  Tensor, Tensor, Tensor]`. Expected has length 2, but actual has length 4.
         return depth, features, visible_probs, depth_probs
 
 

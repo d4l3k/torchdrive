@@ -1,5 +1,5 @@
 import unittest
-from dataclasses import replace, fields
+from dataclasses import fields, replace
 
 import torch
 
@@ -21,7 +21,9 @@ def assert_dimensions_same(a: Batch, b: Batch) -> None:
         av = getattr(a, name)
         bv = getattr(b, name)
         if isinstance(av, torch.Tensor):
+            # pyre-fixme[16]: Module `av` has no attribute `shape`.
             assert av.shape == bv.shape, f"{name}: {av.shape} {bv.shape}"
+
 
 class IncrementWeight(BatchTransform):
     def __call__(self, batch: Batch) -> Batch:

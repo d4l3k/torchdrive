@@ -28,6 +28,7 @@ def as_str(data: object) -> str:
     if isinstance(data, str):
         return data
     elif isinstance(data, pa.StringScalar):
+        # pyre-fixme[16]: `object` has no attribute `as_py`.
         return data.as_py()
     else:
         raise TypeError(f"unknown type of {data}")
@@ -35,8 +36,10 @@ def as_str(data: object) -> str:
 
 def as_num(data: object) -> str:
     if isinstance(data, (int, float)):
+        # pyre-fixme[7]: Expected `str` but got `Union[float, int]`.
         return data
     elif isinstance(data, pa.Int64Scalar):
+        # pyre-fixme[16]: `object` has no attribute `as_py`.
         return data.as_py()
     else:
         raise TypeError(f"unknown type of {data}")
@@ -44,11 +47,13 @@ def as_num(data: object) -> str:
 
 def as_py(data: object) -> object:
     if hasattr(data, "as_py"):
+        # pyre-fixme[16]: `object` has no attribute `as_py`.
         return data.as_py()
     return data
 
 
 class CustomNuScenes(UnpatchedNuScenes):
+    # pyre-fixme[3]: Return type must be annotated.
     def __init__(
         self,
         version: str = "v1.0-mini",
@@ -67,6 +72,9 @@ class CustomNuScenes(UnpatchedNuScenes):
                 continue
             setattr(self, table, pa.array(getattr(self, table)))
 
+    # pyre-fixme[2]: Parameter must be annotated.
+    # pyre-fixme[24]: Generic type `dict` expects 2 type parameters, use
+    #  `typing.Dict[<key type>, <value type>]` to avoid runtime subscripting errors.
     def __load_table__(self, table_name) -> dict:
         """Loads a table."""
         with open(os.path.join(self.table_root, f"{table_name}.json")) as f:
@@ -102,6 +110,8 @@ class CustomNuScenes(UnpatchedNuScenes):
             record["sensor_modality"] = sensor_record["modality"]
             record["channel"] = sensor_record["channel"]
 
+    # pyre-fixme[24]: Generic type `dict` expects 2 type parameters, use
+    #  `typing.Dict[<key type>, <value type>]` to avoid runtime subscripting errors.
     def get(self, table_name: str, token: str) -> dict:
         """
         Returns a record from table in constant runtime.
@@ -229,6 +239,7 @@ class TimestampMatcher:
             raise IndexError("Index out of range")
 
         cam_front_timestamp = as_num(cam_front_samples[idx]["timestamp"])
+        # pyre-fixme[6]: For 1st argument expected `int` but got `str`.
         return self.nearest_data_within_epsilon[cam_front_timestamp]
 
 
@@ -349,6 +360,7 @@ class CameraDataset(TorchDataset):
             "T": T,
             "color": img,
             "mask": None,
+            # pyre-fixme[27]: TypedDict `SampleData` has no key `sample_token`.
             "token": sample_data["sample_token"],
         }
 
@@ -392,7 +404,6 @@ class CameraDataset(TorchDataset):
             get_ego_T(self.nusc, sample_data) for sample_data in self.samples[idx:]
         ]
 
-
         mask_transform = transforms.Compose(
             [
                 transforms.PILToTensor(),
@@ -431,8 +442,12 @@ class CameraDataset(TorchDataset):
 
 class LidarDataset(TorchDataset):
     def __init__(
-            self, dataroot: str, nusc: NuScenes, samples: List[SampleData],
-            sensor: str, num_frames: int
+        self,
+        dataroot: str,
+        nusc: NuScenes,
+        samples: List[SampleData],
+        sensor: str,
+        num_frames: int,
     ) -> None:
         self.dataroot = dataroot
         self.nusc = nusc
@@ -461,6 +476,7 @@ class LidarDataset(TorchDataset):
 
 
 class NuscenesDataset(Dataset):
+    # pyre-fixme[4]: Attribute must be annotated.
     NAME = Datasets.NUSCENES
     CAMERA_OVERLAP: Dict[str, List[str]] = {
         CamTypes.CAM_FRONT: [CamTypes.CAM_FRONT_LEFT, CamTypes.CAM_FRONT_RIGHT],
@@ -470,6 +486,8 @@ class NuscenesDataset(Dataset):
         CamTypes.CAM_BACK_LEFT: [CamTypes.CAM_BACK, CamTypes.CAM_FRONT_LEFT],
         CamTypes.CAM_BACK_RIGHT: [CamTypes.CAM_BACK, CamTypes.CAM_FRONT_RIGHT],
     }
+    # pyre-fixme[6]: For 1st argument expected `Iterable[Variable[_T]]` but got
+    #  `Type[CamTypes]`.
     cameras: List[str] = list(CamTypes)
 
     def __init__(
@@ -491,6 +509,7 @@ class NuscenesDataset(Dataset):
             CamTypes.CAM_BACK_LEFT,
             CamTypes.CAM_BACK_RIGHT,
         ]
+        # pyre-fixme[4]: Attribute must be annotated.
         self.sensor_types = self.cam_types
         if lidar:
             self.sensor_types = self.sensor_types + [SensorTypes.LIDAR_TOP]
@@ -543,7 +562,13 @@ class NuscenesDataset(Dataset):
                 raise RuntimeError(f"unsupported sensor_modality {sensor_modality}")
             # samples = pa.array(samples)
             ds_scenes.append(
-                kls(self.data_dir, self.nusc, samples, sensor=cam, num_frames=self.num_frames)
+                kls(
+                    self.data_dir,
+                    self.nusc,
+                    samples,
+                    sensor=cam,
+                    num_frames=self.num_frames,
+                )
             )
 
         scene_samples = [sample for scene in scenes for sample in scene]
@@ -615,6 +640,8 @@ class NuscenesDataset(Dataset):
             long_cam_T=long_cam_Ts,
             lidar=lidar,
             lidar_T=lidar_T,
+            # pyre-fixme[6]: For 13th argument expected `List[List[str]]` but got
+            #  `List[Tensor]`.
             token=[token],
         )
 
@@ -626,10 +653,12 @@ class NuscenesDataset(Dataset):
 if __name__ == "__main__":
     import sys
 
+    # pyre-fixme[5]: Global expression must be annotated.
     cmd = sys.argv[1]
     dataroot: str = sys.argv[2]
     version: str = sys.argv[3]  # "v1.0-mini"
     if cmd == "single":
+        # pyre-fixme[20]: Argument `num_frames` expected.
         ds = NuscenesDataset(dataroot, version=version)
         dl: DataLoader = DataLoader(
             ds, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate
@@ -639,7 +668,10 @@ if __name__ == "__main__":
             print(batch)
             break
     elif cmd == "bulk":
+        # pyre-fixme[20]: Argument `num_frames` expected.
         ds = NuscenesDataset(dataroot, version=version)
+        # pyre-fixme[6]: For 1st argument expected `Iterable[Variable[_T]]` but got
+        #  `NuscenesDataset`.
         for batch in tqdm(ds):
             pass
     else:

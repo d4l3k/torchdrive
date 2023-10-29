@@ -6,7 +6,7 @@
 
 import math
 import warnings
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Self, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -18,8 +18,8 @@ from torchworld.transforms.transform3d import Rotate, Transform3d, Translate
 
 
 # Default values for rotation and translation matrices.
-_R = torch.eye(3)[None]  # (1, 3, 3)
-_T = torch.zeros(1, 3)  # (1, 3)
+_R: torch.Tensor = torch.eye(3)[None]  # (1, 3, 3)
+_T: torch.Tensor = torch.zeros(1, 3)  # (1, 3)
 
 # An input which is a float per batch element
 _BatchFloatType = Union[float, Sequence[float], torch.Tensor]
@@ -91,7 +91,8 @@ class CamerasBase(TensorProperties):
     # When joining objects into a batch, they will have to agree.
     _SHARED_FIELDS: Tuple[str, ...] = ()
 
-    def get_projection_transform(self, **kwargs):
+    # pyre-fixme[2]: Parameter must be annotated.
+    def get_projection_transform(self, **kwargs) -> Transform3d:
         """
         Calculate the projective transformation matrix.
 
@@ -105,7 +106,8 @@ class CamerasBase(TensorProperties):
         """
         raise NotImplementedError()
 
-    def unproject_points(self, xy_depth: torch.Tensor, **kwargs):
+    # pyre-fixme[2]: Parameter must be annotated.
+    def unproject_points(self, xy_depth: torch.Tensor, **kwargs) -> torch.Tensor:
         """
         Transform input points from camera coordinates (NDC or screen)
         to the world / camera coordinates.
@@ -223,7 +225,7 @@ class CamerasBase(TensorProperties):
 
     def transform_points(
         self,
-        points,
+        points: torch.Tensor,
         eps: Optional[float] = None,
     ) -> torch.Tensor:
         """
@@ -253,6 +255,7 @@ class CamerasBase(TensorProperties):
         world_to_proj_transform = self.get_full_projection_transform()
         return world_to_proj_transform.transform_points(points, eps=eps)
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
         """
         Returns the transform from camera projection space (screen or NDC) to NDC space.
@@ -285,6 +288,7 @@ class CamerasBase(TensorProperties):
 
     def transform_points_ndc(
         self,
+        # pyre-fixme[2]: Parameter must be annotated.
         points,
         eps: Optional[float] = None,
     ) -> torch.Tensor:
@@ -316,7 +320,12 @@ class CamerasBase(TensorProperties):
         return world_to_ndc_transform.transform_points(points, eps=eps)
 
     def transform_points_screen(
-        self, points, eps: Optional[float] = None, with_xyflip: bool = True, **kwargs
+        self,
+        points: torch.Tensor,
+        eps: Optional[float] = None,
+        with_xyflip: bool = True,
+        # pyre-fixme[2]: Parameter must be annotated.
+        **kwargs,
     ) -> torch.Tensor:
         """
         Transforms points from PyTorch3D world/camera space to screen space.
@@ -349,28 +358,33 @@ class CamerasBase(TensorProperties):
             self, with_xyflip=with_xyflip, image_size=image_size
         ).transform_points(points_ndc, eps=eps)
 
-    def clone(self):
+    # pyre-fixme[14]: `clone` overrides method defined in `TensorProperties`
+    #  inconsistently.
+    def clone(self) -> Self:
         """
         Returns a copy of `self`.
         """
         cam_type = type(self)
         other = cam_type(device=self.device)
+        # pyre-fixme[7]: Expected
+        #  `_Self_torchworld_structures_cameras_CamerasBase__` but got
+        #  `TensorProperties`.
         return super().clone(other)
 
-    def is_perspective(self):
+    def is_perspective(self) -> bool:
         raise NotImplementedError()
 
-    def in_ndc(self):
+    def in_ndc(self) -> bool:
         """
         Specifies whether the camera is defined in NDC space
         or in screen (image) space
         """
         raise NotImplementedError()
 
-    def get_znear(self):
+    def get_znear(self) -> float:
         return getattr(self, "znear", None)
 
-    def get_image_size(self):
+    def get_image_size(self) -> Tuple[int, int]:
         """
         Returns the image size, if provided, expected in the form of (height, width)
         The image size is used for conversion of projected points to screen coordinates.
@@ -394,9 +408,7 @@ class CamerasBase(TensorProperties):
         kwargs = {}
 
         tensor_types = {
-            # pyre-fixme[16]: Module `cuda` has no attribute `BoolTensor`.
             "bool": (torch.BoolTensor, torch.cuda.BoolTensor),
-            # pyre-fixme[16]: Module `cuda` has no attribute `LongTensor`.
             "long": (torch.LongTensor, torch.cuda.LongTensor),
         }
         if not isinstance(
@@ -579,7 +591,7 @@ class FoVPerspectiveCameras(CamerasBase):
         self.degrees = degrees
 
     def compute_projection_matrix(
-        self, znear, zfar, fov, aspect_ratio, degrees: bool
+        self, znear: float, zfar: float, fov: float, aspect_ratio: float, degrees: bool
     ) -> torch.Tensor:
         """
         Compute the calibration matrix K of shape (N, 4, 4)
@@ -601,7 +613,9 @@ class FoVPerspectiveCameras(CamerasBase):
             fov = (np.pi / 180) * fov
 
         if not torch.is_tensor(fov):
+            # pyre-fixme[9]: fov has type `float`; used as `Tensor`.
             fov = torch.tensor(fov, device=self.device)
+        # pyre-fixme[6]: For 1st argument expected `Tensor` but got `float`.
         tanHalfFov = torch.tan((fov / 2))
         max_y = tanHalfFov * znear
         min_y = -max_y
@@ -632,6 +646,7 @@ class FoVPerspectiveCameras(CamerasBase):
 
         return K
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def get_projection_transform(self, **kwargs) -> Transform3d:
         """
         Calculate the perspective projection matrix with a symmetric
@@ -693,6 +708,7 @@ class FoVPerspectiveCameras(CamerasBase):
         xy_depth: torch.Tensor,
         world_coordinates: bool = True,
         scaled_depth_input: bool = False,
+        # pyre-fixme[2]: Parameter must be annotated.
         **kwargs,
     ) -> torch.Tensor:
         """>!
@@ -732,10 +748,10 @@ class FoVPerspectiveCameras(CamerasBase):
         unprojection_transform = to_ndc_transform.inverse()
         return unprojection_transform.transform_points(xy_sdepth)
 
-    def is_perspective(self):
+    def is_perspective(self) -> bool:
         return True
 
-    def in_ndc(self):
+    def in_ndc(self) -> bool:
         return True
 
 
@@ -746,6 +762,7 @@ def OpenGLOrthographicCameras(
     bottom: _BatchFloatType = -1.0,
     left: _BatchFloatType = -1.0,
     right: _BatchFloatType = 1.0,
+    # pyre-fixme[2]: Parameter must be annotated.
     scale_xyz=((1.0, 1.0, 1.0),),  # (1, 3)
     R: torch.Tensor = _R,
     T: torch.Tensor = _T,
@@ -798,6 +815,7 @@ class FoVOrthographicCameras(CamerasBase):
         "scale_xyz",
     )
 
+    # pyre-fixme[3]: Return type must be annotated.
     def __init__(
         self,
         znear: _BatchFloatType = 1.0,
@@ -806,6 +824,7 @@ class FoVOrthographicCameras(CamerasBase):
         min_y: _BatchFloatType = -1.0,
         max_x: _BatchFloatType = 1.0,
         min_x: _BatchFloatType = -1.0,
+        # pyre-fixme[2]: Parameter must be annotated.
         scale_xyz=((1.0, 1.0, 1.0),),  # (1, 3)
         R: torch.Tensor = _R,
         T: torch.Tensor = _T,
@@ -848,7 +867,14 @@ class FoVOrthographicCameras(CamerasBase):
         )
 
     def compute_projection_matrix(
-        self, znear, zfar, max_x, min_x, max_y, min_y, scale_xyz
+        self,
+        znear: float,
+        zfar: float,
+        max_x: float,
+        min_x: float,
+        max_y: float,
+        min_y: float,
+        scale_xyz: float,
     ) -> torch.Tensor:
         """
         Compute the calibration matrix K of shape (N, 4, 4)
@@ -869,6 +895,7 @@ class FoVOrthographicCameras(CamerasBase):
         # right handed coordinate system throughout.
         z_sign = +1.0
 
+        # pyre-fixme[16]: `float` has no attribute `__getitem__`.
         K[:, 0, 0] = (2.0 / (max_x - min_x)) * scale_xyz[:, 0]
         K[:, 1, 1] = (2.0 / (max_y - min_y)) * scale_xyz[:, 1]
         K[:, 0, 3] = -(max_x + min_x) / (max_x - min_x)
@@ -882,6 +909,7 @@ class FoVOrthographicCameras(CamerasBase):
 
         return K
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def get_projection_transform(self, **kwargs) -> Transform3d:
         """
         Calculate the orthographic projection matrix.
@@ -936,6 +964,7 @@ class FoVOrthographicCameras(CamerasBase):
         xy_depth: torch.Tensor,
         world_coordinates: bool = True,
         scaled_depth_input: bool = False,
+        # pyre-fixme[2]: Parameter must be annotated.
         **kwargs,
     ) -> torch.Tensor:
         """>!
@@ -971,10 +1000,10 @@ class FoVOrthographicCameras(CamerasBase):
         unprojection_transform = to_ndc_transform.inverse()
         return unprojection_transform.transform_points(xy_sdepth)
 
-    def is_perspective(self):
+    def is_perspective(self) -> bool:
         return False
 
-    def in_ndc(self):
+    def in_ndc(self) -> bool:
         return True
 
 
@@ -988,7 +1017,7 @@ Note that the MultiView Cameras accept parameters in NDC space.
 
 def SfMPerspectiveCameras(
     focal_length: _FocalLengthType = 1.0,
-    principal_point=((0.0, 0.0),),
+    principal_point: Union[torch.Tensor, Tuple[Tuple[float, float]]] = ((0.0, 0.0),),
     R: torch.Tensor = _R,
     T: torch.Tensor = _T,
     device: torch.device = torch.device("cpu"),
@@ -1040,12 +1069,17 @@ class PerspectiveCameras(CamerasBase):
     def __init__(
         self,
         focal_length: _FocalLengthType = 1.0,
-        principal_point=((0.0, 0.0),),
+        principal_point: Union[torch.Tensor, Tuple[Tuple[float, float]]] = (
+            (0.0, 0.0),
+        ),
         R: torch.Tensor = _R,
         T: torch.Tensor = _T,
         K: Optional[torch.Tensor] = None,
         device: torch.device = torch.device("cpu"),
         in_ndc: bool = True,
+        # pyre-fixme[24]: Generic type `list` expects 1 type parameter, use
+        #  `typing.List[<element type>]` to avoid runtime subscripting errors.
+        # pyre-fixme[24]: Generic type `tuple` expects at least 1 type parameter.
         image_size: Optional[Union[List, Tuple, torch.Tensor]] = None,
     ) -> None:
         """
@@ -1085,14 +1119,17 @@ class PerspectiveCameras(CamerasBase):
             if (self.image_size < 1).any():  # pyre-ignore
                 raise ValueError("Image_size provided has invalid values")
         else:
+            # pyre-fixme[4]: Attribute must be annotated.
             self.image_size = None
 
         # When focal length is provided as one value, expand to
         # create (N, 2) shape tensor
         if self.focal_length.ndim == 1:  # (N,)
+            # pyre-fixme[4]: Attribute must be annotated.
             self.focal_length = self.focal_length[:, None]  # (N, 1)
         self.focal_length = self.focal_length.expand(-1, 2)  # (N, 2)
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def get_projection_transform(self, **kwargs) -> Transform3d:
         """
         Calculate the projection matrix using the
@@ -1143,6 +1180,7 @@ class PerspectiveCameras(CamerasBase):
         xy_depth: torch.Tensor,
         world_coordinates: bool = True,
         from_ndc: bool = False,
+        # pyre-fixme[2]: Parameter must be annotated.
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -1167,6 +1205,7 @@ class PerspectiveCameras(CamerasBase):
         )
         return unprojection_transform.transform_points(xy_inv_depth)
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def get_principal_point(self, **kwargs) -> torch.Tensor:
         """
         Return the camera's principal point
@@ -1179,6 +1218,7 @@ class PerspectiveCameras(CamerasBase):
         proj_mat = self.get_projection_transform(**kwargs).get_matrix()
         return proj_mat[:, 2, :2]
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
         """
         Returns the transform from camera projection space (screen or NDC) to NDC space.
@@ -1217,16 +1257,16 @@ class PerspectiveCameras(CamerasBase):
 
         return ndc_transform
 
-    def is_perspective(self):
+    def is_perspective(self) -> bool:
         return True
 
-    def in_ndc(self):
+    def in_ndc(self) -> bool:
         return self._in_ndc
 
 
 def SfMOrthographicCameras(
     focal_length: _FocalLengthType = 1.0,
-    principal_point=((0.0, 0.0),),
+    principal_point: Union[torch.Tensor, Tuple[Tuple[float, float]]] = ((0.0, 0.0),),
     R: torch.Tensor = _R,
     T: torch.Tensor = _T,
     device: torch.device = torch.device("cpu"),
@@ -1278,12 +1318,17 @@ class OrthographicCameras(CamerasBase):
     def __init__(
         self,
         focal_length: _FocalLengthType = 1.0,
-        principal_point=((0.0, 0.0),),
+        principal_point: Union[torch.Tensor, Tuple[Tuple[float, float]]] = (
+            (0.0, 0.0),
+        ),
         R: torch.Tensor = _R,
         T: torch.Tensor = _T,
         K: Optional[torch.Tensor] = None,
         device: torch.device = torch.device("cpu"),
         in_ndc: bool = True,
+        # pyre-fixme[24]: Generic type `list` expects 1 type parameter, use
+        #  `typing.List[<element type>]` to avoid runtime subscripting errors.
+        # pyre-fixme[24]: Generic type `tuple` expects at least 1 type parameter.
         image_size: Optional[Union[List, Tuple, torch.Tensor]] = None,
     ) -> None:
         """
@@ -1322,14 +1367,17 @@ class OrthographicCameras(CamerasBase):
             if (self.image_size < 1).any():  # pyre-ignore
                 raise ValueError("Image_size provided has invalid values")
         else:
+            # pyre-fixme[4]: Attribute must be annotated.
             self.image_size = None
 
         # When focal length is provided as one value, expand to
         # create (N, 2) shape tensor
         if self.focal_length.ndim == 1:  # (N,)
+            # pyre-fixme[4]: Attribute must be annotated.
             self.focal_length = self.focal_length[:, None]  # (N, 1)
         self.focal_length = self.focal_length.expand(-1, 2)  # (N, 2)
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def get_projection_transform(self, **kwargs) -> Transform3d:
         """
         Calculate the projection matrix using
@@ -1380,6 +1428,7 @@ class OrthographicCameras(CamerasBase):
         xy_depth: torch.Tensor,
         world_coordinates: bool = True,
         from_ndc: bool = False,
+        # pyre-fixme[2]: Parameter must be annotated.
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -1401,6 +1450,7 @@ class OrthographicCameras(CamerasBase):
         unprojection_transform = to_camera_transform.inverse()
         return unprojection_transform.transform_points(xy_depth)
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def get_principal_point(self, **kwargs) -> torch.Tensor:
         """
         Return the camera's principal point
@@ -1413,6 +1463,7 @@ class OrthographicCameras(CamerasBase):
         proj_mat = self.get_projection_transform(**kwargs).get_matrix()
         return proj_mat[:, 3, :2]
 
+    # pyre-fixme[2]: Parameter must be annotated.
     def get_ndc_camera_transform(self, **kwargs) -> Transform3d:
         """
         Returns the transform from camera projection space (screen or NDC) to NDC space.
@@ -1449,10 +1500,10 @@ class OrthographicCameras(CamerasBase):
 
         return ndc_transform
 
-    def is_perspective(self):
+    def is_perspective(self) -> bool:
         return False
 
-    def in_ndc(self):
+    def in_ndc(self) -> bool:
         return self._in_ndc
 
 
@@ -1464,8 +1515,8 @@ class OrthographicCameras(CamerasBase):
 def _get_sfm_calibration_matrix(
     N: int,
     device: torch.device,
-    focal_length,
-    principal_point,
+    focal_length: _FocalLengthType,
+    principal_point: torch.Tensor,
     orthographic: bool = False,
 ) -> torch.Tensor:
     """
@@ -1510,9 +1561,15 @@ def _get_sfm_calibration_matrix(
     if not torch.is_tensor(focal_length):
         focal_length = torch.tensor(focal_length, device=device)
 
+    # pyre-fixme[16]: Item `Sequence` of `Union[Sequence[Tuple[float]],
+    #  Sequence[Tuple[float, float]], float, Tensor]` has no attribute `ndim`.
+    # pyre-fixme[16]: Item `Sequence` of `Union[Sequence[Tuple[float]],
+    #  Sequence[Tuple[float, float]], float, Tensor]` has no attribute `shape`.
     if focal_length.ndim in (0, 1) or focal_length.shape[1] == 1:
         fx = fy = focal_length
     else:
+        # pyre-fixme[16]: Item `Sequence` of `Union[Sequence[Tuple[float]],
+        #  Sequence[Tuple[float, float]], float, Tensor]` has no attribute `unbind`.
         fx, fy = focal_length.unbind(1)
 
     if not torch.is_tensor(principal_point):
@@ -1626,8 +1683,11 @@ def camera_position_from_spherical_angles(
 
 
 def look_at_rotation(
+    # pyre-fixme[2]: Parameter must be annotated.
     camera_position,
+    # pyre-fixme[2]: Parameter must be annotated.
     at=((0, 0, 0),),
+    # pyre-fixme[2]: Parameter must be annotated.
     up=((0, 1, 0),),
     device: torch.device = torch.device("cpu"),
 ) -> torch.Tensor:
@@ -1683,9 +1743,10 @@ def look_at_view_transform(
     elev: _BatchFloatType = 0.0,
     azim: _BatchFloatType = 0.0,
     degrees: bool = True,
+    # pyre-fixme[24]: Generic type `Sequence` expects 1 type parameter.
     eye: Optional[Union[Sequence, torch.Tensor]] = None,
-    at=((0, 0, 0),),  # (1, 3)
-    up=((0, 1, 0),),  # (1, 3)
+    at: Tuple[Tuple[int, int, int]] = ((0, 0, 0),),  # (1, 3)
+    up: Tuple[Tuple[int, int, int]] = ((0, 1, 0),),  # (1, 3)
     device: torch.device = torch.device("cpu"),
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
@@ -1741,9 +1802,14 @@ def look_at_view_transform(
 
 
 def get_ndc_to_screen_transform(
+    # pyre-fixme[2]: Parameter must be annotated.
     cameras,
     with_xyflip: bool = False,
-    image_size: Optional[Union[List, Tuple, torch.Tensor]] = None,
+    # pyre-fixme[24]: Generic type `list` expects 1 type parameter, received 2, use
+    #  `typing.List[<element type>]` to avoid runtime subscripting errors.
+    image_size: Optional[
+        Union[List[float, float], Tuple[float, float], torch.Tensor]
+    ] = None,
 ) -> Transform3d:
     """
     PyTorch3D NDC to screen conversion.
@@ -1812,8 +1878,12 @@ def get_ndc_to_screen_transform(
 
 
 def get_screen_to_ndc_transform(
+    # pyre-fixme[2]: Parameter must be annotated.
     cameras,
     with_xyflip: bool = False,
+    # pyre-fixme[24]: Generic type `list` expects 1 type parameter, use
+    #  `typing.List[<element type>]` to avoid runtime subscripting errors.
+    # pyre-fixme[24]: Generic type `tuple` expects at least 1 type parameter.
     image_size: Optional[Union[List, Tuple, torch.Tensor]] = None,
 ) -> Transform3d:
     """

@@ -150,6 +150,8 @@ class Resnet18FPN3d(nn.Module):
         # Third upsample to (H, W)
         x1 = self.up1_skip(x2, skip_x["1"])
 
+        # pyre-fixme[7]: Expected `Tuple[GridImage, GridImage, GridImage,
+        #  GridImage]` but got `Tuple[Grid3d, Grid3d, Grid3d, Grid3d]`.
         return (
             grid.replace(data=x1),
             grid.replace(data=x2),

@@ -27,6 +27,7 @@ def save_tensors(path: str, data: Dict[str, torch.Tensor]) -> None:
         f.write(buf)
 
 
+# pyre-fixme[5]: Global expression must be annotated.
 _SIZE = {
     torch.int64: 8,
     torch.float32: 4,
@@ -40,6 +41,7 @@ _SIZE = {
     torch.float64: 8,
 }
 
+# pyre-fixme[5]: Global expression must be annotated.
 _TYPES = {
     "F64": torch.float64,
     "F32": torch.float32,
@@ -61,6 +63,7 @@ def _getdtype(dtype_str: str) -> torch.dtype:
     return _TYPES[dtype_str]
 
 
+# pyre-fixme[2]: Parameter must be annotated.
 def _view2torch(safeview) -> Dict[str, torch.Tensor]:
     result = {}
     for k, v in safeview:
@@ -96,6 +99,8 @@ class AutoLabeler(Dataset):
         self.path = path
 
     def __len__(self) -> int:
+        # pyre-fixme[6]: For 1st argument expected `pyre_extensions.ReadOnly[Sized]`
+        #  but got `Dataset`.
         return len(self.dataset)
 
     def _sem_seg(self, batch: Batch) -> Optional[Dict[str, torch.Tensor]]:
@@ -110,6 +115,7 @@ class AutoLabeler(Dataset):
                     f"{token}.safetensors.zstd",
                 )
                 data = load_tensors(path)
+                # pyre-fixme[16]: `object` has no attribute `items`.
                 for cam, frame in data.items():
                     out[cam].append(frame.bfloat16() / 255)
             return {cam: torch.stack(frames) for cam, frames in out.items()}
@@ -130,6 +136,7 @@ class AutoLabeler(Dataset):
                 )
                 data = load_tensors(path)
                 for cam in self.dataset.cameras:
+                    # pyre-fixme[16]: `object` has no attribute `__getitem__`.
                     labels = [data[f"{cam}/{i}"] for i in range(10)]  # 10 labels
                     out[cam][0].append(labels)
             return out
@@ -159,8 +166,10 @@ class AutoLabeler(Dataset):
 
     @property
     def cameras(self) -> Datasets:
+        # pyre-fixme[7]: Expected `Datasets` but got `List[str]`.
         return self.dataset.cameras
 
     @property
     def CAMERA_OVERLAP(self) -> Datasets:
+        # pyre-fixme[7]: Expected `Datasets` but got `Dict[str, List[str]]`.
         return self.dataset.CAMERA_OVERLAP

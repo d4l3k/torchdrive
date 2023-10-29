@@ -96,6 +96,7 @@ def ssim_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     sigma_xy = F.avg_pool2d(x * y, 3, 1) - mu_x * mu_y
 
     SSIM_n = (2 * mu_x * mu_y + C1) * (2 * sigma_xy + C2)
+    # pyre-fixme[58]: `**` is not supported for operand types `Tensor` and `int`.
     SSIM_d = (mu_x**2 + mu_y**2 + C1) * (sigma_x + sigma_y + C2)
 
     return torch.clamp((1 - SSIM_n / SSIM_d) / 2, 0, 1)

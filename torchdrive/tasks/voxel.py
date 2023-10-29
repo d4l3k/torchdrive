@@ -137,11 +137,13 @@ class VoxelTask(BEVTask):
             self.vel_elem: int = 3
             background += [0.0, 0.0, 0.0]
             self.num_elem += self.classes_elem + self.vel_elem
+            # pyre-fixme[4]: Attribute must be annotated.
             self.semantic_confusion_matrix = torchmetrics.ConfusionMatrix(
                 task="multiclass",
                 num_classes=self.classes_elem,
                 normalize="true",
             )
+            # pyre-fixme[4]: Attribute must be annotated.
             self.semantic_accuracy = torchmetrics.Accuracy(
                 task="multiclass",
                 num_classes=self.classes_elem,
@@ -155,10 +157,13 @@ class VoxelTask(BEVTask):
             persistent=False,
         )
         # compute inverse frequency to weight the pixel labels according to rarity
+        # pyre-fixme[58]: `/` is not supported for operand types `int` and `Tensor`.
         semantic_weights = 1 / torch.tensor(
             BDD100KSemSeg.CLASS_FREQUENCY, dtype=torch.float
         )
+        # pyre-fixme[16]: `float` has no attribute `mean`.
         semantic_weights /= semantic_weights.mean()
+        # pyre-fixme[8]: Attribute has type `Tensor`; used as `float`.
         self.register_buffer(
             "semantic_weights",
             semantic_weights,
@@ -190,6 +195,7 @@ class VoxelTask(BEVTask):
             min_depth=self.min_depth,
             max_depth=self.max_depth,
         )
+        # pyre-fixme[4]: Attribute must be annotated.
         self.raymarcher = compile_fn(
             # DepthEmissionSoftmaxRaymarcher()
             DepthEmissionRaymarcher(
@@ -276,6 +282,8 @@ class VoxelTask(BEVTask):
             grid_shape = grid.shape[2:]  # [x, y, z]
             volume_locator = VolumeLocator(
                 batch_size=1,
+                # pyre-fixme[6]: For 2nd argument expected `Union[List[LongTensor],
+                #  Tuple[int, int, int], LongTensor]` but got `Size`.
                 grid_sizes=grid_shape[::-1],  # [z, y, x]
                 voxel_size=1 / self.scale,
                 volume_translation=self.volume_translation,
@@ -290,6 +298,8 @@ class VoxelTask(BEVTask):
             start_color = torch.tensor((0, 1, 0))
             end_color = torch.tensor((0, 0, 1))
 
+            # pyre-fixme[53]: Captured variable `end_color` is not annotated.
+            # pyre-fixme[53]: Captured variable `start_color` is not annotated.
             def get_color(percent: float) -> torch.Tensor:
                 return start_color * (1 - percent) + percent * end_color
 
@@ -471,6 +481,7 @@ class VoxelTask(BEVTask):
         if self.semantic:
             with torch.autograd.profiler.record_function("segment"):
                 for cam in self.cameras:
+                    # pyre-fixme[16]: `Optional` has no attribute `__getitem__`.
                     semantic_target = batch.sem_seg[cam][:, frame]
                     semantic_target = F.interpolate(
                         semantic_target.float(),

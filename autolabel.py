@@ -23,13 +23,16 @@ from torchdrive.datasets.autolabeler import LabelType, save_tensors
 from torchdrive.datasets.dataset import Dataset
 from torchdrive.train_config import create_parser
 
+# pyre-fixme[5]: Global expression must be annotated.
 parser = create_parser()
 parser.add_argument("--num_workers", type=int, required=True)
 parser.add_argument("--batch_size", type=int, required=True)
 args: argparse.Namespace = parser.parse_args()
 
 
+# pyre-fixme[5]: Global expression must be annotated.
 config_module = importlib.import_module("configs." + args.config)
+# pyre-fixme[5]: Global expression must be annotated.
 config = config_module.CONFIG
 
 # overrides
@@ -71,10 +74,12 @@ dataloader = DataLoader[Batch](
 )
 collator = TransferCollator(dataloader, batch_size=args.batch_size, device=device)
 
+# pyre-fixme[5]: Global expression must be annotated.
 compile_fn = torch.compile if args.compile else lambda x: x
 
 
 class LabelSemSeg(nn.Module):
+    # pyre-fixme[4]: Attribute must be annotated.
     TYPE = LabelType.SEM_SEG
 
     def __init__(self) -> None:
@@ -104,6 +109,7 @@ class LabelSemSeg(nn.Module):
 
 
 class LabelDet(nn.Module):
+    # pyre-fixme[4]: Attribute must be annotated.
     TYPE = LabelType.DET
 
     def __init__(self) -> None:
@@ -121,6 +127,7 @@ class LabelDet(nn.Module):
 
     def forward(self, img: torch.Tensor) -> torch.Tensor:
         pred = self.model(img)
+        # pyre-fixme[7]: Expected `Tensor` but got `List[List[Tensor]]`.
         return pred
 
 
@@ -133,6 +140,8 @@ TASKS = [
 def flatten(v: object) -> Dict[str, torch.Tensor]:
     out = {}
 
+    # pyre-fixme[53]: Captured variable `out` is not annotated.
+    # pyre-fixme[3]: Return type must be annotated.
     def _flatten(prefix: str, v: object):
         if isinstance(v, torch.Tensor):
             out[prefix] = v
@@ -164,6 +173,7 @@ for task in TASKS:
 
 pool = ThreadPool(args.batch_size)
 
+# pyre-fixme[5]: Global expression must be annotated.
 handles = []
 
 for batch in tqdm(collator):

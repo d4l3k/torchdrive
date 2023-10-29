@@ -62,6 +62,7 @@ class TrainConfig:
                 cam_shape=self.cam_shape,
                 # 3 encode frames, 3 decode frames, overlap last frame
                 nframes_per_point=self.num_frames,
+                # pyre-fixme[16]: `TrainConfig` has no attribute `limit_size`.
                 limit_size=self.limit_size,
             )
         elif self.dataset == Datasets.NUSCENES:
@@ -110,6 +111,7 @@ class TrainConfig:
             h: int
             w: int
             h, w = self.cam_shape
+            # pyre-fixme[10]: Name `BEVBackbone` is used but not defined.
             backbone: BEVBackbone = RiceBackbone(
                 dim=self.dim,
                 cam_dim=self.cam_dim,
@@ -183,6 +185,7 @@ class TrainConfig:
         else:
             raise ValueError(f"unknown cam encoder {self.cam_encoder}")
 
+        # pyre-fixme[10]: Name `Dict` is used but not defined.
         tasks: Dict[str, BEVTask] = {}
         hr_tasks: Dict[str, BEVTask] = {}
         bev_shape = tuple(v // 16 for v in self.grid_shape[:2])
@@ -257,6 +260,17 @@ class TrainConfig:
 
 class _ConfigAction(argparse.Action):
     def __init__(self, dest: str, *args: object, **kwargs: object) -> None:
+        # pyre-fixme[6]: For 1st argument expected `Sequence[str]` but got `object`.
+        # pyre-fixme[6]: For 2nd argument expected `Union[None, int, str]` but got
+        #  `object`.
+        # pyre-fixme[6]: For 5th argument expected `Union[typing.Callable[[str],
+        #  Variable[_T]], None, FileType]` but got `object`.
+        # pyre-fixme[6]: For 6th argument expected
+        #  `Optional[Iterable[Variable[_T]]]` but got `object`.
+        # pyre-fixme[6]: For 7th argument expected `bool` but got `object`.
+        # pyre-fixme[6]: For 8th argument expected `Optional[str]` but got `object`.
+        # pyre-fixme[6]: For 9th argument expected `Union[None, str,
+        #  typing.Tuple[str, ...]]` but got `object`.
         super().__init__(*args, dest=dest, **kwargs)
         self.dest = dest
 
@@ -275,6 +289,17 @@ class _ConfigAction(argparse.Action):
 
 class _ConfigFieldAction(argparse.Action):
     def __init__(self, dest: str, *args: object, **kwargs: object) -> None:
+        # pyre-fixme[6]: For 1st argument expected `Sequence[str]` but got `object`.
+        # pyre-fixme[6]: For 2nd argument expected `Union[None, int, str]` but got
+        #  `object`.
+        # pyre-fixme[6]: For 5th argument expected `Union[typing.Callable[[str],
+        #  Variable[_T]], None, FileType]` but got `object`.
+        # pyre-fixme[6]: For 6th argument expected
+        #  `Optional[Iterable[Variable[_T]]]` but got `object`.
+        # pyre-fixme[6]: For 7th argument expected `bool` but got `object`.
+        # pyre-fixme[6]: For 8th argument expected `Optional[str]` but got `object`.
+        # pyre-fixme[6]: For 9th argument expected `Union[None, str,
+        #  typing.Tuple[str, ...]]` but got `object`.
         super().__init__(*args, dest=dest, **kwargs)
         self.dest = dest
 

@@ -37,6 +37,7 @@ CONFIG = TrainConfig(
     det=False,
     ae=False,
     voxel=True,
+    # pyre-fixme[6]: For 25th argument expected `List[str]` but got `bool`.
     voxelsem=True,
     path=False,
 )

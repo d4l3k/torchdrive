@@ -227,8 +227,10 @@ def _collate_lidar(
 ) -> Optional[torch.Tensor]:
     if len(tensors) == 0 or tensors[0] is None:
         return None
+    # pyre-fixme[16]: `Optional` has no attribute `size`.
     min_dim = min(x.size(1) for x in tensors)
     assert min_dim > 5, f"min dimension must not be empty {tensors[0].shape}"
+    # pyre-fixme[16]: `Optional` has no attribute `__getitem__`.
     return torch.stack([x[:, :min_dim] for x in tensors])
 
 
@@ -238,6 +240,7 @@ def _collate_token(
     out = []
     for token in tokens:
         out += token
+    # pyre-fixme[7]: Expected `Optional[Tensor]` but got `List[typing.Any]`.
     return out
 
 
@@ -248,6 +251,7 @@ def _collate_det(
     for det in dets:
         for cam, frames in det.items():
             out[cam] += frames
+    # pyre-fixme[7]: Expected `Optional[Tensor]` but got `Dict[str, List[typing.Any]]`.
     return out
 
 

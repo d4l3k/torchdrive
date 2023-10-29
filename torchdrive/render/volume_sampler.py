@@ -1,11 +1,15 @@
-from typing import Union, Tuple
+from typing import Tuple, Union
 
 import torch
+from pytorch3d.ops.utils import eyes
+from pytorch3d.renderer.implicit.raysampling import HeterogeneousRayBundle, RayBundle
+from pytorch3d.renderer.implicit.utils import (
+    _validate_ray_bundle_variables,
+    ray_bundle_variables_to_ray_points,
+)
 from pytorch3d.structures import Volumes
 from pytorch3d.transforms import Transform3d
-from pytorch3d.ops.utils import eyes
-from pytorch3d.renderer.implicit.raysampling import RayBundle, HeterogeneousRayBundle
-from pytorch3d.renderer.implicit.utils import _validate_ray_bundle_variables, ray_bundle_variables_to_ray_points
+
 
 class VolumeSampler(torch.nn.Module):
     """
@@ -16,8 +20,12 @@ class VolumeSampler(torch.nn.Module):
     setting.
     """
 
-    def __init__(self, volumes: Volumes, sample_mode: str = "bilinear",
-                 padding_mode: str = "zeros") -> None:
+    def __init__(
+        self,
+        volumes: Volumes,
+        sample_mode: str = "bilinear",
+        padding_mode: str = "zeros",
+    ) -> None:
         """
         Args:
             volumes: An instance of the `Volumes` class representing a
@@ -32,6 +40,7 @@ class VolumeSampler(torch.nn.Module):
         self._sample_mode = sample_mode
         self._padding_mode = padding_mode
 
+    # pyre-fixme[3]: Return type must be annotated.
     def _get_ray_directions_transform(self):
         """
         Compose the ray-directions transform by removing the translation component
@@ -49,7 +58,10 @@ class VolumeSampler(torch.nn.Module):
         return directions_transform
 
     def forward(
-        self, ray_bundle: Union[RayBundle, HeterogeneousRayBundle], **kwargs
+        self,
+        ray_bundle: Union[RayBundle, HeterogeneousRayBundle],
+        # pyre-fixme[2]: Parameter must be annotated.
+        **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Given an input ray parametrization, the forward function samples

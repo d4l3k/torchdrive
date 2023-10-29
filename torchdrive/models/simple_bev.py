@@ -690,6 +690,8 @@ class Segnet(nn.Module):
         cam0_T_camXs = torch.stack([batch.T[cam] for cam in cameras], dim=1)
 
         center = tuple(a * b for a, b in zip(self.grid_shape, center))
+        # pyre-fixme[6]: For 1st argument expected `Tuple[int, int, int]` but got
+        #  `Tuple[float, ...]`.
         vtw = voxel_to_world(center, scale, device)
 
         cam0_T_camXs = cam0_T_camXs.pinverse().matmul(vtw).pinverse()
@@ -746,6 +748,8 @@ class SegnetBackbone(BEVBackbone):
         self.grid_shape = grid_shape
         self.num_frames = num_frames
         self.scale = scale
+        # pyre-fixme[8]: Attribute has type `Tuple[int, int, int]`; used as
+        #  `Tuple[float, ...]`.
         self.center: Tuple[int, int, int] = tuple(
             a * b for a, b in zip(center, self.grid_shape)
         )
@@ -778,7 +782,9 @@ class SegnetBackbone(BEVBackbone):
             )
         )
 
+        # pyre-fixme[4]: Attribute must be annotated.
         self.out_Z = grid_shape[2] * 2**num_upsamples
+        # pyre-fixme[4]: Attribute must be annotated.
         self.voxel_dim = max(hr_dim // self.out_Z, 1)
         self.project_voxel = nn.Conv2d(hr_dim, self.voxel_dim * self.out_Z, 1)
         # pyre-fixme[6]: invalid parameter type
@@ -901,6 +907,8 @@ class Segnet3DBackbone(BEVBackbone):
         self.grid_shape = grid_shape
         self.num_frames = num_frames
         self.scale = scale
+        # pyre-fixme[8]: Attribute has type `Tuple[int, int, int]`; used as
+        #  `Tuple[float, ...]`.
         self.center: Tuple[int, int, int] = tuple(
             a * b for a, b in zip(center, self.grid_shape)
         )

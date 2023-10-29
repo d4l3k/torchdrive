@@ -63,8 +63,18 @@ class DetTask(BEVTask):
 
         # not a module -- not saved
         self.matcher = HungarianMatcher()
+        # pyre-fixme[4]: Attribute must be annotated.
+        # pyre-fixme[6]: For 1st argument expected `Module` but got `(bboxes:
+        #  Tensor) -> Tuple[Tensor, Tensor, Tensor]`.
         self.decode_bboxes3d = compile_fn(decode_bboxes3d)
+        # pyre-fixme[4]: Attribute must be annotated.
+        # pyre-fixme[6]: For 1st argument expected `Module` but got `(bboxes:
+        #  Tensor, time: Union[float, Tensor] = ...) -> Tensor`.
         self.bboxes3d_to_points = compile_fn(bboxes3d_to_points)
+        # pyre-fixme[4]: Attribute must be annotated.
+        # pyre-fixme[6]: For 1st argument expected `Module` but got `(points:
+        #  Tensor, K: Tensor, ex: Tensor, w: int, h: int) -> Tuple[Tensor, Tensor,
+        #  Tensor]`.
         self.points_to_bboxes2d = compile_fn(points_to_bboxes2d)
 
     def forward(
@@ -133,6 +143,7 @@ class DetTask(BEVTask):
                     )
 
                     primary_color = batch.color[cam][:, frame]
+                    # pyre-fixme[16]: Optional type has no attribute `__getitem__`.
                     target_preds = [batch.det[cam][i][frame] for i in range(BS)]
 
                     targets: List[Dict[str, torch.Tensor]] = []
@@ -279,7 +290,8 @@ class DetTask(BEVTask):
                         target_l, target_w, target_h = TARGET_SIZES[k]
                         losses[f"lossdim/{k}/height"] = (
                             F.l1_loss(
-                                heights, torch.tensor(target_h, device=device).expand(numel)
+                                heights,
+                                torch.tensor(target_h, device=device).expand(numel),
                             )
                             * LOSS_DIM_WEIGHT
                         )

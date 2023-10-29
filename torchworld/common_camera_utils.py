@@ -24,6 +24,7 @@ from torchworld.structures.cameras import (
 )
 
 
+# pyre-fixme[3]: Return type must be annotated.
 def init_random_cameras(
     cam_type: typing.Type[CamerasBase],
     batch_size: int,
@@ -75,4 +76,8 @@ def init_random_cameras(
 
     else:
         raise ValueError(str(cam_type))
+    # pyre-fixme[6]: For 1st argument expected `Union[str, device]` but got
+    #  `Union[str, device, Tensor]`.
+    # pyre-fixme[6]: For 1st argument expected `dtype` but got `Union[str, device,
+    #  Tensor]`.
     return cam_type(**cam_params)

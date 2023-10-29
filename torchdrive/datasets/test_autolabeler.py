@@ -76,8 +76,10 @@ class TestAutolabeler(unittest.TestCase):
                 save_tensors(tensor_path, out)
 
             out = labeler[0]
+            # pyre-fixme[16]: Optional type has no attribute `sem_seg`.
             self.assertIsNotNone(out.sem_seg)
             self.assertEqual(out.sem_seg["left"].shape, (3,))
             self.assertEqual(out.sem_seg["right"].shape, (3,))
 
+            # pyre-fixme[16]: Optional type has no attribute `det`.
             self.assertIsNotNone(out.det)

@@ -58,9 +58,8 @@ class BDD100KSemSeg:
     )
 
     # dynamic object indexes when filtered by NON_SKY
-    DYNAMIC_NON_SKY = tuple(
-        idx-1 for idx in DYNAMIC
-    )
+    # pyre-fixme[4]: Attribute must be annotated.
+    DYNAMIC_NON_SKY = tuple(idx - 1 for idx in DYNAMIC)
 
     NON_SKY = (
         0,
@@ -127,9 +126,16 @@ class BDD100KSemSeg:
                 path, map_location=device, file_name=config
             )
         else:
+            # pyre-fixme[21]: Could not find module `mmcv`.
             import mmcv
+
+            # pyre-fixme[21]: Could not find module `mmcv.cnn.utils.sync_bn`.
             from mmcv.cnn.utils.sync_bn import revert_sync_batchnorm
+
+            # pyre-fixme[21]: Could not find module `mmcv.runner`.
             from mmcv.runner import load_checkpoint
+
+            # pyre-fixme[21]: Could not find module `mmseg.models`.
             from mmseg.models import build_segmentor
 
             cfg_file = os.path.join(
@@ -143,16 +149,15 @@ class BDD100KSemSeg:
             cfg.model.train_cfg = None
             model = build_segmentor(cfg.model, test_cfg=cfg.get("test_cfg"))
 
-            # pyre-fixme[6]: map_location device
             checkpoint = load_checkpoint(model, cfg.load_from, map_location=device)
             model = revert_sync_batchnorm(model)
-            # pyre-fixme[8]: attribute used as type
             model.forward = model.forward_dummy
 
         model = model.eval()
         if half:
             model = model.half()
         model = model.to(device)
+        # pyre-fixme[4]: Attribute must be annotated.
         self.orig_model = model
         model = compile_fn(model)
         self.model: nn.Module = model
@@ -172,9 +177,13 @@ class BDD100KSemSeg:
 
 
 if __name__ == "__main__":
+    # pyre-fixme[5]: Global expression must be annotated.
     dtype = torch.half
     device = torch.device("cuda")
+    # pyre-fixme[6]: For 3rd argument expected `(Module) -> Module` but got `(model: ...
     m = BDD100KSemSeg(device=device, mmlab=False, compile_fn=torch.compile)
+    # pyre-fixme[5]: Global expression must be annotated.
     model = m.model
+    # pyre-fixme[5]: Global expression must be annotated.
     inp = torch.rand(2, 3, 120, 240, device=device)
     m(inp)

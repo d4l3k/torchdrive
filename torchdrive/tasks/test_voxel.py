@@ -51,6 +51,7 @@ STEREOSCOPIC_LOSSES = [
 
 
 class TestVoxel(unittest.TestCase):
+    # pyre-fixme[4]: Attribute must be annotated.
     maxDiff = None
 
     def _assert_loss_shapes(self, losses: Dict[str, torch.Tensor]) -> None:

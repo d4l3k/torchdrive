@@ -23,6 +23,7 @@ class LIDARRaySampler(torch.nn.Module):
         self.min_depth = min_depth
         self.max_depth = max_depth
 
+        # pyre-fixme[4]: Attribute must be annotated.
         self.step = (self.max_depth - self.min_depth) / self.n_pts_per_ray
         assert self.step > 0
 
@@ -34,6 +35,7 @@ class LIDARRaySampler(torch.nn.Module):
         """
         T = batch.lidar_to_world()
         BS = batch.batch_size()
+        # pyre-fixme[16]: Optional type has no attribute `size`.
         num_points = batch.lidar.size(2)
 
         origin = torch.tensor((0, 0, 0, 1.0), device=T.device, dtype=T.dtype).reshape(
@@ -43,6 +45,7 @@ class LIDARRaySampler(torch.nn.Module):
         origin = origin[:, :3] / origin[:, 3:]
         origin = origin.permute(0, 2, 1).expand(-1, num_points, -1)
 
+        # pyre-fixme[16]: Optional type has no attribute `__getitem__`.
         coords = batch.lidar[:, :3]
         ones = torch.ones(BS, 1, num_points, dtype=T.dtype, device=T.device)
         coords = torch.cat((coords, ones), dim=1)
@@ -67,6 +70,7 @@ class LIDARRaySampler(torch.nn.Module):
                 origins=origin,
                 directions=directions,
                 lengths=lengths,
+                # pyre-fixme[6]: For 4th argument expected `Tensor` but got `None`.
                 xys=None,
             ),
             distances,

@@ -57,6 +57,7 @@ class PathTransformer(nn.Module):
 
         # self.bev_project = compile_fn(ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1))
 
+        # pyre-fixme[4]: Attribute must be annotated.
         self.pos_encoder = compile_fn(
             nn.Sequential(
                 nn.Linear(pos_dim, dim),
@@ -64,6 +65,7 @@ class PathTransformer(nn.Module):
                 nn.Linear(dim, dim),
             )
         )
+        # pyre-fixme[4]: Attribute must be annotated.
         self.pos_decoder = compile_fn(
             nn.Sequential(
                 nn.Linear(dim, dim),
@@ -74,6 +76,7 @@ class PathTransformer(nn.Module):
         )
 
         static_features = 3 * 3
+        # pyre-fixme[4]: Attribute must be annotated.
         self.static_encoder = compile_fn(MLP(static_features, dim, dim, num_layers=3))
 
         self.transformer = StockTransformerDecoder(

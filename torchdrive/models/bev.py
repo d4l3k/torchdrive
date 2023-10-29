@@ -230,7 +230,9 @@ class RiceBackbone(BEVBackbone):
 
         self.num_frames = num_frames
         bev_shape = grid_shape[:2]  # [x, y]
+        # pyre-fixme[4]: Attribute must be annotated.
         self.out_Z = grid_shape[2] * 2**num_upsamples
+        # pyre-fixme[4]: Attribute must be annotated.
         self.voxel_dim = max(hr_dim // self.out_Z, 1)
 
         self.cam_transformers = nn.ModuleDict(
