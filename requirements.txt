@@ -30,3 +30,4 @@ flake8==3.9.0
 torchx
 StrEnum
 pandas
+pythreejs

@@ -86,7 +86,10 @@ class PathTransformer(nn.Module):
         transformer_init(self)
 
     def forward(
-        self, bev: torch.Tensor, positions: torch.Tensor, final_pos: torch.Tensor
+        self,
+        bev: torch.Tensor,
+        positions: torch.Tensor,
+        final_pos: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         BS = len(bev)
         device = bev.device
@@ -144,6 +147,8 @@ class PathTransformer(nn.Module):
         infer runs the inference in an autoregressive manner.
         """
         for i in range(n):
-            out, _ = m(bev, seq, final_pos)
+            # add dummy item on end
+            inp = torch.cat((seq, torch.zeros_like(seq[..., -1:])), dim=-1)
+            out, _ = m(bev, inp, final_pos)
             seq = torch.cat((seq, out[..., -1:]), dim=-1)
         return seq

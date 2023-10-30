@@ -247,6 +247,8 @@ def _collate_token(
 def _collate_det(
     dets: List[Dict[str, List[object]]],
 ) -> Optional[torch.Tensor]:
+    if dets[0] is None:
+        return None
     out = {cam: [] for cam in dets[0].keys()}
     for det in dets:
         for cam, frames in det.items():

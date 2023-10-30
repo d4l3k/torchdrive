@@ -117,9 +117,10 @@ class StockTransformerDecoder(nn.Module):
         device = x.device
         sz = x.size(1)
 
-        mask = torch.triu(torch.ones(sz, sz, device=device) * float("-inf"), diagonal=1)
-
-        return self.transformer_decoder(x, cross, mask)
+        mask = nn.Transformer.generate_square_subsequent_mask(sz, device=device)
+        return self.transformer_decoder(
+            x, cross, tgt_mask=mask, tgt_is_causal=True, memory_is_causal=False
+        )
 
 
 def transformer_init(model: nn.Module) -> None:

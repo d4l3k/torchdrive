@@ -19,7 +19,7 @@ class BackprojectDepth(nn.Module):
         meshgrid = torch.meshgrid(
             torch.arange(self.width), torch.arange(self.height), indexing="xy"
         )
-        id_coords = torch.stack(meshgrid, axis=0).float()
+        id_coords = torch.stack(meshgrid, dim=0).float()
         self.register_buffer("id_coords", id_coords, persistent=False)
 
         self.register_buffer(

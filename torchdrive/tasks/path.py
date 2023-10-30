@@ -71,7 +71,7 @@ class PathTask(BEVTask):
         # pos_len = pos_len - (pos_len % 8) + 1
         pos_len = min(pos_len, self.max_seq_len + 1)
         positions = positions[..., :pos_len]
-        mask = mask[..., 1:pos_len].float()
+        mask = mask[..., 0:pos_len].float()
         num_elements = mask.sum()
 
         assert pos_len > 1, "pos length too short"
@@ -83,8 +83,9 @@ class PathTask(BEVTask):
         posmax = positions.abs().amax()
         assert posmax < 1000
 
-        target = positions[..., 1:]
-        prev = positions[..., :-1]
+        # target = positions[..., 1:]
+        prev = positions
+        target = positions
 
         all_predicted = []
         losses = {}
@@ -117,7 +118,8 @@ class PathTask(BEVTask):
             losses[f"rel_dists/{i}"] = rel_dist_loss.sum(dim=1) / (num_elements + 1)
 
             # keep first values the same and shift predicted over by 1
-            prev = torch.cat((prev[..., :1], predicted[..., :-1]), dim=-1)
+            prev = predicted
+            # prev = torch.cat((prev[..., :1], predicted[..., :-1]), dim=-1)
 
         if ctx.log_text:
             ctx.add_scalar("ae/mae", self.ae_mae.compute())
@@ -125,9 +127,9 @@ class PathTask(BEVTask):
         if ctx.log_img:
             with torch.no_grad():
                 fig = plt.figure()
-                length = lengths[0] - 1
+                length = lengths[0]
                 plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
-                plt.plot(*prev[0, 0:2, 0].detach().cpu(), "go", label="origin")
+                plt.plot(*target[0, 0:2, 0].detach().cpu(), "go", label="origin")
                 plt.plot(*final_pos[0, 0:2].detach().cpu(), "ro", label="final")
 
                 for i, predicted in enumerate(all_predicted):
@@ -158,9 +160,10 @@ class PathTask(BEVTask):
                 )
                 plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
                 plt.plot(
-                    *autoregressive[0, 0:2, 1:].detach().cpu(), label="autoregressive"
+                    *autoregressive[0, 0:2, :length].detach().cpu(),
+                    label="autoregressive",
                 )
-                plt.plot(*prev[0, 0:2, 0].detach().cpu(), "go", label="origin")
+                plt.plot(*target[0, 0:2, 0].detach().cpu(), "go", label="origin")
                 plt.plot(*final_pos[0, 0:2].detach().cpu(), "ro", label="final")
                 self.train()
 
