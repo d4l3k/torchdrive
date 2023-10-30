@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 from torch import nn, Tensor
 
@@ -17,13 +16,11 @@ class BackprojectDepth(nn.Module):
         self.height = height
         self.width = width
 
-        meshgrid = np.meshgrid(range(self.width), range(self.height), indexing="xy")
-        id_coords = np.stack(meshgrid, axis=0).astype(np.float32)
-        self.register_buffer(
-            "id_coords",
-            torch.from_numpy(id_coords),
-            persistent=False,
+        meshgrid = torch.meshgrid(
+            torch.arange(self.width), torch.arange(self.height), indexing="xy"
         )
+        id_coords = torch.stack(meshgrid, axis=0).float()
+        self.register_buffer("id_coords", id_coords, persistent=False)
 
         self.register_buffer(
             "ones",
