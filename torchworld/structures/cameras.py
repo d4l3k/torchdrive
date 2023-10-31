@@ -312,12 +312,18 @@ class CamerasBase(TensorProperties):
         Returns
             new_points: transformed points with the same shape as the input.
         """
+        world_to_ndc_transform = self.world_to_ndc_transform()
+        return world_to_ndc_transform.transform_points(points, eps=eps)
+
+    def world_to_ndc_transform(self) -> Transform3d:
+        """
+        Returns the world to NDC transform.
+        """
         world_to_ndc_transform = self.get_full_projection_transform()
         if not self.in_ndc():
             to_ndc_transform = self.get_ndc_camera_transform()
             world_to_ndc_transform = world_to_ndc_transform.compose(to_ndc_transform)
-
-        return world_to_ndc_transform.transform_points(points, eps=eps)
+        return world_to_ndc_transform
 
     def transform_points_screen(
         self,

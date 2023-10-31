@@ -30,8 +30,6 @@ def project(
             raise TypeError("vel must have 3 channels")
         if src.camera is not vel.camera:
             raise TypeError("src camera must be same as vel")
-    if not src.camera.in_ndc() or not dst.camera.in_ndc():
-        raise TypeError("cameras must be ndc")
     if src.camera is not depth.camera:
         raise TypeError("src camera must be same as depth")
 

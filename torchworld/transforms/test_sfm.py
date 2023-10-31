@@ -50,8 +50,6 @@ class TestSFM(unittest.TestCase):
         model(data)
         exported = export(model, args=(data,))
         self.assertIsNotNone(exported)
-        print(exported)
-        self.fail()
 
     def test_project(self) -> None:
         device = torch.device("cpu")

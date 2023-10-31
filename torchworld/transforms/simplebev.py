@@ -43,11 +43,11 @@ def lift_image_to_3d(
     )
     grid_points = torch.stack(channels, dim=-1)
     grid_points = grid_points.flatten(0, -2).unsqueeze(0)
-    T = dst.local_to_world
-    T = T.compose(src.camera.get_full_projection_transform())
-    assert src.camera.in_ndc(), "TODO support non-ndc cameras"
 
-    image_points = T.transform_points(grid_points, eps=eps)
+    world_to_ndc_transform = src.camera.world_to_ndc_transform()
+    local_to_ndc_transform = dst.local_to_world.compose(world_to_ndc_transform)
+
+    image_points = local_to_ndc_transform.transform_points(grid_points, eps=eps)
 
     # hide samples behind camera
     z = image_points[..., 2]
