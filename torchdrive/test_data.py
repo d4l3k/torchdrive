@@ -135,3 +135,22 @@ class TestData(unittest.TestCase):
         batch = dummy_batch()
         out = batch.lidar_to_world()
         self.assertEqual(out.shape, (2, 4, 4))
+
+    def test_camera_names(self) -> None:
+        batch = dummy_batch()
+        self.assertEqual(batch.camera_names(), ("left", "right"))
+
+    def test_camera(self) -> None:
+        batch = dummy_batch()
+        cam = batch.camera("left", 1)
+        self.assertFalse(cam.in_ndc())
+
+    def test_grid_image(self) -> None:
+        batch = dummy_batch()
+        img = batch.grid_image("left", 1)
+        self.assertEqual(img.data.shape, (2, 3, 48, 64))
+        mask = img.mask
+        self.assertIsNotNone(mask)
+        self.assertEqual(mask.shape, (2, 1, 48, 64))
+        torch.testing.assert_allclose(img.time, batch.frame_time[:, 1])
+        self.assertFalse(img.camera.in_ndc())

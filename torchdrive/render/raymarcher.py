@@ -1,10 +1,10 @@
 from typing import Optional, Tuple
 
 import torch
-from pytorch3d.renderer import PerspectiveCameras
-
 from pytorch3d.renderer.implicit.utils import RayBundle
-from pytorch3d.transforms import RotateAxisAngle, Transform3d
+
+from torchworld.structures.cameras import PerspectiveCameras
+from torchworld.transforms.transform3d import RotateAxisAngle, Transform3d
 
 
 class DepthEmissionRaymarcher(torch.nn.Module):

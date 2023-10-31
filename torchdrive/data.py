@@ -18,6 +18,11 @@ from typing import (
 import torch
 from torch.utils.data import DataLoader, default_collate
 
+from torchworld.structures.cameras import CamerasBase
+from torchworld.structures.grid import GridImage
+
+from torchdrive.render.raymarcher import CustomPerspectiveCameras
+
 
 @dataclass(frozen=True)
 class Batch:
@@ -67,8 +72,29 @@ class Batch:
     def device(self) -> torch.device:
         return self.weight.device
 
-    def cameras(self) -> Tuple[str]:
+    def camera_names(self) -> Tuple[str, ...]:
         return tuple(self.color.keys())
+
+    def camera(self, cam: str, frame: int) -> CamerasBase:
+        color = self.color[cam]
+        bs = len(color)
+        device = color.device
+        image_size = torch.tensor([color.shape[-2:]], device=device).expand(bs, -1)
+        return CustomPerspectiveCameras(
+            T=self.world_to_cam(cam, frame),
+            K=self.K[cam],
+            image_size=image_size,
+            device=device,
+        )
+
+    def grid_image(self, cam: str, frame: int) -> GridImage:
+        color = self.color[cam][:, frame]
+        return GridImage(
+            data=color,
+            camera=self.camera(cam, frame),
+            time=self.frame_time[:, frame],
+            mask=self.mask[cam],
+        )
 
     def to(self, device: torch.device) -> "Batch":
         """

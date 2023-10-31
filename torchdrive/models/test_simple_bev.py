@@ -93,7 +93,7 @@ class TestSimpleBEV(unittest.TestCase):
         )
         camera_features = {
             camera: [torch.rand(batch.batch_size(), cam_dim, 48, 64)] * num_frames
-            for camera in batch.cameras()
+            for camera in batch.camera_names()
         }
         for feats in camera_features.values():
             for feat in feats:
@@ -163,7 +163,7 @@ class TestSimpleBEV(unittest.TestCase):
         )
         camera_features = {
             camera: [torch.rand(batch.batch_size(), cam_dim, 48, 64)] * num_frames
-            for camera in batch.cameras()
+            for camera in batch.camera_names()
         }
         for feats in camera_features.values():
             for feat in feats:
