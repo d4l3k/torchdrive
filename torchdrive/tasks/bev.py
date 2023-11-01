@@ -7,6 +7,7 @@ import torch
 from torch import nn
 from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
+from torchworld.transforms.img import render_color
 
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_pause, autograd_resume, log_grad_norm
@@ -14,7 +15,6 @@ from torchdrive.data import Batch
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.context import Context
 from torchdrive.transforms.batch import BatchTransform, Identity
-from torchdrive.transforms.img import render_color
 
 
 def _get_orig_mod(m: nn.Module) -> nn.Module:

@@ -5,7 +5,7 @@ import torch
 from IPython.display import display
 from torchvision.transforms.functional import to_pil_image
 
-from torchdrive.transforms.img import normalize_img, render_color
+from torchworld.transforms.img import normalize_img, render_color
 
 
 def display_img(x: torch.Tensor) -> None:

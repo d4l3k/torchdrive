@@ -227,6 +227,7 @@ class CustomPerspectiveCameras(PerspectiveCameras):
 
     def get_world_to_view_transform(self, **kwargs: object) -> Transform3d:
         # TODO: remove r
+        # r = Transform3d()
         r = RotateAxisAngle(180, axis="Z", device=self.T.device)
         return Transform3d(matrix=self.T.transpose(1, 2), device=self.T.device).compose(
             r

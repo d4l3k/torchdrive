@@ -10,6 +10,7 @@ from pytorch3d.renderer import ImplicitRenderer, NDCMultinomialRaysampler
 from pytorch3d.structures import Volumes
 from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
+from torchworld.transforms.img import normalize_img, normalize_mask, render_color
 
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context
@@ -32,7 +33,6 @@ from torchdrive.transforms.depth import (
     disp_to_depth,
     Project3D,
 )
-from torchdrive.transforms.img import normalize_img, normalize_mask, render_color
 
 
 def axis_grid(grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

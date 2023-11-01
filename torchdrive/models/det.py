@@ -4,13 +4,13 @@ from typing import Callable, Dict, List, Tuple, Union
 import torch
 from torch import nn
 from torchvision import transforms
+from torchworld.transforms.img import normalize_img_cuda
 
 from torchdrive.amp import autocast
 from torchdrive.attention import attention
 from torchdrive.models.mlp import MLP
 from torchdrive.models.regnet import ConvPEBlock
 from torchdrive.positional_encoding import apply_sin_cos_enc2d
-from torchdrive.transforms.img import normalize_img_cuda
 
 
 class BDD100KDet:

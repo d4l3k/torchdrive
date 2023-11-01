@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torchworld.transforms.img import normalize_img, render_color
 
 from torchdrive.amp import autocast
 from torchdrive.data import Batch
@@ -10,7 +11,6 @@ from torchdrive.losses import projection_loss
 from torchdrive.models.bev import GridTransformer
 from torchdrive.models.regnet import UpsamplePEBlock
 from torchdrive.tasks.bev import BEVTask, Context
-from torchdrive.transforms.img import normalize_img, render_color
 
 
 class AETask(BEVTask):

@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torchvision.utils import draw_bounding_boxes
+from torchworld.transforms.img import normalize_img
 
 from torchdrive.amp import autocast
 from torchdrive.data import Batch
@@ -18,7 +19,6 @@ from torchdrive.transforms.bboxes import (
     decode_bboxes3d,
     points_to_bboxes2d,
 )
-from torchdrive.transforms.img import normalize_img
 
 # TARGET_SIZES - class: (l, w, h)
 TARGET_SIZES: Dict[int, Tuple[float, float, float]] = {

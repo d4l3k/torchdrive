@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchdrive.transforms.img import (
+from torchworld.transforms.img import (
     normalize_img,
     normalize_img_cuda,
     normalize_mask,
