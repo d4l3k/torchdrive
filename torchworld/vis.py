@@ -6,6 +6,7 @@ from matplotlib import cm
 
 from torchworld.structures.cameras import CamerasBase
 from torchworld.structures.grid import Grid3d, GridImage
+from torchworld.structures.lidar import Lidar
 from torchworld.transforms.img import normalize_img_cuda
 from torchworld.transforms.transform3d import Transform3d
 
@@ -312,3 +313,20 @@ def path(positions: Transform3d) -> pythreejs.Object3D:
         geo.matrix = tuple(matrix[i].contiguous().view(-1).tolist())
         group.add(geo)
     return group
+
+
+def lidar(data: Lidar) -> pythreejs.Object3D:
+    """lidar returns a object that renders the lidar data.
+
+    Arguments
+    ---------
+    data: The Lidar data
+    """
+    if data.data.size(0) != 1:
+        raise TypeError("lidar must have batch size 1")
+
+    lidar_geo = pythreejs.BufferGeometry(
+        attributes={"position": pythreejs.BufferAttribute(data.data[0, :3].T.numpy())}
+    )
+    lidar_mat = pythreejs.PointsMaterial(color="white", size=1, sizeAttenuation=False)
+    return pythreejs.Points(lidar_geo, lidar_mat)
