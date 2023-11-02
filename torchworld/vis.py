@@ -7,17 +7,15 @@ from matplotlib import cm
 from torchworld.structures.cameras import CamerasBase
 from torchworld.structures.grid import Grid3d, GridImage
 from torchworld.transforms.img import normalize_img_cuda
+from torchworld.transforms.transform3d import Transform3d
 
 
-def add_camera(scene: pythreejs.Scene, camera: CamerasBase) -> pythreejs.Object3D:
+def camera(camera: CamerasBase) -> pythreejs.Object3D:
     """
-    add_camera creates a geometry object for the provided camera and adds it to
-    the specified scene.
+    add_camera creates a geometry object for the provided camera.
 
     Arguments
     ---------
-    scene:
-        scene to use
     camera:
         camera to visualize
     """
@@ -27,21 +25,18 @@ def add_camera(scene: pythreejs.Scene, camera: CamerasBase) -> pythreejs.Object3
     geo.matrixAutoUpdate = False
     geo.matrix = tuple(view_to_world.contiguous().view(-1).tolist())
 
-    scene.add([geo])
     return geo
 
 
-def add_grid_image(scene: pythreejs.Scene, image: GridImage) -> pythreejs.Object3D:
+def grid_image(image: GridImage) -> pythreejs.Object3D:
     """
     add_grid_image creates a geometry object for the provided RGB image and
-    camera and adds it to the specified scene.
+    camera.
 
     Arguments
     ---------
-    scene: scene to use
     image: image to render
     """
-    cam = add_camera(scene, image.camera)
     dist = 1.0
     plane = pythreejs.BufferGeometry(
         attributes={
@@ -128,26 +123,33 @@ def add_grid_image(scene: pythreejs.Scene, image: GridImage) -> pythreejs.Object
     mesh.matrixAutoUpdate = False
     mesh.matrix = tuple(T.contiguous().view(-1).tolist())
 
-    # cam.add([mesh])
-    scene.add([mesh])
-    return mesh
+    cam = camera(image.camera)
+
+    group = pythreejs.Group()
+    group.add([mesh, cam])
+
+    return group
 
 
-def add_grid_3d_occupancy(
-    scene: pythreejs.Scene,
+def _get_cmap(palette: str, num_colors: int = 1000) -> torch.Tensor:
+    cmap = cm.get_cmap(palette)
+    return torch.tensor(
+        [cmap(i / num_colors)[:3] for i in range(num_colors)],
+    )
+
+
+def grid_3d_occupancy(
     grid: Grid3d,
     p: float = 0.5,
     palette: str = "magma",
     eps: float = 1e-8,
 ) -> pythreejs.Object3D:
     """
-    Creates a geometry object for the provided voxel grid and camera and adds it
-    to the specified scene. This must be an occupancy grid with a single channel
-    and values between 0 and 1.
+    Creates a geometry object for the provided voxel grid and camera. This must
+    be an occupancy grid with a single channel and values between 0 and 1.
 
     Arguments
     ---------
-    scene: scene to use
     grid: occupancy grid to render
     p: probability threshold for voxels to render
     palette: the matplotlib color palette to use
@@ -161,11 +163,7 @@ def add_grid_3d_occupancy(
     if ch != 1:
         raise TypeError("must have single channel")
 
-    cmap = cm.get_cmap(palette)
-    num_colors = 1000
-    colors = torch.tensor(
-        [cmap(i / num_colors)[:3] for i in range(num_colors)], device=device
-    )
+    colors = _get_cmap(palette)
 
     data = grid.data.permute(0, 1, 4, 3, 2)
     grid_shape = grid_shape[::-1]
@@ -192,7 +190,9 @@ def add_grid_3d_occupancy(
 
     offsets = grid_points[matching]
     values = data[0][matching]
-    colors = torch.index_select(colors, dim=0, index=(values * (num_colors - 1)).int())
+    colors = torch.index_select(
+        colors, dim=0, index=(values * (colors.size(0) - 1)).int()
+    )
     # offsets = grid.local_to_world.transform_points(offsets)
     N = offsets.size(0)
 
@@ -273,7 +273,6 @@ def add_grid_3d_occupancy(
         transparent=False,
     )
 
-    # mat = pythreejs.MeshBasicMaterial()
     mesh = pythreejs.Mesh(instancedGeometry, material)
 
     edges = pythreejs.EdgesGeometry(pythreejs.BoxGeometry(width=2, height=2, depth=2))
@@ -289,5 +288,27 @@ def add_grid_3d_occupancy(
     group.matrixAutoUpdate = False
     group.matrix = tuple(T.contiguous().view(-1).tolist())
 
-    scene.add([group])
+    return group
+
+
+def path(positions: Transform3d) -> pythreejs.Object3D:
+    """path renders a series of positions given a set of world_to_local
+    transformation matrices.
+
+    Arguments
+    ---------
+    positions: Transform3d(BS)
+        world_to_local transforms to plot
+    """
+
+    group = pythreejs.Group()
+
+    matrix = positions.inverse().get_matrix()
+
+    BS = len(positions)
+    for i in range(BS):
+        geo = pythreejs.AxesHelper(1)
+        geo.matrixAutoUpdate = False
+        geo.matrix = tuple(matrix[i].contiguous().view(-1).tolist())
+        group.add(geo)
     return group

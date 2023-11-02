@@ -4,32 +4,36 @@ import pythreejs
 
 import torch
 
+from torchworld import vis
+
 from torchworld.structures.cameras import PerspectiveCameras
 from torchworld.structures.grid import Grid3d, GridImage
-from torchworld.vis import add_camera, add_grid_3d_occupancy, add_grid_image
+from torchworld.transforms.transform3d import Transform3d
 
 
 class TestVis(unittest.TestCase):
     def test_camera(self) -> None:
-        scene = pythreejs.Scene()
-        out = add_camera(scene, PerspectiveCameras())
+        out = vis.camera(PerspectiveCameras())
         self.assertIsInstance(out, pythreejs.AxesHelper)
 
     def test_grid_image(self) -> None:
-        scene = pythreejs.Scene()
         img = GridImage(
             data=torch.rand(1, 3, 10, 20),
             camera=PerspectiveCameras(),
             time=torch.rand(1),
         )
-        out = add_grid_image(scene, img)
-        self.assertIsInstance(out, pythreejs.Mesh)
+        out = vis.grid_image(img)
+        self.assertIsInstance(out, pythreejs.Group)
 
     def test_grid_3d_occupancy(self) -> None:
-        scene = pythreejs.Scene()
         grid = Grid3d.from_volume(
             data=torch.zeros(1, 1, 3, 4, 5),
             voxel_size=1 / 3,
         )
-        out = add_grid_3d_occupancy(scene, grid)
+        out = vis.grid_3d_occupancy(grid)
+        self.assertIsInstance(out, pythreejs.Group)
+
+    def test_path(self) -> None:
+        positions = Transform3d(matrix=torch.rand(5, 4, 4))
+        out = vis.path(positions)
         self.assertIsInstance(out, pythreejs.Group)
