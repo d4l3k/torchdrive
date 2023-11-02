@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader, default_collate
 
 from torchworld.structures.cameras import CamerasBase
 from torchworld.structures.grid import GridImage
+from torchworld.structures.points import Points
 
 from torchdrive.render.raymarcher import CustomPerspectiveCameras
 
@@ -95,6 +96,22 @@ class Batch:
             time=self.frame_time[:, frame],
             mask=self.mask[cam],
         )
+
+    def lidar_points(self) -> Points:
+        """
+        Returns the lidar data as a Points object in world coordinates.
+        """
+        lidar = self.lidar
+        if lidar is None:
+            raise ValueError("lidar must not be None")
+
+        BS, ch, num_points = lidar.shape
+        lidar_data = torch.cat((lidar[:, :3], torch.ones(BS, 1, num_points)), dim=1)
+        lidar_data = self.lidar_to_world().matmul(lidar_data)
+        lidar_data = lidar_data[:, :3] / lidar_data[:, 3:]
+        lidar_data = torch.cat((lidar_data, lidar[:, 3:]), dim=1)
+
+        return Points(data=lidar_data)
 
     def to(self, device: torch.device) -> "Batch":
         """

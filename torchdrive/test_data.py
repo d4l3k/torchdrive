@@ -136,6 +136,11 @@ class TestData(unittest.TestCase):
         out = batch.lidar_to_world()
         self.assertEqual(out.shape, (2, 4, 4))
 
+    def test_lidar_points(self) -> None:
+        batch = dummy_batch()
+        out = batch.lidar_points()
+        self.assertEqual(out.data.shape, (2, 4, 6))
+
     def test_camera_names(self) -> None:
         batch = dummy_batch()
         self.assertEqual(batch.camera_names(), ("left", "right"))
