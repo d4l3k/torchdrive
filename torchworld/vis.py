@@ -1,19 +1,61 @@
 import base64
 import io
+from typing import Tuple
 
 import numpy as np
+import PIL
 import pythreejs
 import torch
 import torch.nn.functional as F
 from matplotlib import cm
-from PIL import Image
 from torchvision.transforms.functional import to_pil_image
 
 from torchworld.structures.cameras import CamerasBase
 from torchworld.structures.grid import Grid3d, GridImage
 from torchworld.structures.lidar import Lidar
 from torchworld.transforms.img import normalize_img_cuda
-from torchworld.transforms.transform3d import Transform3d
+from torchworld.transforms.transform3d import RotateAxisAngle, Transform3d
+
+
+def _transform_to_mat(transform: Transform3d) -> Tuple[float, ...]:
+    return tuple(transform.get_matrix().contiguous().view(-1).tolist())
+
+
+def renderer(
+    width: int = 900,
+    height: int = 500,
+    camera_position: Tuple[float, float, float] = (-10, 6, 10),
+) -> pythreejs.Renderer:
+    """Create a basic renderer scene with some lights, grids, camera and orbit
+    controls.
+    """
+    camera = pythreejs.PerspectiveCamera(
+        position=camera_position, aspect=width / height
+    )
+    camera.up = (0, 0, 1)
+    key_light = pythreejs.DirectionalLight(position=[0, 10, 10])
+    ambient_light = pythreejs.AmbientLight()
+
+    grid_helper1 = pythreejs.GridHelper(20, 20, "#888", "#444")
+    grid_helper10 = pythreejs.GridHelper(100, 10, "#888", "#444")
+    grids = pythreejs.Group()
+    grids.add([grid_helper1, grid_helper10])
+
+    grids.matrixAutoUpdate = False
+    grids.matrix = _transform_to_mat(RotateAxisAngle(90))
+
+    scene = pythreejs.Scene(
+        children=[grids, camera, key_light, ambient_light], background="#111"
+    )
+
+    renderer = pythreejs.Renderer(
+        camera=camera,
+        scene=scene,
+        controls=[pythreejs.OrbitControls(controlling=camera)],
+        width=width,
+        height=height,
+    )
+    return renderer
 
 
 def camera(camera: CamerasBase) -> pythreejs.Object3D:
@@ -25,16 +67,17 @@ def camera(camera: CamerasBase) -> pythreejs.Object3D:
     camera:
         camera to visualize
     """
-    view_to_world = camera.get_world_to_view_transform().inverse().get_matrix()
-    assert view_to_world.shape, (1, 4, 4)
+    view_to_world = camera.get_world_to_view_transform().inverse()
+    assert view_to_world.get_matrix().shape, (1, 4, 4)
     geo = pythreejs.AxesHelper(1)
     geo.matrixAutoUpdate = False
-    geo.matrix = tuple(view_to_world.contiguous().view(-1).tolist())
+    geo.matrix = _transform_to_mat(view_to_world)
 
     return geo
 
 
-def _pil_to_data_url(img: Image) -> str:
+# pyre-fixme[11: PIL.Image is not defined as a type
+def _pil_to_data_url(img: PIL.Image) -> str:
     """converts the provided PIL Image into a data url that can be shown in a
     browser"""
     buffered = io.BytesIO()
@@ -131,10 +174,9 @@ def grid_image(image: GridImage) -> pythreejs.Object3D:
 
     T = image.camera.world_to_ndc_transform()
     T = T.inverse()
-    T = T.get_matrix()
 
     mesh.matrixAutoUpdate = False
-    mesh.matrix = tuple(T.contiguous().view(-1).tolist())
+    mesh.matrix = _transform_to_mat(T)
 
     cam = camera(image.camera)
 
@@ -297,9 +339,8 @@ def grid_3d_occupancy(
     group.add(line)
 
     T = grid.local_to_world
-    T = T.get_matrix()
     group.matrixAutoUpdate = False
-    group.matrix = tuple(T.contiguous().view(-1).tolist())
+    group.matrix = _transform_to_mat(T)
 
     return group
 

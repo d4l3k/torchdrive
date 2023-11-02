@@ -13,6 +13,10 @@ from torchworld.transforms.transform3d import Transform3d
 
 
 class TestVis(unittest.TestCase):
+    def test_renderer(self) -> None:
+        renderer = vis.renderer()
+        self.assertIsInstance(renderer.scene, pythreejs.Scene)
+
     def test_camera(self) -> None:
         out = vis.camera(PerspectiveCameras())
         self.assertIsInstance(out, pythreejs.AxesHelper)
