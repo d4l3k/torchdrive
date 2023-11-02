@@ -41,19 +41,27 @@ def lift_image_to_3d(
         *(torch.arange(-1, 1 - eps, 2 / dim, device=device) for dim in grid_shape),
         indexing="ij",
     )
-    grid_points = torch.stack(channels, dim=-1)
+    grid_points = torch.stack(channels[::-1], dim=-1)
     grid_points = grid_points.flatten(0, -2).unsqueeze(0)
 
     world_to_ndc_transform = src.camera.world_to_ndc_transform()
     local_to_ndc_transform = dst.local_to_world.compose(world_to_ndc_transform)
 
+    # grid_points = grid_points[:, :, ::-1]
+
     image_points = local_to_ndc_transform.transform_points(grid_points, eps=eps)
 
-    # hide samples behind camera
-    z = image_points[..., 2]
+    with torch.no_grad():
+        # hide samples behind camera
+        x = image_points[..., 0]
+        y = image_points[..., 1]
+        z = image_points[..., 2]
 
-    valid = z > 0
-    valid = valid.unflatten(1, grid_shape).unsqueeze(1)
+        valid_z = z > 0
+        valid_x = torch.logical_and(torch.greater(x, -1), torch.less(x, 1))
+        valid_y = torch.logical_and(torch.greater(y, -1), torch.less(y, 1))
+        valid = torch.logical_and(torch.logical_and(valid_x, valid_y), valid_z)
+        valid = valid.unflatten(1, grid_shape).unsqueeze(1)
 
     # drop z axis
     image_points = image_points[..., :2]

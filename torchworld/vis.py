@@ -248,7 +248,6 @@ def grid_3d_occupancy(
     colors = torch.index_select(
         colors, dim=0, index=(values * (colors.size(0) - 1)).int()
     )
-    # offsets = grid.local_to_world.transform_points(offsets)
     N = offsets.size(0)
 
     vertices = np.array(
@@ -338,9 +337,8 @@ def grid_3d_occupancy(
     group.add(mesh)
     group.add(line)
 
-    T = grid.local_to_world
     group.matrixAutoUpdate = False
-    group.matrix = _transform_to_mat(T)
+    group.matrix = _transform_to_mat(grid.local_to_world)
 
     return group
 

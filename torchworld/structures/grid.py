@@ -117,9 +117,9 @@ class Grid3d(BaseGrid):
             time = torch.tensor(time, dtype=torch.float, device=device)
         return cls(
             data=data,
-            # pyre-fixme[6]: For 2nd argument expected `Transform3d` but got
-            #  `Transform3d`.
-            local_to_world=locator.get_local_to_world_coords_transform(),
+            local_to_world=Transform3d(
+                matrix=locator.get_local_to_world_coords_transform().get_matrix()
+            ),
             time=time,
         )
 
