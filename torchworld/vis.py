@@ -1,8 +1,13 @@
+import base64
+import io
+
 import numpy as np
 import pythreejs
 import torch
 import torch.nn.functional as F
 from matplotlib import cm
+from PIL import Image
+from torchvision.transforms.functional import to_pil_image
 
 from torchworld.structures.cameras import CamerasBase
 from torchworld.structures.grid import Grid3d, GridImage
@@ -27,6 +32,16 @@ def camera(camera: CamerasBase) -> pythreejs.Object3D:
     geo.matrix = tuple(view_to_world.contiguous().view(-1).tolist())
 
     return geo
+
+
+def _pil_to_data_url(img: Image) -> str:
+    """converts the provided PIL Image into a data url that can be shown in a
+    browser"""
+    buffered = io.BytesIO()
+    img.save(buffered, format="JPEG")
+    encoded = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    data_url = "data:image/jpeg;base64," + encoded
+    return data_url
 
 
 def grid_image(image: GridImage) -> pythreejs.Object3D:
@@ -101,15 +116,12 @@ def grid_image(image: GridImage) -> pythreejs.Object3D:
         },
     )
 
+    # convert to compressed jpg image
     data = image.data[0]
     data = normalize_img_cuda(data)
-    data = data.permute(1, 2, 0)
-
-    texture = pythreejs.DataTexture(
-        data=data.float().numpy(),
-        format="RGBFormat",
-        type="FloatType",
-    )
+    data = (data.float() * 255).byte()
+    pil_image = to_pil_image(data)
+    texture = pythreejs.ImageTexture(_pil_to_data_url(pil_image))
 
     mat = pythreejs.MeshBasicMaterial(
         map=texture,
