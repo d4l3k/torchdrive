@@ -8,7 +8,7 @@ from torchworld import vis
 
 from torchworld.structures.cameras import PerspectiveCameras
 from torchworld.structures.grid import Grid3d, GridImage
-from torchworld.structures.lidar import Lidar
+from torchworld.structures.points import Points
 from torchworld.transforms.transform3d import Transform3d
 
 
@@ -43,7 +43,7 @@ class TestVis(unittest.TestCase):
         out = vis.path(positions)
         self.assertIsInstance(out, pythreejs.Group)
 
-    def test_lidar(self) -> None:
-        lidar = Lidar(data=torch.rand(1, 4, 10))
-        out = vis.lidar(lidar)
+    def test_points(self) -> None:
+        points = Points(data=torch.rand(1, 4, 10))
+        out = vis.points(points)
         self.assertIsInstance(out, pythreejs.Points)

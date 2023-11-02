@@ -12,7 +12,7 @@ from torchvision.transforms.functional import to_pil_image
 
 from torchworld.structures.cameras import CamerasBase
 from torchworld.structures.grid import Grid3d, GridImage
-from torchworld.structures.lidar import Lidar
+from torchworld.structures.points import Points
 from torchworld.transforms.img import normalize_img_cuda
 from torchworld.transforms.transform3d import RotateAxisAngle, Transform3d
 
@@ -368,18 +368,19 @@ def path(positions: Transform3d) -> pythreejs.Object3D:
     return group
 
 
-def lidar(data: Lidar) -> pythreejs.Object3D:
-    """lidar returns a object that renders the lidar data.
+def points(points: Points) -> pythreejs.Object3D:
+    """points returns a object that renders the points data. This only uses the
+    first 3 channels of the data [x, y, z].
 
     Arguments
     ---------
-    data: The Lidar data
+    points: Points
     """
-    if data.data.size(0) != 1:
-        raise TypeError("lidar must have batch size 1")
+    if points.data.size(0) != 1:
+        raise TypeError("points must have batch size 1")
 
-    lidar_geo = pythreejs.BufferGeometry(
-        attributes={"position": pythreejs.BufferAttribute(data.data[0, :3].T.numpy())}
+    points_geo = pythreejs.BufferGeometry(
+        attributes={"position": pythreejs.BufferAttribute(points.data[0, :3].T.numpy())}
     )
-    lidar_mat = pythreejs.PointsMaterial(color="white", size=1, sizeAttenuation=False)
-    return pythreejs.Points(lidar_geo, lidar_mat)
+    points_mat = pythreejs.PointsMaterial(color="white", size=1, sizeAttenuation=False)
+    return pythreejs.Points(points_geo, points_mat)
