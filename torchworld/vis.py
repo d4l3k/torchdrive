@@ -1,6 +1,7 @@
 import numpy as np
 import pythreejs
 import torch
+import torch.nn.functional as F
 from matplotlib import cm
 
 from torchworld.structures.cameras import CamerasBase
@@ -175,7 +176,19 @@ def add_grid_3d_occupancy(
     )
     grid_points = torch.stack(channels, dim=-1).unsqueeze(0)
 
+    # filter all boxes
     matching = data[0] >= p
+
+    # hide boxes that are completely surrounded by other boxes
+    visible = (
+        F.conv3d(
+            matching.int(),
+            weight=torch.ones(1, 1, 3, 3, 3, dtype=torch.int, device=matching.device),
+            padding=1,
+        )
+        < 27
+    )
+    matching = torch.logical_and(matching, visible)
 
     offsets = grid_points[matching]
     values = data[0][matching]
@@ -257,16 +270,24 @@ def add_grid_3d_occupancy(
             }
             """,
         vertexColors="VertexColors",
-        transparent=True,
+        transparent=False,
     )
 
     # mat = pythreejs.MeshBasicMaterial()
     mesh = pythreejs.Mesh(instancedGeometry, material)
 
+    edges = pythreejs.EdgesGeometry(pythreejs.BoxGeometry(width=2, height=2, depth=2))
+    line_mat = pythreejs.LineBasicMaterial(color="#a40")
+    line = pythreejs.LineSegments(edges, line_mat)
+
+    group = pythreejs.Group()
+    group.add(mesh)
+    group.add(line)
+
     T = grid.local_to_world
     T = T.get_matrix()
-    mesh.matrixAutoUpdate = False
-    mesh.matrix = tuple(T.contiguous().view(-1).tolist())
+    group.matrixAutoUpdate = False
+    group.matrix = tuple(T.contiguous().view(-1).tolist())
 
-    scene.add([mesh])
-    return mesh
+    scene.add([group])
+    return group

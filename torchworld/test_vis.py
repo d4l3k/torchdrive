@@ -32,4 +32,4 @@ class TestVis(unittest.TestCase):
             voxel_size=1 / 3,
         )
         out = add_grid_3d_occupancy(scene, grid)
-        self.assertIsInstance(out, pythreejs.Mesh)
+        self.assertIsInstance(out, pythreejs.Group)
