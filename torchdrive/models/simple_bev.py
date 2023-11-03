@@ -35,6 +35,7 @@ import torchvision
 from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
 from torchvision import transforms
+from torchvision.models import regnet
 from torchvision.models.resnet import resnet18
 from torchworld.models.resnet_3d import resnet3d18, Upsample3DBlock
 
@@ -227,7 +228,9 @@ class ResnetFPN3d(nn.Module):
             final_channels // 4, in_channels, scale_factor=2
         )
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             x: [BS, in_channels, H, W]
@@ -250,8 +253,11 @@ class ResnetFPN3d(nn.Module):
         # (H/8, W/8)
         x4 = self.layer3(x)
 
+        # x4_skip is used for logging grad_norm stats
+        x4_skip = x4.view_as(x4)
+
         # First upsample to (H/4, W/4)
-        x = self.up3_skip(x4, skip_x["3"])
+        x = self.up3_skip(x4_skip, skip_x["3"])
 
         # Second upsample to (H/2, W/2)
         x = self.up2_skip(x, skip_x["2"])
@@ -259,7 +265,7 @@ class ResnetFPN3d(nn.Module):
         # Third upsample to (H, W)
         x = self.up1_skip(x, skip_x["1"])
 
-        return x, x4
+        return x, x4, x4_skip
 
 
 # extends FPN to preserve state_dict keys
@@ -902,7 +908,6 @@ class Segnet3DBackbone(BEVBackbone):
     ) -> None:
         super().__init__()
 
-        assert dim == 256, "dim must equal intermediate"
         self.dim = dim
         self.grid_shape = grid_shape
         self.num_frames = num_frames
@@ -923,14 +928,29 @@ class Segnet3DBackbone(BEVBackbone):
         per_voxel_dim = max(hr_dim // (Z * 2), 1)
         assert num_upsamples == 1, "only one upsample supported"
         self.upsample: nn.Module = compile_fn(Upsample3DBlock(cam_dim, per_voxel_dim))
-        self.coarse_project = nn.Conv2d(dim // HR_Z * HR_Z, dim, 1)
+        self.coarse_project: nn.Module = compile_fn(
+            nn.Sequential(
+                nn.Conv2d(dim // HR_Z * HR_Z, dim, 1),
+                regnet.AnyStage(
+                    dim,
+                    dim,
+                    stride=1,
+                    depth=4,
+                    block_constructor=regnet.ResBottleneckBlock,
+                    norm_layer=nn.BatchNorm2d,
+                    activation_layer=nn.ReLU,
+                    group_width=dim,  # regnet_x_3_2gf
+                    bottleneck_multiplier=1.0,
+                ),
+            )
+        )
 
         # pyre-fixme[6]: invalid parameter type
         self.lift_cam_to_voxel_mean: nn.Module = compile_fn(lift_cam_to_voxel_mean)
 
     def forward(
         self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         BS = batch.batch_size()
         S = len(camera_features) * self.num_frames
         device = batch.device()
@@ -972,12 +992,13 @@ class Segnet3DBackbone(BEVBackbone):
         with autocast():
             # run through FPN
             x = feat_mem
-            x, x4 = self.fpn(x)
+            x, x4, x4_skip = self.fpn(x)
             assert x.shape == feat_mem.shape
 
             x = self.upsample(x)
 
+            x4_coarse = x4.view_as(x4)
             x4 = x4.flatten(1, 2)
             x4 = self.coarse_project(x4)
 
-            return x, x4
+            return x, x4, {"coarse": x4_coarse, "skip": x4_skip}

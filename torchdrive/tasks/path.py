@@ -19,7 +19,7 @@ class PathTask(BEVTask):
         bev_dim: int,
         dim: int = 768,
         num_heads: int = 16,
-        num_layers: int = 12,
+        num_layers: int = 6,
         max_seq_len: int = 6 * 2,
         num_ar_iters: int = 6,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
@@ -84,8 +84,8 @@ class PathTask(BEVTask):
         assert posmax < 1000
 
         # target = positions[..., 1:]
-        prev = positions
-        target = positions
+        prev = positions[..., :-1]
+        target = positions[..., 1:]
 
         all_predicted = []
         losses = {}
@@ -102,7 +102,7 @@ class PathTask(BEVTask):
             per_token_loss = F.huber_loss(
                 predicted, target, reduction="none", delta=20.0
             )
-            per_token_loss *= mask.unsqueeze(1).expand(-1, 3, -1)
+            per_token_loss *= mask[..., 1:].unsqueeze(1).expand(-1, 3, -1)
 
             # normalize by number of elements in sequence
             losses[f"position/{i}"] = (
@@ -114,12 +114,11 @@ class PathTask(BEVTask):
             rel_dist_loss = F.huber_loss(
                 pred_dists, target_dists, reduction="none", delta=20.0
             )
-            rel_dist_loss *= mask
+            rel_dist_loss *= mask[..., 1:]
             losses[f"rel_dists/{i}"] = rel_dist_loss.sum(dim=1) / (num_elements + 1)
 
-            # keep first values the same and shift predicted over by 1
-            prev = predicted
-            # prev = torch.cat((prev[..., :1], predicted[..., :-1]), dim=-1)
+            # keep first value the same and shift predicted over by 1
+            prev = torch.cat((prev[..., :1], predicted[..., :-1]), dim=-1)
 
         if ctx.log_text:
             ctx.add_scalar("ae/mae", self.ae_mae.compute())

@@ -199,7 +199,7 @@ class DetBEVTransformerDecoder(nn.Module):
         self,
         bev_shape: Tuple[int, int],
         dim: int,
-        num_queries: int = 100,
+        num_queries: int,
         num_heads: int = 8,
         num_classes: int = 10,
         num_layers: int = 6,

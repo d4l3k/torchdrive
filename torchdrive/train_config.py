@@ -48,6 +48,9 @@ class TrainConfig:
     voxelsem: List[str]
     path: bool
 
+    # det config
+    det_num_queries: int = 1000
+
     start_offsets: Tuple[int, ...] = (0,)
 
     def create_dataset(self, smoke: bool = False) -> Dataset:
@@ -208,6 +211,7 @@ class TrainConfig:
                 dim=self.dim,
                 device=device,
                 compile_fn=compile_fn,
+                num_queries=self.det_num_queries,
             )
         if self.ae:
             from torchdrive.tasks.ae import AETask

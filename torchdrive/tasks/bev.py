@@ -10,7 +10,12 @@ from torch.utils.tensorboard import SummaryWriter
 from torchworld.transforms.img import render_color
 
 from torchdrive.amp import autocast
-from torchdrive.autograd import autograd_pause, autograd_resume, log_grad_norm
+from torchdrive.autograd import (
+    autograd_pause,
+    autograd_resume,
+    log_grad_norm,
+    register_log_grad_norm,
+)
 from torchdrive.data import Batch
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.context import Context
@@ -183,7 +188,20 @@ class BEVTaskVan(torch.nn.Module):
             ), f"{len(cam_feats)} {self.num_encode_frames}"
 
         with torch.autograd.profiler.record_function("backbone"):
-            hr_bev, bev = self.backbone(camera_feats, batch)
+            backbone_out = self.backbone(camera_feats, batch)
+
+        hr_bev, bev = backbone_out[:2]
+        if len(backbone_out) >= 3:
+            x4_intermediates = backbone_out[2]
+
+            for tag, x in x4_intermediates:
+                register_log_grad_norm(
+                    t=x,
+                    writer=writer,
+                    key="grad/norm/backbone-x4",
+                    tag=tag,
+                    global_step=global_step,
+                )
 
         if log_img and writer:
             writer.add_image(

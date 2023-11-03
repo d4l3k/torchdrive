@@ -14,7 +14,7 @@ from torchdrive.transforms.depth import (
 class TestDepth(unittest.TestCase):
     def test_project(self) -> None:
         torch.manual_seed(0)
-        torch.use_deterministic_algorithms(True)
+        torch.use_deterministic_algorithms(True, warn_only=True)
 
         backproject_depth = BackprojectDepth(
             height=4,

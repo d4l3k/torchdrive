@@ -170,7 +170,7 @@ class UpsamplePEBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.upsample(x.float())  # upsample doesn't support bfloat16
+        x = self.upsample(x)
         return self.decode(x)
 
 

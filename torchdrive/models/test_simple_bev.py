@@ -1,6 +1,7 @@
 import unittest
 
 import torch
+from parameterized import parameterized
 from torchvision import models
 
 from torchdrive.data import dummy_batch
@@ -69,9 +70,10 @@ class TestSimpleBEV(unittest.TestCase):
 
     def test_resnet_fpn_3d(self) -> None:
         m = ResnetFPN3d(3, 16)
-        x, x4 = m(torch.rand(2, 3, 8, 16, 24))
+        x, x4, x4_skip = m(torch.rand(2, 3, 8, 16, 24))
         self.assertEqual(x.shape, (2, 3, 8, 16, 24))
         self.assertEqual(x4.shape, (2, 16, 1, 2, 3))
+        self.assertEqual(x4_skip.shape, (2, 16, 1, 2, 3))
 
     def test_segnet_backbone(self) -> None:
         batch = dummy_batch()
@@ -143,14 +145,16 @@ class TestSimpleBEV(unittest.TestCase):
         )
         self.assertEqual(out.shape, (2, 4, 10, 12, 14))
 
-    def test_segnet_3d_backbone(self) -> None:
+    # pyre-ignore[16]
+    @parameterized.expand([(128,), (256,)])
+    def test_segnet_3d_backbone(self, latent_dim: int) -> None:
         batch = dummy_batch()
         X = 8
         Y = 16
         Z = 24
+        HR_Z = Z // 8
         cam_dim = 6
         hr_dim = 5
-        latent_dim = 256
         num_frames = 2
         m = Segnet3DBackbone(
             grid_shape=(X, Y, Z),
@@ -168,9 +172,15 @@ class TestSimpleBEV(unittest.TestCase):
         for feats in camera_features.values():
             for feat in feats:
                 feat.requires_grad = True
-        x, x4 = m(camera_features, batch)
+        x, x4, x4_intermediates = m(camera_features, batch)
         self.assertEqual(x.shape, (batch.batch_size(), 1, Z * 2, X * 2, Y * 2))
         self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X // 8, Y // 8))
+        for inter in x4_intermediates.values():
+            self.assertEqual(
+                inter.shape,
+                (batch.batch_size(), latent_dim // HR_Z, Z // 8, X // 8, Y // 8),
+            )
+
         (x.mean() + x4.mean()).backward()
 
         for feats in camera_features.values():

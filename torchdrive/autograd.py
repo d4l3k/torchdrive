@@ -90,6 +90,25 @@ def autograd_optional(tensor: T) -> Generator[T, None, None]:
         yield tensor
 
 
+def register_log_grad_norm(
+    t: torch.Tensor,
+    writer: Optional[SummaryWriter],
+    key: str,
+    tag: str,
+    global_step: int,
+) -> None:
+    if writer is None:
+        return
+    nonopt_writer: SummaryWriter = writer
+
+    def backward_hook(grad: torch.Tensor) -> None:
+        nonopt_writer.add_scalars(
+            key, {tag: torch.linalg.vector_norm(grad).float()}, global_step=global_step
+        )
+
+    t.register_hook(backward_hook)
+
+
 def log_grad_norm(
     t: torch.Tensor,
     writer: Optional[SummaryWriter],
@@ -103,14 +122,10 @@ def log_grad_norm(
     """
     if writer is None:
         return t
-    nonopt_writer: SummaryWriter = writer
     # soft clone without copying data
     t = t.view_as(t)
 
-    def backward_hook(grad: torch.Tensor) -> None:
-        nonopt_writer.add_scalars(
-            key, {tag: torch.linalg.vector_norm(grad).float()}, global_step=global_step
-        )
-
-    t.register_hook(backward_hook)
+    register_log_grad_norm(
+        t=t, writer=writer, key=key, tag=tag, global_step=global_step
+    )
     return t

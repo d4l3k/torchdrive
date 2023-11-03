@@ -17,6 +17,7 @@ class TestDet(unittest.TestCase):
             bev_shape=(4, 4),
             dim=8,
             device=torch.device("cpu"),
+            num_queries=10,
         )
         batch = dummy_batch()
         ctx = Context(

@@ -47,6 +47,7 @@ class DetTask(BEVTask):
         bev_shape: Tuple[int, int],
         dim: int,
         device: torch.device,
+        num_queries: int,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
@@ -55,6 +56,7 @@ class DetTask(BEVTask):
         self.cameras = cameras
 
         decoder = DetBEVTransformerDecoder(
+            num_queries=num_queries,
             bev_shape=bev_shape,
             dim=dim,
         )
@@ -105,7 +107,6 @@ class DetTask(BEVTask):
                 )
 
         num_queries = classes_logits.shape[1]
-        assert num_queries == 100
 
         if ctx.log_text:
             ctx.add_scalars(
