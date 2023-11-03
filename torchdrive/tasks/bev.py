@@ -191,7 +191,7 @@ class BEVTaskVan(torch.nn.Module):
             backbone_out = self.backbone(camera_feats, batch)
 
         hr_bev, bev = backbone_out[:2]
-        if len(backbone_out) >= 3:
+        if log_text and writer and len(backbone_out) >= 3:
             x4_intermediates = backbone_out[2]
 
             for tag, x in x4_intermediates.items():

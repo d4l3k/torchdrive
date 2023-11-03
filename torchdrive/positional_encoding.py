@@ -44,18 +44,26 @@ def sin_cos_enc(
 
     Returns: (seq_len, dim)
     """
-    pos = (
-        torch.arange(0, seq_len, device=device, dtype=dtype).unsqueeze(1).repeat(1, dim)
-    )
-    dim_arr = (
-        torch.arange(0, dim, device=device, dtype=dtype).unsqueeze(0).repeat(seq_len, 1)
-    )
-    # pyre-fixme[6]: expected Tensor but got float
-    div = torch.exp(-math.log(10000) * (2 * (dim_arr // 2) / dim))
-    pos = pos * div
-    pos[:, 0::2] = torch.sin(pos[:, 0::2])
-    pos[:, 1::2] = torch.cos(pos[:, 1::2])
-    return pos
+
+    if dim % 2 != 0:
+        raise ValueError(f"dim must be a multiple of 2, got {dim}")
+
+    position = torch.arange(seq_len, dtype=dtype, device=device).unsqueeze(1)
+    div_term = torch.exp(torch.arange(0, dim, 2, dtype=dtype, device=device) * (-math.log(10000.0) / dim))
+    pe = torch.zeros(seq_len, dim, dtype=dtype, device=device)
+    pe[:, 0::2] = torch.sin(position * div_term)
+    pe[:, 1::2] = torch.cos(position * div_term)
+    return pe
+
+def apply_sin_cos_enc1d(x: torch.Tensor) -> torch.Tensor:
+    """
+    Applies a 2d sin/cos position encoding to the tensor.
+
+    Input: (bs, seq_len, dim)
+    Returns: (bs, seq_len, dim)
+    """
+    bs, seq_len, dim = x.shape
+    return x + sin_cos_enc(seq_len, dim=dim, device=x.device, dtype=x.dtype)
 
 
 def sin_cos_enc2d(

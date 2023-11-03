@@ -8,7 +8,7 @@ from torch import nn
 from torchdrive.amp import autocast
 from torchdrive.models.mlp import MLP
 from torchdrive.models.transformer import StockTransformerDecoder, transformer_init
-from torchdrive.positional_encoding import apply_sin_cos_enc2d
+from torchdrive.positional_encoding import apply_sin_cos_enc2d, apply_sin_cos_enc1d
 
 MAX_POS = 100  # meters from origin
 
@@ -96,6 +96,7 @@ class PathTransformer(nn.Module):
         dtype = bev.dtype
 
         position_emb = self.pos_encoder(positions.permute(0, 2, 1))
+        positon_emb = apply_sin_cos_enc1d(position_emb)
         ae_pos = self.pos_decoder(position_emb).permute(0, 2, 1)
 
         num_pos = positions.size(2)

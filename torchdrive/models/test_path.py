@@ -7,7 +7,7 @@ from torchdrive.models.path import PathTransformer, pos_to_bucket, rel_dists
 
 class PathTest(unittest.TestCase):
     def test_path_transformer(self) -> None:
-        bev_dim = 6
+        bev_dim = 8
         dim = 8
         num_points = 7
         m = PathTransformer(
@@ -25,7 +25,7 @@ class PathTest(unittest.TestCase):
         self.assertEqual(ae_prev.shape, (2, 3, num_points))
 
     def test_path_transformer_infer(self) -> None:
-        bev_dim = 6
+        bev_dim = 8
         dim = 8
         m = PathTransformer(
             bev_shape=(4, 4),
