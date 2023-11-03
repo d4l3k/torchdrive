@@ -96,7 +96,7 @@ class VoxelTask(BEVTask):
         scale: int = 3,
         z_offset: float = 0.5,
         semantic: Optional[List[str]] = None,
-        render_batch_size: int = 5,
+        render_batch_size: int = 1000,
         n_pts_per_ray: int = 216,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
         start_offsets: Tuple[int, ...] = (0,),
@@ -239,13 +239,11 @@ class VoxelTask(BEVTask):
 
         with autocast():
             embedding = self.decoder(bev)  # .unflatten(1, (self.num_elem, self.height))
-        # convert back to float so sigmoid works
-        embedding = embedding.float()
 
         # log grad norms on full embedding to make norms comparable
-        grid = ctx.log_grad_norm(embedding, "grad/norm/grid_embedding", "grid")[
-            :, :1
-        ].sigmoid()
+        grid = ctx.log_grad_norm(embedding, "grad/norm/grid_embedding", "grid")[:, :1]
+        # convert back to float so sigmoid works
+        grid = grid.float().sigmoid()
         feat_grid = ctx.log_grad_norm(
             embedding, "grad/norm/grid_embedding", "feat_grid"
         )[:, 1:]
@@ -457,7 +455,7 @@ class VoxelTask(BEVTask):
         for cam in self.cameras:
             primary_color = batch.color[cam][:, frame]
             primary_color = F.interpolate(
-                primary_color.float(),
+                primary_color,
                 [h // 2, w // 2],
                 mode="bilinear",
                 align_corners=False,
@@ -465,7 +463,7 @@ class VoxelTask(BEVTask):
             primary_colors[cam] = primary_color
             primary_mask = batch.mask[cam]
             primary_mask = F.interpolate(
-                primary_mask.float(),
+                primary_mask,
                 [h // 2, w // 2],
                 mode="bilinear",
                 align_corners=False,
@@ -484,7 +482,7 @@ class VoxelTask(BEVTask):
                     # pyre-fixme[16]: `Optional` has no attribute `__getitem__`.
                     semantic_target = batch.sem_seg[cam][:, frame]
                     semantic_target = F.interpolate(
-                        semantic_target.float(),
+                        semantic_target,
                         [h // 2, w // 2],
                         mode="bilinear",
                         align_corners=False,
@@ -539,9 +537,11 @@ class VoxelTask(BEVTask):
             for cam in self.cameras:
                 dynamic_masks[cam] = torch.zeros(BS, 1, h // 2, w // 2, device=device)
 
+        dtype = torch.bfloat16 if grid.is_cuda else torch.float32
+
         volumes = Volumes(
-            densities=grid.permute(0, 1, 4, 2, 3),
-            features=feat_grid.permute(0, 1, 4, 2, 3).float()
+            densities=grid.permute(0, 1, 4, 2, 3).to(dtype),
+            features=feat_grid.permute(0, 1, 4, 2, 3).to(dtype)
             if feat_grid is not None
             else None,
             voxel_size=1 / self.scale,
@@ -638,7 +638,7 @@ class VoxelTask(BEVTask):
                         semantic_img, "grad/semantic_img", "semantic_vel"
                     )[:, self.classes_elem :]
                     semantic_vel = F.interpolate(
-                        semantic_vel.float(),
+                        semantic_vel,
                         [h // 2, w // 2],
                         mode="bilinear",
                         align_corners=False,
@@ -647,7 +647,7 @@ class VoxelTask(BEVTask):
                         semantic_img, "grad/semantic_img", "semantic_classes"
                     )[:, : self.classes_elem].sigmoid()
                     semantic_classes = F.interpolate(
-                        semantic_classes.float(),
+                        semantic_classes,
                         [h // 2, w // 2],
                         mode="bilinear",
                         align_corners=False,
@@ -768,14 +768,14 @@ class VoxelTask(BEVTask):
                     cam_disp, cam_vel, cam_sem = self.depth_decoder(ctx.cam_feats[cam])
 
                 cam_vel = F.interpolate(
-                    cam_vel.float(),
+                    cam_vel,
                     [h // 2, w // 2],
                     mode="bilinear",
                     align_corners=False,
                 )
                 if self.semantic:
                     cam_sem = F.interpolate(
-                        cam_sem.float(),
+                        cam_sem,
                         [h // 2, w // 2],
                         mode="bilinear",
                         align_corners=False,
@@ -876,13 +876,13 @@ class VoxelTask(BEVTask):
         multiple times.
         """
         depth = F.interpolate(
-            depth.float().unsqueeze(1),
+            depth.unsqueeze(1),
             [h // 2, w // 2],
             mode="bilinear",
             align_corners=False,
         )
         disp = F.interpolate(
-            disp.float().unsqueeze(1),
+            disp.unsqueeze(1),
             [h // 2, w // 2],
             mode="bilinear",
             align_corners=False,
@@ -938,7 +938,7 @@ class VoxelTask(BEVTask):
 
             src_color = batch.color[cam][:, src_frame]
             src_color = F.interpolate(
-                src_color.float(),
+                src_color,
                 [h // 2, w // 2],
                 mode="bilinear",
                 align_corners=False,
@@ -1023,10 +1023,10 @@ class VoxelTask(BEVTask):
         """
         frame = ctx.start_frame
         primary_mask = cam_masks[primary_cam]
-        primary_features = cam_features[primary_cam].float()
+        primary_features = cam_features[primary_cam]
 
         primary_depth = F.interpolate(
-            primary_depth.float().unsqueeze(1),
+            primary_depth.unsqueeze(1),
             [h // 2, w // 2],
             mode="bilinear",
             align_corners=False,
@@ -1036,7 +1036,7 @@ class VoxelTask(BEVTask):
             target_cam_to_world = batch.cam_to_world(primary_cam, frame)
             world_to_src_cam = batch.world_to_cam(src_cam, frame)
             src_mask = cam_masks[src_cam]
-            src_features = cam_features[src_cam].float()
+            src_features = cam_features[src_cam]
 
             proj_features, proj_mask = self._project(
                 batch=batch,
@@ -1104,8 +1104,8 @@ class VoxelTask(BEVTask):
         )
 
         sem_loss = self.projection_loss(
-            semantic_classes.float(),
-            semantic_target.float(),
+            semantic_classes,
+            semantic_target,
             scales=3,
             mask=mask,
         )
@@ -1185,14 +1185,14 @@ class VoxelTask(BEVTask):
 
         color = F.grid_sample(
             src_color,
-            pix_coords,
+            pix_coords.to(src_color.dtype),
             mode="bilinear",
             padding_mode="border",
             align_corners=False,
         )
         mask = F.grid_sample(
             src_mask,
-            pix_coords,
+            pix_coords.to(src_mask.dtype),
             mode="nearest",
             padding_mode="zeros",
             align_corners=False,

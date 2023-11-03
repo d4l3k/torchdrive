@@ -141,7 +141,7 @@ class VolumeSampler(torch.nn.Module):
         # run the grid sampler on the volumes densities
         rays_densities = torch.nn.functional.grid_sample(
             volumes_densities,
-            rays_points_local_flat,
+            rays_points_local_flat.to(volumes_densities.dtype),
             align_corners=True,
             mode=self._sample_mode,
             padding_mode=self._padding_mode,
@@ -159,7 +159,7 @@ class VolumeSampler(torch.nn.Module):
         else:
             rays_features = torch.nn.functional.grid_sample(
                 volumes_features,
-                rays_points_local_flat,
+                rays_points_local_flat.to(volumes_features.dtype),
                 align_corners=True,
                 mode=self._sample_mode,
                 padding_mode=self._padding_mode,

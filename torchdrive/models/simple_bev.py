@@ -998,7 +998,7 @@ class Segnet3DBackbone(BEVBackbone):
             x = self.upsample(x)
 
             x4_coarse = x4.view_as(x4)
-            x4 = x4.flatten(1, 2)
+            x4 = x4_coarse.flatten(1, 2)
             x4 = self.coarse_project(x4)
 
             return x, x4, {"coarse": x4_coarse, "skip": x4_skip}

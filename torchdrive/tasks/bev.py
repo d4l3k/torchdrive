@@ -194,7 +194,7 @@ class BEVTaskVan(torch.nn.Module):
         if len(backbone_out) >= 3:
             x4_intermediates = backbone_out[2]
 
-            for tag, x in x4_intermediates:
+            for tag, x in x4_intermediates.items():
                 register_log_grad_norm(
                     t=x,
                     writer=writer,
