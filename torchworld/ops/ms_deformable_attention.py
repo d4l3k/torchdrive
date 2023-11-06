@@ -54,9 +54,9 @@ def ms_deformable_attention(
 # ------------------------------------------------------------------------------------------------
 class _ms_deformable_attention_cuda(Function):
     @staticmethod
-    # pyre-fixme[2]: Any
     # pyre-fixme[14]: overriden signature
     def forward(
+        # pyre-fixme[2]: Any
         ctx: Any,
         value: torch.Tensor,
         spatial_shapes: torch.Tensor,
@@ -85,9 +85,10 @@ class _ms_deformable_attention_cuda(Function):
 
     @staticmethod
     @once_differentiable
-    # pyre-fixme[2]: Any
     def backward(
-        ctx: Any, grad_output: torch.Tensor
+        # pyre-fixme[2]: Any
+        ctx: Any,
+        grad_output: torch.Tensor,
     ) -> Tuple[Optional[torch.Tensor], ...]:
         (
             value,
