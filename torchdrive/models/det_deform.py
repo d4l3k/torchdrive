@@ -75,7 +75,6 @@ class DetDeformableTransformerDecoder(nn.Module):
         reference_points = self.reference_points_project(self.query_embed.weight)
         reference_points = reference_points.sigmoid()
         reference_points = reference_points.expand(BS, -1, -1)
-        print(reference_points.shape)
 
         out, _ = self.decoder(
             tgt=target,

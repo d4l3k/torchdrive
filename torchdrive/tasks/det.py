@@ -82,6 +82,7 @@ class DetTask(BEVTask):
     ) -> Dict[str, torch.Tensor]:
         BS = len(batch.distances)
         device = grids[0].device
+        grids = [grid.float() for grid in grids]
         num_frames = batch.distances.shape[1]
 
         with torch.autograd.profiler.record_function("decoding"):

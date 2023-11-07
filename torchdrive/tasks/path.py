@@ -46,7 +46,7 @@ class PathTask(BEVTask):
         batch: Batch,
         grids: List[torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
-        bev = grids[-1]
+        bev = grids[-1].float()
 
         BS = len(batch.distances)
         device = bev.device

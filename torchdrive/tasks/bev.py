@@ -216,7 +216,7 @@ class BEVTaskVan(torch.nn.Module):
             )
 
         hr_bev = autograd_pause(hr_bev)
-        bev_feats = autograd_pause(*bev_feats)
+        bev_feats = [autograd_pause(feat) for feat in bev_feats]
         if isinstance(bev_feats, torch.Tensor):
             bev_feats = [bev_feats]
 
@@ -255,7 +255,6 @@ class BEVTaskVan(torch.nn.Module):
                             )
                             for i, grid in enumerate(per_task_bev)
                         ]
-                    print("running", task_type, name)
                     task_losses = task(ctx, batch, per_task_bev)
                     ctx.backward(task_losses)
 
@@ -280,7 +279,10 @@ class BEVTaskVan(torch.nn.Module):
         # resume grad
         to_resume = []
         if len(self.tasks) > 0:
-            to_resume += bev_feats
+            for feat in bev_feats:
+                if feat.grad is not None:
+                    to_resume.append(feat)
+            assert len(to_resume) > 0
         if len(self.hr_tasks) > 0:
             to_resume.append(hr_bev)
 

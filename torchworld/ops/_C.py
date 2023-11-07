@@ -10,10 +10,12 @@ CPP_SRCS: List[str] = [
     "csrc/ms_deform_attn/vision.cpp",
     "csrc/ms_deform_attn/cpu/ms_deform_attn_cpu.cpp",
 ]
+EXTRA_CFLAGS: List[str] = []
 if torch.cuda.is_available():
     CPP_SRCS += [
         "csrc/ms_deform_attn/cuda/ms_deform_attn_cuda.cu",
     ]
+    EXTRA_CFLAGS += ["-DWITH_CUDA"]
 INCLUDE_PATHS: List[str] = ["csrc/ms_deform_attn"]
 
 
@@ -25,5 +27,6 @@ torchworld_cpp: object = load(
     name="torchworld_cpp",
     sources=_add_dir(CPP_SRCS),
     extra_include_paths=_add_dir(INCLUDE_PATHS),
+    extra_cflags=EXTRA_CFLAGS,
     verbose=True,
 )
