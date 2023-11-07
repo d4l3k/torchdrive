@@ -70,10 +70,12 @@ class TestSimpleBEV(unittest.TestCase):
 
     def test_resnet_fpn_3d(self) -> None:
         m = ResnetFPN3d(3, 16)
-        x, x4, x4_skip = m(torch.rand(2, 3, 8, 16, 24))
-        self.assertEqual(x.shape, (2, 3, 8, 16, 24))
+        (x1, x2, x3, x4), grad_norms = m(torch.rand(2, 3, 8, 16, 24))
+        self.assertEqual(x1.shape, (2, 3, 8, 16, 24))
+        self.assertEqual(x2.shape, (2, 4, 4, 8, 12))
+        self.assertEqual(x3.shape, (2, 8, 2, 4, 6))
         self.assertEqual(x4.shape, (2, 16, 1, 2, 3))
-        self.assertEqual(x4_skip.shape, (2, 16, 1, 2, 3))
+        self.assertEqual(len(grad_norms), 7)
 
     def test_segnet_backbone(self) -> None:
         batch = dummy_batch()
@@ -100,7 +102,8 @@ class TestSimpleBEV(unittest.TestCase):
         for feats in camera_features.values():
             for feat in feats:
                 feat.requires_grad = True
-        x, x4 = m(camera_features, batch)
+        x, bev_feats, _ = m(camera_features, batch)
+        x4 = bev_feats[-1]
         self.assertEqual(x.shape, (batch.batch_size(), 1, Z * 2, X * 2, Y * 2))
         self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X // 8, Y // 8))
         (x.mean() + x4.mean()).backward()
@@ -172,16 +175,13 @@ class TestSimpleBEV(unittest.TestCase):
         for feats in camera_features.values():
             for feat in feats:
                 feat.requires_grad = True
-        x, x4, x4_intermediates = m(camera_features, batch)
-        self.assertEqual(x.shape, (batch.batch_size(), 1, Z * 2, X * 2, Y * 2))
+        x0, (x1, x2, x3, x4), grad_norms = m(camera_features, batch)
+        self.assertEqual(x0.shape, (batch.batch_size(), 1, Z * 2, X * 2, Y * 2))
         self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X // 8, Y // 8))
-        for inter in x4_intermediates.values():
-            self.assertEqual(
-                inter.shape,
-                (batch.batch_size(), latent_dim // HR_Z, Z // 8, X // 8, Y // 8),
-            )
 
-        (x.mean() + x4.mean()).backward()
+        self.assertEqual(len(grad_norms), 7)
+
+        (x0.mean() + x4.mean()).backward()
 
         for feats in camera_features.values():
             for feat in feats:

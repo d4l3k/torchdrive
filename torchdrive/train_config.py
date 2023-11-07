@@ -210,7 +210,7 @@ class TrainConfig:
                 bev_shape=bev_shape,
                 dim=self.dim,
                 device=device,
-                compile_fn=compile_fn,
+                # compile_fn=compile_fn,
                 num_queries=self.det_num_queries,
             )
         if self.ae:

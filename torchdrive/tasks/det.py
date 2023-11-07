@@ -8,11 +8,10 @@ from torch import nn
 from torchvision.utils import draw_bounding_boxes
 from torchworld.transforms.img import normalize_img
 
-from torchdrive.amp import autocast
 from torchdrive.data import Batch
 from torchdrive.losses import generalized_box_iou
 from torchdrive.matcher import HungarianMatcher
-from torchdrive.models.det import DetBEVTransformerDecoder
+from torchdrive.models.det_deform import DetDeformableTransformerDecoder
 from torchdrive.tasks.bev import BEVTask, Context
 from torchdrive.transforms.bboxes import (
     bboxes3d_to_points,
@@ -55,9 +54,8 @@ class DetTask(BEVTask):
         self.cam_shape = cam_shape
         self.cameras = cameras
 
-        decoder = DetBEVTransformerDecoder(
+        decoder = DetDeformableTransformerDecoder(
             num_queries=num_queries,
-            bev_shape=bev_shape,
             dim=dim,
         )
         self.num_classes: int = decoder.num_classes
@@ -80,18 +78,17 @@ class DetTask(BEVTask):
         self.points_to_bboxes2d = compile_fn(points_to_bboxes2d)
 
     def forward(
-        self, ctx: Context, batch: Batch, bev: torch.Tensor
+        self, ctx: Context, batch: Batch, grids: List[torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
         BS = len(batch.distances)
-        device = bev.device
+        device = grids[0].device
         num_frames = batch.distances.shape[1]
 
         with torch.autograd.profiler.record_function("decoding"):
-            classes_logits, bboxes3d = self.decoder(bev)
+            classes_logits, bboxes3d = self.decoder(grids)
             classes_softmax = F.softmax(classes_logits.float(), dim=-1)
 
-            with autocast():
-                xyz, vel, sizes = self.decode_bboxes3d(bboxes3d)
+            xyz, vel, sizes = self.decode_bboxes3d(bboxes3d.float())
 
         if ctx.log_img:
             json_path = os.path.join(ctx.output, f"det_{ctx.global_step}.json")
@@ -338,10 +335,10 @@ class DetTask(BEVTask):
 
         if len(unmatched_classes) > 0:
             losses["unmatched"] = (
-                F.cross_entropy(unmatched_classes, target_classes) * 10
+                F.cross_entropy(unmatched_classes, target_classes) * 40
             )
 
-        losses = {k: v * 100 for k, v in losses.items()}
+        losses = {k: v * 20 * 5 for k, v in losses.items()}
 
         return losses
 

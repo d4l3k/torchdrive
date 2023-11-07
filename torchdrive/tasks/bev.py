@@ -31,7 +31,7 @@ def _get_orig_mod(m: nn.Module) -> nn.Module:
 class BEVTask(torch.nn.Module, ABC):
     @abstractmethod
     def forward(
-        self, ctx: Context, batch: Batch, bev: torch.Tensor
+        self, ctx: Context, batch: Batch, grids: List[torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
         raise NotImplementedError("must implement Task forward")
 
@@ -82,12 +82,14 @@ class BEVTaskVan(torch.nn.Module):
             assert hr_dim is not None, "must specify hr_dim for hr_tasks"
 
     def should_log(self, global_step: int, BS: int) -> Tuple[bool, bool]:
-        log_interval = 1000 // BS
-        should_log = (global_step % log_interval) == 0
-        log_text_interval = log_interval // 10
+        log_text_interval = 1000 // (BS * 10)
+        # It's important to scale the less frequent interval off the more
+        # frequent one to avoid divisor issues.
+        log_img_interval = log_text_interval * 10
+        log_img = (global_step % log_img_interval) == 0
         log_text = (global_step % log_text_interval) == 0
 
-        return should_log, log_text
+        return log_img, log_text
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
         per_cam_params = list(self.camera_encoders.parameters())
@@ -188,13 +190,10 @@ class BEVTaskVan(torch.nn.Module):
             ), f"{len(cam_feats)} {self.num_encode_frames}"
 
         with torch.autograd.profiler.record_function("backbone"):
-            backbone_out = self.backbone(camera_feats, batch)
+            hr_bev, bev_feats, bev_intermediates = self.backbone(camera_feats, batch)
 
-        hr_bev, bev = backbone_out[:2]
-        if log_text and writer and len(backbone_out) >= 3:
-            x4_intermediates = backbone_out[2]
-
-            for tag, x in x4_intermediates.items():
+        if log_text and writer:
+            for tag, x in bev_intermediates.items():
                 register_log_grad_norm(
                     t=x,
                     writer=writer,
@@ -204,9 +203,12 @@ class BEVTaskVan(torch.nn.Module):
                 )
 
         if log_img and writer:
-            writer.add_image(
-                "bev/bev", render_color(bev[0].sum(dim=0)), global_step=global_step
-            )
+            for i, bev in enumerate(bev_feats):
+                writer.add_image(
+                    f"bev/bev{i}",
+                    render_color(bev[0].sum(dim=0)),
+                    global_step=global_step,
+                )
             writer.add_image(
                 "bev/hr_bev",
                 render_color(hr_bev[0].sum(dim=(0, 1))),
@@ -214,7 +216,9 @@ class BEVTaskVan(torch.nn.Module):
             )
 
         hr_bev = autograd_pause(hr_bev)
-        bev = autograd_pause(bev)
+        bev_feats = autograd_pause(*bev_feats)
+        if isinstance(bev_feats, torch.Tensor):
+            bev_feats = [bev_feats]
 
         losses: Dict[str, torch.Tensor] = {}
         task_times: Dict[str, float] = {}
@@ -232,7 +236,7 @@ class BEVTaskVan(torch.nn.Module):
         )
 
         def _run_tasks(
-            task_type: str, tasks: nn.ModuleDict, task_bev: torch.Tensor
+            task_type: str, tasks: nn.ModuleDict, task_bev: List[torch.Tensor]
         ) -> None:
             for name, task in tasks.items():
                 with torch.autograd.profiler.record_function(name):
@@ -241,13 +245,17 @@ class BEVTaskVan(torch.nn.Module):
                     task_start = time.time()
                     per_task_bev = task_bev
                     if log_text:
-                        per_task_bev = log_grad_norm(
-                            per_task_bev,
-                            writer,
-                            f"grad/norm/{task_type}",
-                            name,
-                            global_step,
-                        )
+                        per_task_bev = [
+                            log_grad_norm(
+                                grid,
+                                writer,
+                                f"grad/norm/{task_type}/{i}",
+                                name,
+                                global_step,
+                            )
+                            for i, grid in enumerate(per_task_bev)
+                        ]
+                    print("running", task_type, name)
                     task_losses = task(ctx, batch, per_task_bev)
                     ctx.backward(task_losses)
 
@@ -257,10 +265,10 @@ class BEVTaskVan(torch.nn.Module):
                     task_times[name] = time.time() - task_start
 
         if len(self.tasks) > 0:
-            _run_tasks("bev", self.tasks, bev)
+            _run_tasks("bev", self.tasks, bev_feats)
 
         if len(self.hr_tasks) > 0:
-            _run_tasks("hr_bev", self.hr_tasks, hr_bev)
+            _run_tasks("hr_bev", self.hr_tasks, [hr_bev])
 
         if log_text and writer is not None:
             writer.add_scalars(
@@ -272,7 +280,7 @@ class BEVTaskVan(torch.nn.Module):
         # resume grad
         to_resume = []
         if len(self.tasks) > 0:
-            to_resume.append(bev)
+            to_resume += bev_feats
         if len(self.hr_tasks) > 0:
             to_resume.append(hr_bev)
 

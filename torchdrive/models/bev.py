@@ -263,7 +263,7 @@ class RiceBackbone(BEVBackbone):
 
     def forward(
         self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, List[torch.Tensor], Dict[str, torch.Tensor]]:
         with autocast():
             bev_grids = []
 
@@ -280,4 +280,4 @@ class RiceBackbone(BEVBackbone):
             hr_bev = self.project_voxel(hr_bev)
             hr_bev = hr_bev.unflatten(1, (self.voxel_dim, self.out_Z))
 
-            return hr_bev, bev
+            return hr_bev, [bev], {}

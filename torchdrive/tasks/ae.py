@@ -54,8 +54,11 @@ class AETask(BEVTask):
         )
 
     def forward(
-        self, ctx: Context, batch: Batch, bev: torch.Tensor
+        self, ctx: Context, batch: Batch, grids: List[torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
+        assert len(grids) == 1
+        bev: torch.Tensor = grids[0]
+
         BS = len(batch.distances)
         device = bev.device
         num_frames = batch.distances.shape[1]

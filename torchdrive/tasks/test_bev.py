@@ -1,5 +1,5 @@
 import unittest
-from typing import Dict
+from typing import Dict, List
 from unittest.mock import call, MagicMock
 
 import torch
@@ -14,10 +14,12 @@ from torchdrive.transforms.batch import Compose, NormalizeCarPosition, RandomRot
 
 class DummyBEVTask(BEVTask):
     def forward(
-        self, ctx: Context, batch: Batch, bev: torch.Tensor
+        self, ctx: Context, batch: Batch, grids: List[torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
-        bev.mean().backward()
-        ctx.add_scalar("test", bev.shape[-1])
+        for grid in grids:
+            grid.mean().backward()
+
+        ctx.add_scalar("test", 1234)
 
         for cam_feat in ctx.cam_feats.values():
             cam_feat.mean().backward()
@@ -88,8 +90,8 @@ class TestBEV(unittest.TestCase):
         self.assertEqual(
             writer.add_scalar.mock_calls,
             [
-                call("dummy-test", 4, global_step=500),
-                call("hr_dummy-test", 8, global_step=500),
+                call("dummy-test", 1234, global_step=500),
+                call("hr_dummy-test", 1234, global_step=500),
             ],
         )
         self.assertEqual(len(m.param_opts(lr=1e-4)), 2)

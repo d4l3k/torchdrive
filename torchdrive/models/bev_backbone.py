@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Mapping, Tuple, Union
+from typing import Dict, List, Mapping, Tuple
 
 import torch
 from torch import nn
@@ -17,8 +17,5 @@ class BEVBackbone(nn.Module, ABC):
     @abstractmethod
     def forward(
         self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
-    ) -> Union[
-        Tuple[torch.Tensor, torch.Tensor],
-        Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]],
-    ]:
+    ) -> Tuple[torch.Tensor, List[torch.Tensor], Dict[str, torch.Tensor]]:
         pass

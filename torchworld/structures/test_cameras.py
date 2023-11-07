@@ -771,6 +771,7 @@ class TestCamerasCommon(TestCaseMixin, unittest.TestCase):
                 else:
                     self.assertTrue(val == val_clone)
 
+    @unittest.skipUnless(torch.cuda.is_available(), "cuda required")
     def test_join_cameras_as_batch_errors(self) -> None:
         # pyre-fixme[6]: For 1st argument expected `device` but got `str`.
         cam0 = PerspectiveCameras(device="cuda:0")
@@ -795,6 +796,7 @@ class TestCamerasCommon(TestCaseMixin, unittest.TestCase):
         ):
             join_cameras_as_batch([cam1, cam3])
 
+    @unittest.skipUnless(torch.cuda.is_available(), "cuda required")
     def join_cameras_as_batch_fov(self, camera_cls):
         R0 = torch.randn((6, 3, 3))
         R1 = torch.randn((3, 3, 3))
@@ -963,6 +965,7 @@ class TestFoVPerspectiveProjection(TestCaseMixin, unittest.TestCase):
         grad_fov = (vertices[0] + vertices[1]) * grad_fov / 10.0
         self.assertClose(fov_grad, grad_fov)
 
+    @unittest.skipUnless(torch.cuda.is_available(), "cuda required")
     def test_camera_class_init(self) -> None:
         device = torch.device("cuda:0")
         cam = FoVPerspectiveCameras(znear=10.0, zfar=(100.0, 200.0))
@@ -1649,6 +1652,7 @@ class TestFishEyeProjection(TestCaseMixin, unittest.TestCase):
             uv_point_batch = cameras.transform_points(p_3d.repeat(1, 1, 1))
             self.assertClose(uv_point_batch, expected_res[i].repeat(1, 1, 1))
 
+    @unittest.skipUnless(torch.cuda.is_available(), "cuda required")
     def test_cuda(self) -> None:
         """
         Test cuda device

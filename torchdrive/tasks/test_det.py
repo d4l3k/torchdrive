@@ -14,8 +14,8 @@ class TestDet(unittest.TestCase):
         m = DetTask(
             cameras=["left", "right"],
             cam_shape=(4, 6),
-            bev_shape=(4, 4),
-            dim=8,
+            bev_shape=(4, 5),
+            dim=16,
             device=torch.device("cpu"),
             num_queries=10,
         )
@@ -31,6 +31,6 @@ class TestDet(unittest.TestCase):
             output="/invalid",
             weights=batch.weight,
         )
-        bev = torch.rand(2, 8, 4, 4)
-        losses = m(ctx, batch, bev)
+        bev = torch.rand(2, 16, 4, 5)
+        losses = m(ctx, batch, [bev] * 4)
         self.assertIn("unmatched", losses)

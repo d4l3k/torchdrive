@@ -93,10 +93,10 @@ class TestBEVTransformer(unittest.TestCase):
             num_frames=num_frames,
             cameras=cameras,
         )
-        x, x4 = m(
+        x, bev_feats, _ = m(
             {cam: [torch.rand(2, 15, 4, 6)] * num_frames for cam in cameras}, None
         )
         # self.assertEqual(x.shape, (2, 4, 8, 8))
         # self.assertEqual(x4.shape, (2, 16, 4, 4))
         self.assertEqual(x.shape, (batch.batch_size(), 1, Z * 2, X * 2, Y * 2))
-        self.assertEqual(x4.shape, (batch.batch_size(), latent_dim, X, Y))
+        self.assertEqual(bev_feats[-1].shape, (batch.batch_size(), latent_dim, X, Y))

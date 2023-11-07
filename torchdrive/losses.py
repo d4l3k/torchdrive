@@ -246,8 +246,8 @@ def generalized_box_iou(boxes1: torch.Tensor, boxes2: torch.Tensor) -> torch.Ten
     """
     # degenerate boxes gives inf / nan results
     # so do an early check
-    assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
-    assert (boxes2[:, 2:] >= boxes2[:, :2]).all()
+    assert (boxes1[:, 2:] >= boxes1[:, :2]).all(), boxes1.sum()
+    assert (boxes2[:, 2:] >= boxes2[:, :2]).all(), boxes2.sum()
     iou, union = box_iou(boxes1, boxes2)
 
     lt = torch.min(boxes1[:, None, :2], boxes2[:, :2])

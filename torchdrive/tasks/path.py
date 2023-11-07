@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 
@@ -41,8 +41,13 @@ class PathTask(BEVTask):
         self.ae_mae = torchmetrics.MeanAbsoluteError()
 
     def forward(
-        self, ctx: Context, batch: Batch, bev: torch.Tensor
+        self,
+        ctx: Context,
+        batch: Batch,
+        grids: List[torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
+        bev = grids[-1]
+
         BS = len(batch.distances)
         device = bev.device
 
@@ -170,4 +175,5 @@ class PathTask(BEVTask):
                 plt.gca().set_aspect("equal")
                 ctx.add_figure("paths/autoregressive", fig)
 
+        losses = {k: v * 10 * 10 for k, v in losses.items()}
         return losses

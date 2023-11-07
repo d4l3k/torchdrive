@@ -35,7 +35,6 @@ import torchvision
 from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
 from torchvision import transforms
-from torchvision.models import regnet
 from torchvision.models.resnet import resnet18
 from torchworld.models.resnet_3d import resnet3d18, Upsample3DBlock
 
@@ -230,7 +229,7 @@ class ResnetFPN3d(nn.Module):
 
     def forward(
         self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[List[torch.Tensor], Dict[str, torch.Tensor]]:
         """
         Args:
             x: [BS, in_channels, H, W]
@@ -238,34 +237,44 @@ class ResnetFPN3d(nn.Module):
             * [BS, in_channels, H, W]
             * [BS, 256, H/8, W/8]
         """
+        grad_norms: Dict[str, torch.Tensor] = {}
+
         # (H, W)
-        skip_x = {"1": x}
-        x = self.first_conv(x)
+        x1_skip = x
+        x = self.first_conv(x1_skip)
         x = self.bn1(x)
         x = self.relu(x)
 
         # (H/4, W/4)
-        x = self.layer1(x)
-        skip_x["2"] = x
-        x = self.layer2(x)
-        skip_x["3"] = x
+        x2_skip = self.layer1(x)
+        x3_skip = self.layer2(x2_skip)
 
         # (H/8, W/8)
-        x4 = self.layer3(x)
+        x4 = self.layer3(x3_skip)
 
         # x4_skip is used for logging grad_norm stats
-        x4_skip = x4.view_as(x4)
+
+        grad_norms["x4_up"] = x4_up = x4.view_as(x4)
+        grad_norms["x4_out"] = x4_out = x4.view_as(x4)
 
         # First upsample to (H/4, W/4)
-        x = self.up3_skip(x4_skip, skip_x["3"])
+        x3 = self.up3_skip(x4_up, x3_skip)
+
+        grad_norms["x3_up"] = x3_up = x3.view_as(x3)
+        grad_norms["x3_out"] = x3_out = x3.view_as(x3)
 
         # Second upsample to (H/2, W/2)
-        x = self.up2_skip(x, skip_x["2"])
+        x2 = self.up2_skip(x3_up, x2_skip)
+
+        grad_norms["x2_up"] = x2_up = x2.view_as(x2)
+        grad_norms["x2_out"] = x2_out = x2.view_as(x2)
 
         # Third upsample to (H, W)
-        x = self.up1_skip(x, skip_x["1"])
+        x1 = self.up1_skip(x2_up, x1_skip)
 
-        return x, x4, x4_skip
+        grad_norms["x1_out"] = x1_out = x1.view_as(x1)
+
+        return [x1_out, x2_out, x3_out, x4_out], grad_norms
 
 
 # extends FPN to preserve state_dict keys
@@ -798,7 +807,7 @@ class SegnetBackbone(BEVBackbone):
 
     def forward(
         self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, List[torch.Tensor], Dict[str, torch.Tensor]]:
         BS = batch.batch_size()
         S = len(camera_features) * self.num_frames
         device = batch.device()
@@ -847,7 +856,7 @@ class SegnetBackbone(BEVBackbone):
             x = self.upsample(x)
             x = self.project_voxel(x)
             x = x.unflatten(1, (self.voxel_dim, self.out_Z))
-            return x, x4
+            return x, [x4], {}
 
 
 def lift_cam_to_voxel_mean(
@@ -919,30 +928,23 @@ class Segnet3DBackbone(BEVBackbone):
         )
 
         Z = grid_shape[2]
-        HR_Z = Z // 8
+        coarse_Z = Z // 8
 
         self.project = nn.ModuleList(
             [compile_fn(nn.Conv2d(cam_dim, cam_dim, 1)) for i in range(num_frames)]
         )
-        self.fpn: nn.Module = compile_fn(ResnetFPN3d(cam_dim, dim // HR_Z))
+        self.fpn: nn.Module = compile_fn(ResnetFPN3d(cam_dim, dim // coarse_Z))
         per_voxel_dim = max(hr_dim // (Z * 2), 1)
         assert num_upsamples == 1, "only one upsample supported"
         self.upsample: nn.Module = compile_fn(Upsample3DBlock(cam_dim, per_voxel_dim))
-        self.coarse_project: nn.Module = compile_fn(
-            nn.Sequential(
-                nn.Conv2d(dim // HR_Z * HR_Z, dim, 1),
-                regnet.AnyStage(
-                    dim,
-                    dim,
-                    stride=1,
-                    depth=4,
-                    block_constructor=regnet.ResBottleneckBlock,
-                    norm_layer=nn.BatchNorm2d,
-                    activation_layer=nn.ReLU,
-                    group_width=dim,  # regnet_x_3_2gf
-                    bottleneck_multiplier=1.0,
-                ),
-            )
+
+        self.bev_project = nn.ModuleList(
+            [
+                nn.Conv2d(cam_dim * Z, dim, 1),
+                nn.Conv2d(dim // 4 // (coarse_Z) * (coarse_Z * 4), dim, 1),
+                nn.Conv2d(dim // 2 // (coarse_Z) * (coarse_Z * 2), dim, 1),
+                nn.Conv2d(dim // coarse_Z * coarse_Z, dim, 1),
+            ]
         )
 
         # pyre-fixme[6]: invalid parameter type
@@ -950,7 +952,7 @@ class Segnet3DBackbone(BEVBackbone):
 
     def forward(
         self, camera_features: Mapping[str, List[torch.Tensor]], batch: Batch
-    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, List[torch.Tensor], Dict[str, torch.Tensor]]:
         BS = batch.batch_size()
         S = len(camera_features) * self.num_frames
         device = batch.device()
@@ -992,13 +994,15 @@ class Segnet3DBackbone(BEVBackbone):
         with autocast():
             # run through FPN
             x = feat_mem
-            x, x4, x4_skip = self.fpn(x)
-            assert x.shape == feat_mem.shape
+            (x1, x2, x3, x4), grad_norms = self.fpn(x)
+            assert x1.shape == feat_mem.shape
 
-            x = self.upsample(x)
+            x0 = self.upsample(x1)
 
-            x4_coarse = x4.view_as(x4)
-            x4 = x4_coarse.flatten(1, 2)
-            x4 = self.coarse_project(x4)
+            # project to BEV grids
+            x1 = self.bev_project[0](x1.flatten(1, 2))
+            x2 = self.bev_project[1](x2.flatten(1, 2))
+            x3 = self.bev_project[2](x3.flatten(1, 2))
+            x4 = self.bev_project[3](x4.flatten(1, 2))
 
-            return x, x4, {"coarse": x4_coarse, "skip": x4_skip}
+            return x0, [x1, x2, x3, x4], grad_norms

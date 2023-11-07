@@ -5,10 +5,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from torchdrive.amp import autocast
 from torchdrive.models.mlp import MLP
 from torchdrive.models.transformer import StockTransformerDecoder, transformer_init
-from torchdrive.positional_encoding import apply_sin_cos_enc2d, apply_sin_cos_enc1d
+from torchdrive.positional_encoding import apply_sin_cos_enc1d, apply_sin_cos_enc2d
 
 MAX_POS = 100  # meters from origin
 
@@ -114,21 +113,20 @@ class PathTransformer(nn.Module):
             final_jitter = (torch.rand_like(final_pos) * 2 - 1) * self.final_jitter
             final_pos = final_pos + final_jitter
 
-        with autocast():
-            static_feats = torch.cat(
-                (speed, start_position, final_pos), dim=1
-            ).unsqueeze(-1)
-            static = self.static_encoder(static_feats).permute(0, 2, 1)
+        static_feats = torch.cat((speed, start_position, final_pos), dim=1).unsqueeze(
+            -1
+        )
+        static = self.static_encoder(static_feats).permute(0, 2, 1)
 
-            # bev features
-            # bev = self.bev_project(bev)
-            bev = apply_sin_cos_enc2d(bev)
-            bev = self.bev_encoder(bev).flatten(-2, -1).permute(0, 2, 1)
+        # bev features
+        # bev = self.bev_project(bev)
+        bev = apply_sin_cos_enc2d(bev)
+        bev = self.bev_encoder(bev).flatten(-2, -1).permute(0, 2, 1)
 
-            # cross attention features to decode
-            cross_feats = torch.cat((bev, static), dim=1)
+        # cross attention features to decode
+        cross_feats = torch.cat((bev, static), dim=1)
 
-            out_positions = self.transformer(position_emb, cross_feats)
+        out_positions = self.transformer(position_emb, cross_feats)
 
         pred_pos = self.pos_decoder(out_positions.float()).permute(
             0, 2, 1

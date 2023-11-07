@@ -1,6 +1,6 @@
 import math
 import warnings
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -296,3 +296,42 @@ class MSDeformableAttention2d(nn.Module):
         )
         output = self.output_proj(output)
         return output
+
+
+def prepare_src(
+    grids: List[torch.Tensor],
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Converts the set of grids into the inputs for deformable attention.
+
+    Arguments
+    ---------
+    grids: [(bs, ch, y, x)]
+        the list of grids to sample from
+
+    Returns
+    ---------
+    src
+    src_spatial_shapes
+    src_level_start_index
+    src_valid_ratios
+    """
+    device = grids[0].device
+
+    shapes = []
+    offsets = []
+    flattened = []
+    offset = 0
+    for grid in grids:
+        _, ch, y, x = grid.shape
+        offsets += [offset]
+        offset += y * x
+        shapes.append((y, x))
+        flattened.append(grid.flatten(2, 3).permute(0, 2, 1))
+
+    return (
+        torch.cat(flattened, dim=1),
+        torch.tensor(shapes, device=device, dtype=torch.int64),
+        torch.tensor(offsets, device=device, dtype=torch.int64),
+        torch.tensor((1, 1), device=device, dtype=torch.float32).unsqueeze(0),
+    )

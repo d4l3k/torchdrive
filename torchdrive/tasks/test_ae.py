@@ -30,5 +30,5 @@ class TestAE(unittest.TestCase):
             weights=batch.weight,
         )
         bev = torch.rand(2, 8, 4, 4)
-        losses = m(ctx, batch, bev)
+        losses = m(ctx, batch, [bev])
         self.assertCountEqual(losses.keys(), ["ssim/left", "ssim/right"])

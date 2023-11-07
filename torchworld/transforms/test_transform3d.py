@@ -29,6 +29,8 @@ class TestTransform(TestCaseMixin, unittest.TestCase):
     def setUp(self) -> None:
         torch.manual_seed(42)
 
+    # pyre-fixme[56]: type of is_available
+    @unittest.skipUnless(torch.cuda.is_available(), "cuda required")
     def test_to(self) -> None:
         tr = Translate(torch.FloatTensor([[1.0, 2.0, 3.0]]))
         R = torch.FloatTensor([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]])
@@ -319,6 +321,8 @@ class TestTransform(TestCaseMixin, unittest.TestCase):
         self.assertTrue(not bool(torch.isfinite(proj.sum())))
         self.assertTrue(bool(torch.isfinite(proj_eps.sum())))
 
+    # pyre-fixme[56]: type of is_available
+    @unittest.skipUnless(torch.cuda.is_available(), "cuda required")
     def test_inverse(self, batch_size: int = 5) -> None:
         device = torch.device("cuda:0")
 
@@ -387,6 +391,8 @@ class TestTransform(TestCaseMixin, unittest.TestCase):
                 t3d_matrix[selected_index], t3d_selected_matrix[order_index]
             )
 
+    # pyre-fixme[56]: type of is_available
+    @unittest.skipUnless(torch.cuda.is_available(), "cuda required")
     def test_get_item(self, batch_size: int = 5) -> None:
         device = torch.device("cuda:0")
 
@@ -980,6 +986,8 @@ class TestRotate(unittest.TestCase):
         with self.assertRaises(ValueError):
             Rotate(R)
 
+    # pyre-fixme[56]: type of is_available
+    @unittest.skipUnless(torch.cuda.is_available(), "cuda required")
     def test_inverse(self, batch_size: int = 5) -> None:
         device = torch.device("cuda:0")
         log_rot = torch.randn((batch_size, 3), dtype=torch.float32, device=device)

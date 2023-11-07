@@ -89,7 +89,7 @@ class TestVoxel(unittest.TestCase):
             cam_feats={cam: torch.rand(2, 6, 320 // 16, 240 // 16) for cam in cameras},
         )
         bev = torch.rand(2, 1, 5, 4, 4, device=device)
-        losses = m(ctx, batch, bev)
+        losses = m(ctx, batch, [bev])
         ctx.backward(losses)
         self.assertCountEqual(losses.keys(), VOXEL_LOSSES)
         self._assert_loss_shapes(losses)
@@ -123,7 +123,7 @@ class TestVoxel(unittest.TestCase):
             cam_feats={cam: torch.rand(2, 4, 320 // 16, 240 // 16) for cam in cameras},
         )
         bev = torch.rand(2, 1, 5, 4, 4)
-        losses = m(ctx, batch, bev)
+        losses = m(ctx, batch, [bev])
         ctx.backward(losses)
         self.assertCountEqual(
             losses.keys(),
@@ -161,7 +161,7 @@ class TestVoxel(unittest.TestCase):
             cam_feats={cam: torch.rand(2, 4, 320 // 16, 240 // 16) for cam in cameras},
         )
         bev = torch.rand(2, 1, 5, 4, 4)
-        losses = m(ctx, batch, bev)
+        losses = m(ctx, batch, [bev])
         ctx.backward(losses)
 
         target_keys = set()
@@ -214,7 +214,7 @@ class TestVoxel(unittest.TestCase):
             cam_feats={cam: torch.rand(2, 4, 320 // 16, 240 // 16) for cam in cameras},
         )
         bev = torch.rand(2, 1, 5, 4, 4)
-        losses = m(ctx, batch, bev)
+        losses = m(ctx, batch, [bev])
         ctx.backward(losses)
         self.assertCountEqual(
             losses.keys(),
