@@ -2,11 +2,13 @@ from typing import List, Tuple
 
 import torch
 from torch import nn
+
 from torchworld.models.deformable_transformer import (
     DeformableTransformerDecoder,
     DeformableTransformerDecoderLayer,
 )
 from torchworld.ops.ms_deformable_attention import prepare_src
+from torchworld.positional_encoding import LearnedPositionalEncoding2d
 
 from torchdrive.models.mlp import MLP
 
@@ -21,6 +23,7 @@ class DetDeformableTransformerDecoder(nn.Module):
         self,
         dim: int,
         num_queries: int,
+        bev_shape: Tuple[int, int],
         num_heads: int = 8,
         num_classes: int = 10,
         num_layers: int = 6,
@@ -55,6 +58,17 @@ class DetDeformableTransformerDecoder(nn.Module):
         self.bbox_decoder = MLP(dim, dim, 9, num_layers=4)
         self.class_decoder = nn.Conv1d(dim, num_classes + 1, 1)
 
+        bev_encoders = []
+        for i in range(num_levels - 1, -1, -1):
+            h, w = bev_shape
+            bev_encoders.append(
+                nn.Sequential(
+                    nn.Conv2d(dim, dim, 1),
+                    LearnedPositionalEncoding2d((h * 2**i, w * 2**i), dim),
+                )
+            )
+        self.bev_encoders = nn.ModuleList(bev_encoders)
+
     def forward(self, grids: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Input:
@@ -64,6 +78,8 @@ class DetDeformableTransformerDecoder(nn.Module):
             bboxes: 0-1 (BS, num_queries, 9)
         """
         BS = len(grids[0])
+
+        grids = [self.bev_encoders[i](grid) for i, grid in enumerate(grids)]
 
         src, src_spatial_shapes, src_level_start_index, src_valid_ratios = prepare_src(
             grids

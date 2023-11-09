@@ -199,7 +199,7 @@ class TrainConfig:
                 bev_shape=bev_shape,
                 bev_dim=self.dim,
                 dim=768,
-                compile_fn=compile_fn,
+                # compile_fn=compile_fn,
             )
         if self.det:
             from torchdrive.tasks.det import DetTask

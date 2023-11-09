@@ -5,7 +5,7 @@ import os
 import os.path
 import sys
 from collections import defaultdict
-from typing import Callable, cast, Dict, Iterator, List, Optional, Set, Union
+from typing import Callable, cast, Dict, List, Optional, Set, Union
 
 # set device before loading CUDA/PyTorch
 LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
@@ -18,7 +18,6 @@ import torchinfo
 from torch import nn, optim
 from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel
-from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
@@ -134,12 +133,16 @@ params: List[Dict[str, Union[object, List[object]]]] = model.param_opts(config.l
 lr_groups: List[float] = [p["lr"] if "lr" in p else config.lr for p in params]
 name_groups: List[str] = [cast(str, p["name"]) for p in params]
 flat_params: Set[object] = set()
-ddp_params: Iterator[Parameter] = ddp_model.parameters()
 for group in params:
     for p in cast(List[object], group["params"]):
         flat_params.add(p)
-for p in ddp_params:
-    assert p in flat_params
+
+for name, p in model.named_parameters():
+    assert p in flat_params, name
+
+for name, p in ddp_model.named_parameters():
+    assert p in flat_params, name
+
 optimizer = optim.AdamW(
     params,
     lr=config.lr,

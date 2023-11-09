@@ -108,7 +108,7 @@ def points_to_bboxes2d(
     ones = torch.ones(*points.shape[:-1], 1, device=device)
     points = torch.cat([points, ones], dim=-1).unsqueeze(2)
 
-    inv_ex = ex.pinverse()
+    inv_ex = ex.inverse()
     # inv_ex: convert to image space
     # K: convert to local space
     P = torch.matmul(K, inv_ex)

@@ -1,3 +1,4 @@
+import itertools
 import random
 import time
 from abc import ABC, abstractmethod
@@ -34,6 +35,11 @@ class BEVTask(torch.nn.Module, ABC):
         self, ctx: Context, batch: Batch, grids: List[torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
         raise NotImplementedError("must implement Task forward")
+
+    def param_opts(self, lr: float) -> List[Dict[str, object]]:
+        return [
+            {"name": "default", "params": self.parameters(), "lr": lr},
+        ]
 
 
 class BEVTaskVan(torch.nn.Module):
@@ -93,14 +99,18 @@ class BEVTaskVan(torch.nn.Module):
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
         per_cam_params = list(self.camera_encoders.parameters())
-        per_cam_set = set(per_cam_params)
-        params = [p for p in self.parameters() if p not in per_cam_set]
         per_cam_lr = lr
         per_cam_lr /= len(self.cameras)
-        return [
-            {"name": "default", "params": params, "lr": lr},
+        groups: List[Dict[str, object]] = [
+            {"name": "backbone", "params": list(self.backbone.parameters()), "lr": lr},
             {"name": "per_cam", "params": per_cam_params, "lr": per_cam_lr},
         ]
+        for name, task in itertools.chain(self.tasks.items(), self.hr_tasks.items()):
+            task_groups = task.param_opts(lr)
+            for group in task_groups:
+                group["name"] = f"{name}/{group['name']}"
+                groups.append(group)
+        return groups
 
     def forward(
         self,

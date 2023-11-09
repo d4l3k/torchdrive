@@ -31,6 +31,11 @@ class TestDet(unittest.TestCase):
             output="/invalid",
             weights=batch.weight,
         )
-        bev = torch.rand(2, 16, 4, 5)
-        losses = m(ctx, batch, [bev] * 4)
+        grids = [
+            torch.rand(2, 16, 32, 40),
+            torch.rand(2, 16, 16, 20),
+            torch.rand(2, 16, 8, 10),
+            torch.rand(2, 16, 4, 5),
+        ]
+        losses = m(ctx, batch, grids)
         self.assertIn("unmatched", losses)

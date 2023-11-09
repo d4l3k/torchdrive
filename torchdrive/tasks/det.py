@@ -57,6 +57,7 @@ class DetTask(BEVTask):
         decoder = DetDeformableTransformerDecoder(
             num_queries=num_queries,
             dim=dim,
+            bev_shape=bev_shape,
         )
         self.num_classes: int = decoder.num_classes
         self.decoder: nn.Module = compile_fn(decoder)
@@ -339,7 +340,7 @@ class DetTask(BEVTask):
                 F.cross_entropy(unmatched_classes, target_classes) * 40
             )
 
-        losses = {k: v * 20 * 5 for k, v in losses.items()}
+        losses = {k: v * 10 * 5 for k, v in losses.items()}
 
         return losses
 
@@ -409,3 +410,8 @@ class DetTask(BEVTask):
         )
         src_idx = torch.cat([src for (src, _) in indices])
         return batch_idx, src_idx
+
+    def param_opts(self, lr: float) -> List[Dict[str, object]]:
+        return [
+            {"name": "default", "params": self.parameters(), "lr": lr},
+        ]

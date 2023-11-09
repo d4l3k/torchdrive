@@ -94,4 +94,9 @@ class TestBEV(unittest.TestCase):
                 call("hr_dummy-test", 1234, global_step=500),
             ],
         )
-        self.assertEqual(len(m.param_opts(lr=1e-4)), 2)
+
+        groups = m.param_opts(lr=1e-4)
+        names = [group["name"] for group in groups]
+        self.assertCountEqual(
+            names, ["backbone", "per_cam", "dummy/default", "hr_dummy/default"]
+        )

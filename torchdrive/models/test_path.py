@@ -15,6 +15,7 @@ class PathTest(unittest.TestCase):
             bev_dim=bev_dim,
             dim=dim,
             num_heads=2,
+            max_seq_len=num_points + 3,
         )
         out, ae_prev = m(
             bev=torch.rand(2, bev_dim, 4, 4),
@@ -32,6 +33,7 @@ class PathTest(unittest.TestCase):
             bev_dim=bev_dim,
             dim=dim,
             num_heads=2,
+            max_seq_len=10,
         )
 
         m.eval()

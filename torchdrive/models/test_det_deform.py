@@ -13,12 +13,13 @@ class TestDetDeform(unittest.TestCase):
             num_heads=2,
             dim_feedforward=32,
             num_levels=4,
+            bev_shape=(4, 5),
         )
         levels = [
+            torch.rand(2, 16, 32, 40),
+            torch.rand(2, 16, 16, 20),
+            torch.rand(2, 16, 8, 10),
             torch.rand(2, 16, 4, 5),
-            torch.rand(2, 16, 8, 10),
-            torch.rand(2, 16, 8, 10),
-            torch.rand(2, 16, 8, 10),
         ]
         classes, bboxes = m(levels)
         self.assertEqual(classes.shape, (2, 10, 11))

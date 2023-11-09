@@ -4,10 +4,13 @@ from typing import Callable, Tuple, Union
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torchworld.positional_encoding import (
+    LearnedPositionalEncoding2d,
+    LearnedPositionalEncodingSeq,
+)
 
 from torchdrive.models.mlp import MLP
 from torchdrive.models.transformer import StockTransformerDecoder, transformer_init
-from torchdrive.positional_encoding import apply_sin_cos_enc1d, apply_sin_cos_enc2d
 
 MAX_POS = 100  # meters from origin
 
@@ -41,6 +44,7 @@ class PathTransformer(nn.Module):
         bev_shape: Tuple[int, int],
         bev_dim: int,
         dim: int,
+        max_seq_len: int,
         num_heads: int = 8,
         num_layers: int = 3,
         pos_dim: int = 3,
@@ -52,7 +56,10 @@ class PathTransformer(nn.Module):
         self.dim = dim
         self.final_jitter = final_jitter
 
-        self.bev_encoder = nn.Conv2d(bev_dim, dim, 1)
+        self.bev_encoder = nn.Sequential(
+            nn.Conv2d(bev_dim, dim, 1),
+            LearnedPositionalEncoding2d(bev_shape, dim),
+        )
 
         # self.bev_project = compile_fn(ConvPEBlock(bev_dim, bev_dim, bev_shape, depth=1))
 
@@ -62,6 +69,7 @@ class PathTransformer(nn.Module):
                 nn.Linear(pos_dim, dim),
                 nn.ReLU(inplace=True),
                 nn.Linear(dim, dim),
+                LearnedPositionalEncodingSeq(max_seq_len, dim),
             )
         )
         # pyre-fixme[4]: Attribute must be annotated.
@@ -95,15 +103,14 @@ class PathTransformer(nn.Module):
         dtype = bev.dtype
 
         position_emb = self.pos_encoder(positions.permute(0, 2, 1))
-        positon_emb = apply_sin_cos_enc1d(position_emb)
         ae_pos = self.pos_decoder(position_emb).permute(0, 2, 1)
 
         num_pos = positions.size(2)
         # static features (speed)
-        if num_pos > 1:
-            speed = positions[:, :, 1] - positions[:, :, 0]
-        else:
-            speed = positions[:, :, 0] * 0
+        # if num_pos > 1:
+        #    speed = positions[:, :, 1] - positions[:, :, 0]
+        # else:
+        speed = positions[:, :, 0] * 0
 
         start_position = positions[:, :, 0]
 
@@ -119,8 +126,6 @@ class PathTransformer(nn.Module):
         static = self.static_encoder(static_feats).permute(0, 2, 1)
 
         # bev features
-        # bev = self.bev_project(bev)
-        bev = apply_sin_cos_enc2d(bev)
         bev = self.bev_encoder(bev).flatten(-2, -1).permute(0, 2, 1)
 
         # cross attention features to decode

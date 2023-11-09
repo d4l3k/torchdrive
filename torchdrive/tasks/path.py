@@ -36,9 +36,11 @@ class PathTask(BEVTask):
             num_heads=num_heads,
             num_layers=num_layers,
             compile_fn=compile_fn,
+            max_seq_len=max_seq_len * 2,
         )
 
         self.ae_mae = torchmetrics.MeanAbsoluteError()
+        self.position_mae = torchmetrics.MeanAbsoluteError()
 
     def forward(
         self,
@@ -69,15 +71,15 @@ class PathTask(BEVTask):
         downsample = 6
         positions = positions[..., ctx.start_frame :: downsample]
         mask = mask[..., ::downsample]
-        lengths //= downsample
+        lengths = (lengths - ctx.start_frame) // downsample
 
         pos_len = positions.size(-1)
         # if we need to be aligned to size 8
         # pos_len = pos_len - (pos_len % 8) + 1
         pos_len = min(pos_len, self.max_seq_len + 1)
         positions = positions[..., :pos_len]
-        mask = mask[..., 0:pos_len].float()
-        num_elements = mask.sum()
+        mask = mask[..., 0:pos_len]
+        num_elements = mask.float().sum()
 
         assert pos_len > 1, "pos length too short"
 
@@ -97,17 +99,21 @@ class PathTask(BEVTask):
 
         for i in range(self.num_ar_iters):
             predicted, ae_prev = self.transformer(bev, prev, final_pos)
-
-            # ensure encoder and decoder are in sync
-            losses[f"ae/{i}"] = F.huber_loss(ae_prev, prev)
-            self.ae_mae.update(ae_prev, prev)
-
             all_predicted.append(predicted)
 
-            per_token_loss = F.huber_loss(
-                predicted, target, reduction="none", delta=20.0
-            )
-            per_token_loss *= mask[..., 1:].unsqueeze(1).expand(-1, 3, -1)
+            # ensure encoder and decoder are in sync
+            losses[f"ae/{i}"] = F.l1_loss(ae_prev, prev)
+            self.ae_mae.update(ae_prev, prev)
+
+            predicted_mask = mask[..., 1:]
+
+            l2_diff = torch.linalg.vector_norm(predicted - target, dim=1)[
+                predicted_mask
+            ]
+            self.position_mae.update(l2_diff, torch.zeros_like(l2_diff))
+
+            per_token_loss = F.l1_loss(predicted, target, reduction="none")
+            per_token_loss *= predicted_mask.unsqueeze(1).expand(-1, 3, -1).float()
 
             # normalize by number of elements in sequence
             losses[f"position/{i}"] = (
@@ -116,10 +122,12 @@ class PathTask(BEVTask):
 
             pred_dists = rel_dists(predicted)
             target_dists = rel_dists(target)
-            rel_dist_loss = F.huber_loss(
-                pred_dists, target_dists, reduction="none", delta=20.0
+            rel_dist_loss = F.l1_loss(
+                pred_dists,
+                target_dists,
+                reduction="none",
             )
-            rel_dist_loss *= mask[..., 1:]
+            rel_dist_loss *= predicted_mask.float()
             losses[f"rel_dists/{i}"] = rel_dist_loss.sum(dim=1) / (num_elements + 1)
 
             # keep first value the same and shift predicted over by 1
@@ -127,11 +135,12 @@ class PathTask(BEVTask):
 
         if ctx.log_text:
             ctx.add_scalar("ae/mae", self.ae_mae.compute())
+            ctx.add_scalar("position/mae", self.position_mae.compute())
 
         if ctx.log_img:
             with torch.no_grad():
                 fig = plt.figure()
-                length = lengths[0]
+                length = min(lengths[0], self.max_seq_len + 1)
                 plt.plot(*target[0, 0:2, :length].detach().cpu(), label="target")
                 plt.plot(*target[0, 0:2, 0].detach().cpu(), "go", label="origin")
                 plt.plot(*final_pos[0, 0:2].detach().cpu(), "ro", label="final")
@@ -175,5 +184,10 @@ class PathTask(BEVTask):
                 plt.gca().set_aspect("equal")
                 ctx.add_figure("paths/autoregressive", fig)
 
-        losses = {k: v * 10 * 10 for k, v in losses.items()}
+        losses = {k: v * 10 * 5 for k, v in losses.items()}
         return losses
+
+    def param_opts(self, lr: float) -> List[Dict[str, object]]:
+        return [
+            {"name": "default", "params": self.parameters(), "lr": lr},
+        ]
