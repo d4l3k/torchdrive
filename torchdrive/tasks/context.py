@@ -88,3 +88,11 @@ class Context:
         if key in self._logged:
             raise RuntimeError(f"already logged {key}")
         self._logged.add(key)
+
+    def add_text(self, name: str, text: str) -> None:
+        if self.writer:
+            assert self.log_text
+            key = f"{self.name}-{name}"
+            self._check_key(key)
+            # pyre-fixme[16]: `Optional` has no attribute `add_scalar`.
+            self.writer.add_text(key, str(text), global_step=self.global_step)

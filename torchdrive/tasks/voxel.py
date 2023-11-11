@@ -630,7 +630,10 @@ class VoxelTask(BEVTask):
                 primary_mask = primary_masks[cam]
                 per_pixel_weights = cam_pix_weights[cam]
 
-                losses[f"visible-probs/{cam}{frame}"] = visible_probs.mean() * 1000 / 10
+                if visible_probs.numel() > 0:
+                    losses[f"visible-probs/{cam}{frame}"] = (
+                        visible_probs.mean() * 1000 / 10
+                    )
                 losses[f"depth-probs/{cam}{frame}"] = (
                     F.l1_loss(depth_probs, torch.ones_like(depth_probs)) * 20
                 )

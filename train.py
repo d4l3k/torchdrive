@@ -15,6 +15,7 @@ import matplotlib
 import torch
 import torch.distributed as dist
 import torchinfo
+import torchmetrics
 from torch import nn, optim
 from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel
@@ -140,8 +141,11 @@ for group in params:
 for name, p in model.named_parameters():
     assert p in flat_params, name
 
+ddp_params: Set[nn.Parameter] = set(ddp_model.parameters())
 for name, p in ddp_model.named_parameters():
     assert p in flat_params, name
+for p in flat_params:
+    assert p in ddp_params
 
 optimizer = optim.AdamW(
     params,
@@ -165,7 +169,6 @@ OPTIM_KEY: str = "optim"
 def save(epoch: int) -> None:
     if RANK != 0:
         return
-    loss = epoch_loss / batch_idx if batch_idx else 0
     tmp_path = CHECKPOINT_PATH + ".tmp"
     torch.save(
         {
@@ -173,14 +176,13 @@ def save(epoch: int) -> None:
             OPTIM_KEY: optimizer.state_dict(),
             "epoch": epoch,
             GLOBAL_STEP_KEY: global_step,
-            "loss": loss,
         },
         tmp_path,
     )
     # We use a tmp path + rename to ensure we don't end up with a corrupted
     # checkpoint for errors such as running out of disk space.
     os.rename(tmp_path, CHECKPOINT_PATH)
-    print(f"saved to {CHECKPOINT_PATH}, loss = {loss}")
+    print(f"saved to {CHECKPOINT_PATH}")
 
 
 load_path: str = args.load
@@ -244,13 +246,9 @@ dataloader = DataLoader[Batch](
 collator = TransferCollator(dataloader, batch_size=config.batch_size, device=device)
 
 
-meaned_losses: Dict[str, Union[float, torch.Tensor]] = {}
-
-
-def reset_metrics() -> None:
-    global loss_count, meaned_losses
-    meaned_losses = defaultdict[str, Union[float, torch.Tensor]](lambda: 0.0)
-    loss_count = 0
+meaned_losses: Dict[str, torchmetrics.aggregation.MeanMetric] = defaultdict(
+    lambda: torchmetrics.aggregation.MeanMetric(sync_on_compute=False).to(device)
+)
 
 
 if args.profile:  # and rank == 0:
@@ -268,10 +266,7 @@ else:
 
 for epoch in range(NUM_EPOCHS):
     batch_idx = 0
-    epoch_loss = 0
     save(epoch)
-
-    reset_metrics()
 
     if writer:
         writer.add_scalars(
@@ -341,21 +336,22 @@ for epoch in range(NUM_EPOCHS):
             optimizer.step()
 
         with torch.no_grad():
-            epoch_loss += loss.detach()
-
+            # pyre-fixme[9]: int
+            rollup: Dict[str, torch.Tensor] = defaultdict(lambda: 0)
             for k, v in losses.items():
-                meaned_losses[k] += v
+                meaned_losses[k].update(v.sum())
                 # compute roll up metrics
                 rollupk = "loss/" + k.partition("/")[0]
                 if rollupk != k:
-                    meaned_losses[rollupk] += v
-            meaned_losses["loss"] += loss
-            loss_count += 1
+                    rollup[rollupk] += v.sum()
+            for k, v in rollup.items():
+                meaned_losses[k].update(v.sum())
+            meaned_losses["loss"].update(loss)
 
             if log_text and writer is not None:
                 for k, v in meaned_losses.items():
-                    writer.add_scalar(k, v / loss_count, global_step)
-                reset_metrics()
+                    writer.add_scalar(k, v.compute(), global_step)
+                    v.reset()
 
             if log_img:
                 for k, v in losses.items():
@@ -371,13 +367,7 @@ for epoch in range(NUM_EPOCHS):
         if prof:
             prof.step()
 
-    epoch_loss_mean = epoch_loss / batch_idx
-
-    if writer is not None:
-        writer.add_scalar("epoch_loss", epoch_loss, global_step)
-        writer.add_scalar("lr", epoch_loss, global_step)
-
-    print(f"epoch {epoch} loss {epoch_loss_mean}")
+    print(f"epoch {epoch}")
 
     lr_scheduler.step()
 

@@ -101,11 +101,17 @@ class TransformerDecoder(nn.Module):
 
 
 class StockTransformerDecoder(nn.Module):
-    def __init__(self, dim: int, layers: int, num_heads: int) -> None:
+    def __init__(
+        self, dim: int, layers: int, num_heads: int, dropout: float = 0.1
+    ) -> None:
         super().__init__()
 
         decoder_layer = nn.TransformerDecoderLayer(
-            d_model=dim, dim_feedforward=dim * 4, nhead=num_heads, batch_first=True
+            d_model=dim,
+            dim_feedforward=dim * 4,
+            nhead=num_heads,
+            batch_first=True,
+            dropout=dropout,
         )
         self.transformer_decoder = nn.TransformerDecoder(
             decoder_layer, num_layers=layers

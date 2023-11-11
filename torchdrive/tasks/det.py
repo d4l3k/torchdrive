@@ -4,13 +4,16 @@ from typing import Callable, cast, Dict, List, Tuple
 
 import torch
 import torch.nn.functional as F
+import torchmetrics
 from torch import nn
 from torchvision.utils import draw_bounding_boxes
+
 from torchworld.transforms.img import normalize_img
 
 from torchdrive.data import Batch
 from torchdrive.losses import generalized_box_iou
 from torchdrive.matcher import HungarianMatcher
+from torchdrive.models.det import BDD100KDet
 from torchdrive.models.det_deform import DetDeformableTransformerDecoder
 from torchdrive.tasks.bev import BEVTask, Context
 from torchdrive.transforms.bboxes import (
@@ -77,6 +80,17 @@ class DetTask(BEVTask):
         #  Tensor, K: Tensor, ex: Tensor, w: int, h: int) -> Tuple[Tensor, Tensor,
         #  Tensor]`.
         self.points_to_bboxes2d = compile_fn(points_to_bboxes2d)
+
+        self.confusion_matrix = torchmetrics.ConfusionMatrix(
+            task="multiclass",
+            num_classes=self.num_classes + 1,
+            normalize="true",
+        )
+        self.accuracy = torchmetrics.Accuracy(
+            task="multiclass",
+            num_classes=self.num_classes + 1,
+            average="macro",
+        )
 
     def forward(
         self, ctx: Context, batch: Batch, grids: List[torch.Tensor]
@@ -340,7 +354,19 @@ class DetTask(BEVTask):
                 F.cross_entropy(unmatched_classes, target_classes) * 40
             )
 
-        losses = {k: v * 10 * 5 for k, v in losses.items()}
+        if ctx.log_img:
+            fig, ax = self.confusion_matrix.plot(
+                labels=BDD100KDet.LABELS,
+                add_text=False,
+            )
+            ctx.add_figure("classes/confusion_matrix", fig)
+            self.confusion_matrix.reset()
+        if ctx.log_text:
+            # pyre-fixme[6]: got None
+            ctx.add_scalar("classes/accuracy", self.accuracy.compute())
+            self.accuracy.reset()
+
+        losses = {k: v for k, v in losses.items()}
 
         return losses
 
@@ -371,7 +397,13 @@ class DetTask(BEVTask):
         src_logits_o = src_logits[idx]
         assert len(target_classes_o) > 0, "can't compute loss_label with no items"
 
-        loss_ce = F.cross_entropy(src_logits_o.float(), target_classes_o)
+        src_logits_o = src_logits_o.float()
+        loss_ce = F.cross_entropy(src_logits_o, target_classes_o)
+
+        src_classes = src_logits_o.argmax(dim=-1)
+        self.confusion_matrix.update(src_classes, target_classes_o)
+        self.accuracy.update(src_classes, target_classes_o)
+
         return loss_ce
 
     def loss_boxes(

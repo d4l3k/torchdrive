@@ -2,6 +2,7 @@ from typing import List, Tuple
 
 import torch
 from torch import nn
+from torchvision import models
 
 from torchworld.models.deformable_transformer import (
     DeformableTransformerDecoder,
@@ -30,6 +31,7 @@ class DetDeformableTransformerDecoder(nn.Module):
         dim_feedforward: int = 2048,
         num_levels: int = 4,
         num_points: int = 4,
+        dropout: float = 0.1,
     ) -> None:
         super().__init__()
 
@@ -49,6 +51,7 @@ class DetDeformableTransformerDecoder(nn.Module):
             n_heads=num_heads,
             n_levels=num_levels,
             n_points=num_points,
+            dropout=dropout,
         )
         self.decoder = DeformableTransformerDecoder(
             decoder_layer,
@@ -63,6 +66,17 @@ class DetDeformableTransformerDecoder(nn.Module):
             h, w = bev_shape
             bev_encoders.append(
                 nn.Sequential(
+                    models.regnet.AnyStage(
+                        dim,
+                        dim,
+                        stride=1,
+                        depth=4,
+                        block_constructor=models.regnet.ResBottleneckBlock,
+                        norm_layer=nn.BatchNorm2d,
+                        activation_layer=nn.ReLU,
+                        group_width=dim,
+                        bottleneck_multiplier=1.0,
+                    ),
                     nn.Conv2d(dim, dim, 1),
                     LearnedPositionalEncoding2d((h * 2**i, w * 2**i), dim),
                 )
