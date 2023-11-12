@@ -121,10 +121,11 @@ class PathTest(unittest.TestCase):
             num_heads=2,
             max_seq_len=num_points + 3,
             num_queries=10,
+            static_features=3,
         )
         out, _ = m(
             bev=torch.rand(2, bev_dim, 4, 4),
             positions=torch.rand(2, 3, num_points),
-            final_pos=torch.rand(2, 3),
+            static_features=torch.rand(2, 3),
         )
         self.assertEqual(out.shape, (2, 3, num_points))

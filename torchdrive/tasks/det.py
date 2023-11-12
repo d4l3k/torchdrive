@@ -1,6 +1,6 @@
 import json
 import os.path
-from typing import Callable, cast, Dict, List, Tuple
+from typing import Callable, cast, Dict, Iterator, List, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -444,6 +444,33 @@ class DetTask(BEVTask):
         return batch_idx, src_idx
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
+        decoder_params = list(self.decoder.bbox_decoder.parameters()) + list(
+            self.decoder.reference_points_project.parameters()
+        )
+        for decoder_layer in self.decoder.decoder.layers:
+            decoder_params += list(
+                decoder_layer.cross_attn.sampling_offsets.parameters()
+            )
+
+        other_params = _params_difference(self.parameters(), decoder_params)
         return [
-            {"name": "default", "params": self.parameters(), "lr": lr},
+            {"name": "default", "params": other_params, "lr": lr, "weight_decay": 1e-4},
+            {
+                "name": "decoder",
+                "params": decoder_params,
+                "lr": lr / 10,
+                "weight_decay": 1e-4,
+            },
         ]
+
+
+def _params_difference(
+    params: Iterator[nn.Parameter], to_remove: List[nn.Parameter]
+) -> List[nn.Parameter]:
+    out = []
+    to_remove_set = set(to_remove)
+    for p in params:
+        if p in to_remove_set:
+            continue
+        out.append(p)
+    return out

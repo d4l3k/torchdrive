@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, Iterator, List, Tuple
 
 import matplotlib.pyplot as plt
 
@@ -21,6 +21,7 @@ class PathTask(BEVTask):
         num_heads: int = 8,
         num_layers: int = 6,
         max_seq_len: int = 6 * 2,
+        downsample: int = 6,
         num_ar_iters: int = 1,
         max_dist: float = 128,
         num_buckets: int = 100,
@@ -30,6 +31,7 @@ class PathTask(BEVTask):
 
         self.max_seq_len = max_seq_len
         self.num_ar_iters = num_ar_iters
+        self.downsample = downsample
 
         self.xy_encoder = XYEncoder(num_buckets=num_buckets, max_dist=max_dist)
 
@@ -42,6 +44,7 @@ class PathTask(BEVTask):
             compile_fn=compile_fn,
             max_seq_len=max_seq_len,
             pos_dim=num_buckets * 2,
+            static_features=2 * 3 + 1,  # start, final, velocity, time
         )
 
         self.ae_mae = torchmetrics.MeanAbsoluteError()
@@ -71,22 +74,47 @@ class PathTask(BEVTask):
         positions /= positions[..., -1:] + 1e-8  # perspective warp
         positions = positions[..., :2].permute(0, 2, 1)
 
+        # downsample to 1/6 the frame rate (i.e. 12fps to 2fpss)
+        downsample = self.downsample
+
         # used for direction bucket
         final_pos = positions[torch.arange(BS), :, (lengths - 1)]
+        # expand to one per downsample path
+        final_pos = final_pos.unsqueeze(1).expand(-1, downsample, -1).flatten(0, 1)
 
-        # downsample to 1/6 the frame rate (i.e. 12fps to 2fpss)
-        downsample = 6
-        positions = positions[..., ctx.start_frame :: downsample]
-        mask = mask[..., ctx.start_frame :: downsample]
-        lengths = mask.sum(dim=1)
+        assert batch.frame_time.size(1) >= downsample
+        start_time = batch.frame_time[:, :downsample].flatten(0, 1)
 
+        # crop positions and mask to be multiple of downsample so we can run
+        # multiple downsampled paths in parallel
         pos_len = positions.size(-1)
+        pos_len = min(pos_len // downsample, self.max_seq_len + 1)
+
+        positions = positions[..., : pos_len * downsample]
+        mask = mask[..., : pos_len * downsample]
+
+        positions = (
+            positions.unflatten(-1, (downsample, pos_len))
+            .permute(0, 2, 1, 3)
+            .flatten(0, 1)
+        )
+        mask = mask.unflatten(-1, (downsample, pos_len)).flatten(0, 1)
+        assert positions.shape, (BS * downsample, 2, pos_len)
+        assert mask.shape, (BS * downsample, pos_len)
+
+        bev = bev.unsqueeze(1).expand(-1, downsample, -1, -1, -1).flatten(0, 1)
+
+        start_pos = positions[:, :, 0]
+        velocity = positions[:, :, 1] - positions[:, :, 0]
+
+        static_features = torch.cat(
+            (start_pos, final_pos, velocity, start_time.unsqueeze(1)), dim=1
+        )
+
+        lengths = mask.sum(dim=-1)
+
         # if we need to be aligned to size 8
         # pos_len = pos_len - (pos_len % 8) + 1
-        pos_len = min(pos_len, self.max_seq_len + 1)
-        positions = positions[..., :pos_len]
-        mask = mask[..., :pos_len]
-        lengths = lengths.clamp(max=pos_len)
         num_elements = mask.float().sum()
 
         assert mask.int().sum() == lengths.sum(), (mask, lengths)
@@ -100,33 +128,23 @@ class PathTask(BEVTask):
         posmax = positions.abs().amax()
         assert posmax < 1000, positions
 
-        for i, length in enumerate(lengths):
-            if length == 0:
-                continue
-            pos = positions[i, :, :length]
-            if torch.logical_and(pos[0] == 0, pos[1] == 0).any():
-                breakpoint()
+        # for i, length in enumerate(lengths):
+        #    if length == 0:
+        #        continue
+        #    pos = positions[i, :, :length]
+        #    if torch.logical_and(pos[0] == 0, pos[1] == 0).any():
+        #        breakpoint()
 
         prev = positions[..., :-1]
         target = positions[..., 1:]
         target_mask = mask[..., 1:]
 
-        # print(prev)
-        # print(target)
-
-        # print(target, num_elements)
-        # print(target_mask)
         all_predicted = []
         losses = {}
         i = 0
 
         inp_one_hot = self.xy_encoder.encode_one_hot(target)  # TODO
-        final_pos_one_hot = self.xy_encoder.encode_one_hot(
-            final_pos.unsqueeze(2)
-        ).squeeze(2)
-        predicted_one_hot, ae_prev = self.transformer(
-            bev, inp_one_hot, final_pos_one_hot
-        )
+        predicted_one_hot, ae_prev = self.transformer(bev, inp_one_hot, static_features)
 
         per_token_loss = self.xy_encoder.loss(predicted_one_hot, target)
         per_token_loss = per_token_loss[target_mask]
@@ -162,7 +180,6 @@ class PathTask(BEVTask):
 
             with torch.no_grad():
                 fig = plt.figure()
-                # pyre-fixme[9]: int
                 length: int = min(lengths[0].item(), self.max_seq_len + 1)
                 plt.plot(*target[0, 0:2, : length - 1].detach().cpu(), label="target")
 
@@ -197,7 +214,7 @@ class PathTask(BEVTask):
                     self.transformer,
                     bev[:1],
                     positions[:1, ..., :1],
-                    final_pos[:1],
+                    static_features[:1],
                     n=length - 1,
                 )
                 assert autoregressive.shape == (1, 2, length), (
@@ -221,6 +238,27 @@ class PathTask(BEVTask):
         return losses
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
+        decoder_params = list(self.transformer.pos_decoder.parameters())
+
+        other_params = _params_difference(self.parameters(), decoder_params)
         return [
-            {"name": "default", "params": self.parameters(), "lr": lr},
+            {"name": "default", "params": other_params, "lr": lr, "weight_decay": 1e-4},
+            {
+                "name": "decoder",
+                "params": decoder_params,
+                "lr": lr / 10,
+                "weight_decay": 1e-4,
+            },
         ]
+
+
+def _params_difference(
+    params: Iterator[nn.Parameter], to_remove: List[nn.Parameter]
+) -> List[nn.Parameter]:
+    out = []
+    to_remove_set = set(to_remove)
+    for p in params:
+        if p in to_remove_set:
+            continue
+        out.append(p)
+    return out

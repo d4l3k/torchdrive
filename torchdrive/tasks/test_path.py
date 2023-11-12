@@ -18,6 +18,7 @@ class TestPath(unittest.TestCase):
             num_heads=2,
             num_layers=1,
             num_ar_iters=3,
+            downsample=2,
         )
         batch = dummy_batch()
         ctx = Context(
@@ -48,3 +49,5 @@ class TestPath(unittest.TestCase):
             ],
         )
         self.assertEqual(losses["position/0"].shape, tuple())
+
+        m.param_opts(lr=1e-4)

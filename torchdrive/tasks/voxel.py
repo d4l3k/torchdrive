@@ -1176,7 +1176,7 @@ class VoxelTask(BEVTask):
         # convert to image space
         target_K[:, 0] *= self.backproject_depth.width
         target_K[:, 1] *= self.backproject_depth.height
-        target_inv_K = target_K.pinverse()
+        target_inv_K = target_K.inverse()
 
         world_points = self.backproject_depth(
             target_depth, target_inv_K, target_cam_to_world

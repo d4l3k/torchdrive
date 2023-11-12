@@ -71,10 +71,6 @@ class XYEncoder(nn.Module):
         x = predicted[:, : self.num_buckets]
         y = predicted[:, self.num_buckets :]
         xl, yl = self.encode_labels(target)
-        # print(predicted.shape, target.shape)
-        # print(x.shape, xl.shape)
-        # print(y.shape, yl.shape)
-        # print(xl.aminmax(), yl.aminmax())
         return F.cross_entropy(x, xl, reduction="none") + F.cross_entropy(
             y, yl, reduction="none"
         )
@@ -251,6 +247,7 @@ class PathOneShotTransformer(nn.Module):
         bev_dim: int,
         dim: int,
         max_seq_len: int,
+        static_features: int,
         num_heads: int = 8,
         num_layers: int = 3,
         pos_dim: int = 3,
@@ -309,7 +306,6 @@ class PathOneShotTransformer(nn.Module):
         )
         self.transformer = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
 
-        static_features = 2 * pos_dim
         # pyre-fixme[4]: Attribute must be annotated.
         self.static_encoder = compile_fn(MLP(static_features, dim, dim, num_layers=3))
 
@@ -319,17 +315,15 @@ class PathOneShotTransformer(nn.Module):
         self,
         bev: torch.Tensor,
         positions: torch.Tensor,
-        final_pos: torch.Tensor,
+        static_features: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         BS = len(bev)
         device = bev.device
         dtype = bev.dtype
 
         num_pos = positions.size(2)
-        start_position = positions[:, :, 0]
 
-        static_feats = torch.cat((start_position, final_pos), dim=1).unsqueeze(-1)
-        static = self.static_encoder(static_feats).permute(0, 2, 1)
+        static = self.static_encoder(static_features.unsqueeze(-1)).permute(0, 2, 1)
 
         queries = self.query_embed.weight + static
 
@@ -356,13 +350,12 @@ class PathOneShotTransformer(nn.Module):
         m: nn.Module,
         bev: torch.Tensor,
         seq: torch.Tensor,
-        final_pos: torch.Tensor,
+        static_features: torch.Tensor,
         n: int,
     ) -> torch.Tensor:
         """
         infer runs the inference in an autoregressive manner.
         """
-        final_pos_one_hot = xy_encoder.encode_one_hot(final_pos.unsqueeze(2)).squeeze(2)
         seq = seq[:, :2]  # switch to xy
         bs = seq.size(0)
         # add dummy item on end
@@ -370,6 +363,6 @@ class PathOneShotTransformer(nn.Module):
             (seq, torch.zeros(bs, 2, n - 1, device=bev.device, dtype=bev.dtype)), dim=-1
         )
         inp_one_hot = xy_encoder.encode_one_hot(inp)
-        out, _ = m(bev, inp_one_hot, final_pos_one_hot)
+        out, _ = m(bev, inp_one_hot, static_features)
         out = xy_encoder.decode(out)
         return torch.cat((seq, out), dim=-1)

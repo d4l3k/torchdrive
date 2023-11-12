@@ -39,3 +39,5 @@ class TestDet(unittest.TestCase):
         ]
         losses = m(ctx, batch, grids)
         self.assertIn("unmatched", losses)
+
+        m.param_opts(lr=1e-4)
