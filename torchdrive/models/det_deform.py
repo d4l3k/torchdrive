@@ -43,7 +43,10 @@ class DetDeformableTransformerDecoder(nn.Module):
         self.num_queries = num_queries
 
         self.query_embed = nn.Embedding(num_queries, dim)
-        self.reference_points_project = nn.Linear(dim, 2)
+        self.reference_points_project = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(dim, 2),
+        )
 
         decoder_layer = DeformableTransformerDecoderLayer(
             d_model=dim,
@@ -58,8 +61,11 @@ class DetDeformableTransformerDecoder(nn.Module):
             num_layers=num_layers,
         )
 
-        self.bbox_decoder = MLP(dim, dim, 9, num_layers=4)
-        self.class_decoder = nn.Conv1d(dim, num_classes + 1, 1)
+        self.bbox_decoder = MLP(dim, dim, 9, num_layers=4, dropout=dropout)
+        self.class_decoder = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Conv1d(dim, num_classes + 1, 1),
+        )
 
         bev_encoders = []
         for i in range(num_levels - 1, -1, -1):
@@ -78,6 +84,7 @@ class DetDeformableTransformerDecoder(nn.Module):
                         group_width=dim,
                         bottleneck_multiplier=1.0,
                     ),
+                    nn.Dropout(dropout),
                     nn.Conv2d(dim, dim, 1),
                     LearnedPositionalEncoding2d((h * 2**i, w * 2**i), dim),
                 )

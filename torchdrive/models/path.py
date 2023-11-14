@@ -136,6 +136,7 @@ class PathAutoRegressiveTransformer(nn.Module):
                 group_width=bev_dim,
                 bottleneck_multiplier=1.0,
             ),
+            nn.Dropout(dropout),
             nn.Conv2d(bev_dim, dim, 1),
             LearnedPositionalEncoding2d(bev_shape, dim),
         )
@@ -147,6 +148,7 @@ class PathAutoRegressiveTransformer(nn.Module):
             nn.Sequential(
                 nn.Linear(pos_dim, dim),
                 nn.ReLU(inplace=True),
+                nn.Dropout(dropout),
                 nn.Linear(dim, dim),
                 LearnedPositionalEncodingSeq(max_seq_len, dim),
             )
@@ -154,15 +156,19 @@ class PathAutoRegressiveTransformer(nn.Module):
         # pyre-fixme[4]: Attribute must be annotated.
         self.pos_decoder = compile_fn(
             nn.Sequential(
+                nn.Dropout(dropout),
                 nn.Linear(dim, dim),
                 nn.ReLU(inplace=True),
+                nn.Dropout(dropout),
                 nn.Linear(dim, pos_dim),
             )
         )
 
         static_features = 2 * pos_dim
         # pyre-fixme[4]: Attribute must be annotated.
-        self.static_encoder = compile_fn(MLP(static_features, dim, dim, num_layers=3))
+        self.static_encoder = compile_fn(
+            MLP(static_features, dim, dim, num_layers=3, dropout=dropout)
+        )
 
         self.transformer = StockTransformerDecoder(
             dim=dim,
@@ -267,6 +273,7 @@ class PathOneShotTransformer(nn.Module):
         self.query_embed = nn.Embedding(num_queries, dim)
 
         self.bev_encoder = nn.Sequential(
+            nn.Dropout(dropout),
             models.regnet.AnyStage(
                 bev_dim,
                 bev_dim,
@@ -278,6 +285,7 @@ class PathOneShotTransformer(nn.Module):
                 group_width=bev_dim,
                 bottleneck_multiplier=1.0,
             ),
+            nn.Dropout(dropout),
             nn.Conv2d(bev_dim, dim, 1),
             LearnedPositionalEncoding2d(bev_shape, dim),
         )
@@ -288,10 +296,13 @@ class PathOneShotTransformer(nn.Module):
         # pyre-fixme[4]: Attribute must be annotated.
         self.pos_decoder = compile_fn(
             nn.Sequential(
+                nn.Dropout(dropout),
                 nn.Linear(decoder_dim, inter_dim),
                 nn.ReLU(inplace=True),
+                nn.Dropout(dropout),
                 nn.Linear(inter_dim, inter_dim),
                 nn.ReLU(inplace=True),
+                nn.Dropout(dropout),
                 nn.Linear(inter_dim, out_dim),
             )
         )
@@ -301,11 +312,14 @@ class PathOneShotTransformer(nn.Module):
             dim_feedforward=dim * 4,
             nhead=num_heads,
             batch_first=True,
+            dropout=dropout,
         )
         self.transformer = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
 
         # pyre-fixme[4]: Attribute must be annotated.
-        self.static_encoder = compile_fn(MLP(static_features, dim, dim, num_layers=3))
+        self.static_encoder = compile_fn(
+            MLP(static_features, dim, dim, num_layers=3, dropout=dropout)
+        )
 
         transformer_init(self)
 

@@ -351,7 +351,7 @@ class DetTask(BEVTask):
 
         if len(unmatched_classes) > 0:
             losses["unmatched"] = (
-                F.cross_entropy(unmatched_classes, target_classes) * 40
+                F.cross_entropy(unmatched_classes, target_classes) * 20
             )
 
         if ctx.log_img:
@@ -366,7 +366,7 @@ class DetTask(BEVTask):
             ctx.add_scalar("classes/accuracy", self.accuracy.compute())
             self.accuracy.reset()
 
-        losses = {k: v for k, v in losses.items()}
+        losses = {k: v * 5 for k, v in losses.items()}
 
         return losses
 

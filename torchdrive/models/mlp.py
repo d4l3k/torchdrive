@@ -8,7 +8,12 @@ class MLP(nn.Module):
     """
 
     def __init__(
-        self, input_dim: int, hidden_dim: int, output_dim: int, num_layers: int
+        self,
+        input_dim: int,
+        hidden_dim: int,
+        output_dim: int,
+        num_layers: int,
+        dropout: float = 0.0,
     ) -> None:
         super().__init__()
 
@@ -21,13 +26,15 @@ class MLP(nn.Module):
 
         for i in range(num_layers - 2):
             layers += [
+                nn.Dropout(dropout),
                 nn.Linear(hidden_dim, hidden_dim),
                 nn.ReLU(inplace=True),
             ]
 
-        layers.append(
+        layers += [
+            nn.Dropout(dropout),
             nn.Linear(hidden_dim, output_dim),
-        )
+        ]
 
         self.decoder = nn.Sequential(*layers)
 
