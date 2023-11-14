@@ -13,6 +13,16 @@ from torchdrive.models.regnet import ConvPEBlock
 from torchdrive.positional_encoding import apply_sin_cos_enc2d
 
 
+def _normalize_weights(weights: List[float]) -> List[float]:
+    """
+    This computes the inverse normalization of the provided weights. This is
+    designed to counterbalance class imbalances by weighing lower probability
+    classes more and higher probability classes less.
+    """
+    mean = sum(weights) / len(weights)
+    return [mean / w for w in weights]
+
+
 class BDD100KDet:
     """
     This is a helper class intended for doing semantic object detections during
@@ -33,6 +43,22 @@ class BDD100KDet:
         "traffic sign",
         "<no match>",
     ]
+    WEIGHTS: List[float] = _normalize_weights(
+        [
+            129262,
+            6461,
+            1021857,
+            42963,
+            16505,
+            179,
+            4296,
+            10229,
+            265906,
+            343777,
+        ]
+    ) + [
+        1.0
+    ]  # no match
 
     def __init__(
         self,

@@ -124,6 +124,7 @@ class PathAutoRegressiveTransformer(nn.Module):
         self.final_jitter = final_jitter
 
         self.bev_encoder = nn.Sequential(
+            nn.Dropout(dropout),
             models.regnet.AnyStage(
                 bev_dim,
                 bev_dim,

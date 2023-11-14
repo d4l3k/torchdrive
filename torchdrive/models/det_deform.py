@@ -66,6 +66,7 @@ class DetDeformableTransformerDecoder(nn.Module):
             h, w = bev_shape
             bev_encoders.append(
                 nn.Sequential(
+                    nn.Dropout(dropout),
                     models.regnet.AnyStage(
                         dim,
                         dim,

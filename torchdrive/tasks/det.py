@@ -398,7 +398,11 @@ class DetTask(BEVTask):
         assert len(target_classes_o) > 0, "can't compute loss_label with no items"
 
         src_logits_o = src_logits_o.float()
-        loss_ce = F.cross_entropy(src_logits_o, target_classes_o)
+        loss_ce = F.cross_entropy(
+            src_logits_o,
+            target_classes_o,
+            weight=src_logits_o.new_tensor(BDD100KDet.WEIGHTS),
+        )
 
         src_classes = src_logits_o.argmax(dim=-1)
         self.confusion_matrix.update(src_classes, target_classes_o)
