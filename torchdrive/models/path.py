@@ -282,19 +282,16 @@ class PathOneShotTransformer(nn.Module):
         )
 
         decoder_dim = num_queries * dim
+        inter_dim = 4 * dim
         out_dim = max_seq_len * pos_dim
         # pyre-fixme[4]: Attribute must be annotated.
         self.pos_decoder = compile_fn(
             nn.Sequential(
-                # nn.Linear(decoder_dim, decoder_dim),
-                # nn.ReLU(inplace=True),
-                # nn.Linear(decoder_dim, decoder_dim),
-                # nn.ReLU(inplace=True),
-                nn.Linear(decoder_dim, out_dim),
+                nn.Linear(decoder_dim, inter_dim),
                 nn.ReLU(inplace=True),
-                nn.Linear(out_dim, out_dim),
+                nn.Linear(inter_dim, inter_dim),
                 nn.ReLU(inplace=True),
-                nn.Linear(out_dim, out_dim),
+                nn.Linear(inter_dim, out_dim),
             )
         )
 

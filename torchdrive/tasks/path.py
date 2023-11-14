@@ -12,19 +12,42 @@ from torchdrive.models.path import PathOneShotTransformer, XYEncoder
 from torchdrive.tasks.bev import BEVTask, Context
 
 
+def unflatten_strided(x: torch.Tensor, stride: int) -> torch.Tensor:
+    """
+    Returns the tensor with the last channel unflattened into `stride` number of
+    channels with each channel being a strided view of i::stride.
+
+    Arguments
+    ---------
+    x: [..., stride*n]
+    Returns:
+    [..., stride, n]
+    """
+    dim = x.size(-1)
+    n = dim // stride
+    assert (
+        n * stride == dim
+    ), f"last channel {dim} must be a multiple of stride {stride}"
+
+    out = []
+    for i in range(stride):
+        out.append(x[..., i::stride])
+    return torch.stack(out, dim=-2)
+
+
 class PathTask(BEVTask):
     def __init__(
         self,
         bev_shape: Tuple[int, int],
         bev_dim: int,
-        dim: int = 768,
+        dim: int = 256,
         num_heads: int = 8,
         num_layers: int = 6,
         max_seq_len: int = 6 * 2,
         downsample: int = 6,
         num_ar_iters: int = 1,
         max_dist: float = 128,
-        num_buckets: int = 100,
+        num_buckets: int = 512,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
@@ -94,11 +117,9 @@ class PathTask(BEVTask):
         mask = mask[..., : pos_len * downsample]
 
         positions = (
-            positions.unflatten(-1, (downsample, pos_len))
-            .permute(0, 2, 1, 3)
-            .flatten(0, 1)
+            unflatten_strided(positions, downsample).permute(0, 2, 1, 3).flatten(0, 1)
         )
-        mask = mask.unflatten(-1, (downsample, pos_len)).flatten(0, 1)
+        mask = unflatten_strided(mask, downsample).flatten(0, 1)
         assert positions.shape, (BS * downsample, 2, pos_len)
         assert mask.shape, (BS * downsample, pos_len)
 
@@ -180,6 +201,7 @@ class PathTask(BEVTask):
 
             with torch.no_grad():
                 fig = plt.figure()
+                # pyre-fixme[9]: int
                 length: int = min(lengths[0].item(), self.max_seq_len + 1)
                 plt.plot(*target[0, 0:2, : length - 1].detach().cpu(), label="target")
 
@@ -234,7 +256,7 @@ class PathTask(BEVTask):
                 plt.gca().set_aspect("equal")
                 ctx.add_figure("paths/autoregressive", fig)
 
-        losses = {k: v * 1000 for k, v in losses.items()}
+        losses = {k: v * 100 for k, v in losses.items()}
         return losses
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:

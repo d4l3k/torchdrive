@@ -6,7 +6,7 @@ import torch
 from torchdrive.data import dummy_batch
 
 from torchdrive.tasks.bev import Context
-from torchdrive.tasks.path import PathTask
+from torchdrive.tasks.path import PathTask, unflatten_strided
 
 
 class TestPath(unittest.TestCase):
@@ -51,3 +51,18 @@ class TestPath(unittest.TestCase):
         self.assertEqual(losses["position/0"].shape, tuple())
 
         m.param_opts(lr=1e-4)
+
+    def test_unflatten_strided(self) -> None:
+        inp = torch.arange(12)
+        out = unflatten_strided(inp, stride=3)
+        self.assertEqual(out.shape, (3, 4))
+        torch.testing.assert_close(
+            out,
+            torch.tensor(
+                (
+                    (0, 3, 6, 9),
+                    (1, 4, 7, 10),
+                    (2, 5, 8, 11),
+                )
+            ),
+        )
