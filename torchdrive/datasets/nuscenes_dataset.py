@@ -361,7 +361,7 @@ class CameraDataset(TorchDataset):
             "color": img,
             "mask": None,
             # pyre-fixme[27]: TypedDict `SampleData` has no key `sample_token`.
-            "token": sample_data["sample_token"],
+            "token": sample_data["token"],
         }
 
     def __getitem__(self, idx: int) -> Dict[str, object]:

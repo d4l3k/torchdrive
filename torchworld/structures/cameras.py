@@ -6,7 +6,7 @@
 
 import math
 import warnings
-from typing import Any, Dict, List, Optional, Self, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING, Union
 
 import numpy as np
 import torch
@@ -15,6 +15,9 @@ import torch.nn.functional as F
 from pytorch3d.renderer.utils import convert_to_tensors_and_broadcast, TensorProperties
 
 from torchworld.transforms.transform3d import Rotate, Transform3d, Translate
+
+if TYPE_CHECKING:
+    from typing import Self
 
 
 # Default values for rotation and translation matrices.
@@ -366,7 +369,7 @@ class CamerasBase(TensorProperties):
 
     # pyre-fixme[14]: `clone` overrides method defined in `TensorProperties`
     #  inconsistently.
-    def clone(self) -> Self:
+    def clone(self) -> "Self":
         """
         Returns a copy of `self`.
         """

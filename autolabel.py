@@ -1,5 +1,4 @@
 import argparse
-import importlib
 import os
 from multiprocessing.pool import ThreadPool
 from typing import Dict
@@ -19,7 +18,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 from torchdrive.data import Batch, TransferCollator
-from torchdrive.datasets.autolabeler import LabelType, save_tensors
+from torchdrive.datasets.autolabeler import AutoLabeler, LabelType, save_tensors
 from torchdrive.datasets.dataset import Dataset
 from torchdrive.train_config import create_parser, TrainConfig
 
@@ -31,8 +30,7 @@ args: argparse.Namespace = parser.parse_args()
 
 
 # pyre-fixme[5]: Global expression must be annotated.
-config_module = importlib.import_module("configs." + args.config)
-config: TrainConfig = config_module.CONFIG
+config: TrainConfig = args.config
 
 # overrides
 config.num_frames = 1
@@ -55,6 +53,9 @@ else:
 torch.set_float32_matmul_precision("high")
 
 dataset: Dataset = config.create_dataset(smoke=args.smoke)
+
+if isinstance(dataset, AutoLabeler):
+    dataset = dataset.dataset
 
 sampler: DistributedSampler[Dataset] = DistributedSampler(
     dataset,

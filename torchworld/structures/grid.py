@@ -1,12 +1,15 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Self, Tuple, TypeVar, Union
+from typing import Optional, Tuple, TYPE_CHECKING, TypeVar, Union
 
 import torch
 from pytorch3d.structures.volumes import VolumeLocator
 
 from torchworld.structures.cameras import CamerasBase
 from torchworld.transforms.transform3d import Transform3d
+
+if TYPE_CHECKING:
+    from typing import Self
 
 T = TypeVar("T")
 
@@ -17,13 +20,13 @@ class BaseGrid(ABC):
     time: torch.Tensor
 
     @abstractmethod
-    def to(self, target: Union[torch.device, str]) -> Self:
+    def to(self, target: Union[torch.device, str]) -> "Self":
         ...
 
-    def cuda(self) -> Self:
+    def cuda(self) -> "Self":
         return self.to(torch.device("cuda"))
 
-    def cpu(self) -> Self:
+    def cpu(self) -> "Self":
         return self.to(torch.device("cpu"))
 
     @property
