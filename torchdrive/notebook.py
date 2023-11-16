@@ -29,7 +29,7 @@ def display_bboxes(img: torch.Tensor, bboxes: object, threshold: float = 0.5) ->
     """
     tboxes = []
     labels = []
-    for i, box in enumerate(bboxes[0]):
+    for i, box in enumerate(bboxes):
         if len(box) == 0:
             continue
         if not isinstance(box, torch.Tensor):

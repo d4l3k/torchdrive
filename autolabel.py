@@ -29,7 +29,6 @@ parser.add_argument("--batch_size", type=int, required=True)
 args: argparse.Namespace = parser.parse_args()
 
 
-# pyre-fixme[5]: Global expression must be annotated.
 config: TrainConfig = args.config
 
 # overrides
@@ -185,8 +184,8 @@ for batch in tqdm(collator):
             token = batch.token[i][0]
             assert len(token) > 5
             token_path = os.path.join(task_path, f"{token}.safetensors.zstd")
-            token_paths.append(token_path)
             if not os.path.exists(token_path):
+                token_paths.append(token_path)
                 idxs.append(i)
 
         if len(idxs) == 0:
@@ -198,10 +197,10 @@ for batch in tqdm(collator):
             with torch.no_grad():
                 cam_data[cam] = task(squashed)
 
-        for j, i in enumerate(idxs):
+        for i in range(len(idxs)):
             frame_data = {}
             for cam, pred in cam_data.items():
-                frame_data[cam] = pred[j]
+                frame_data[cam] = pred[i]
 
             path = token_paths[i]
             handles.append(
