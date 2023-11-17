@@ -61,15 +61,24 @@ class XYEncoder(nn.Module):
         -------
         xy: [bs, 2, seq_len]
         """
-        x = xy[:, : self.num_buckets]
-        y = xy[:, self.num_buckets :]
+        x, y = self.split_xy_one_hot(xy)
         x = ((x.argmax(dim=1).float() / self.num_buckets) - 0.5) * (2 * self.max_dist)
         y = ((y.argmax(dim=1).float() / self.num_buckets) - 0.5) * (2 * self.max_dist)
         return torch.stack((x, y), dim=1)
 
-    def loss(self, predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def split_xy_one_hot(
+        self, predicted: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Splits the joint x/y one hot encoding into two individual tensors for
+        each axis.
+        """
         x = predicted[:, : self.num_buckets]
         y = predicted[:, self.num_buckets :]
+        return x, y
+
+    def loss(self, predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        x, y = self.split_xy_one_hot(predicted)
         xl, yl = self.encode_labels(target)
         return F.cross_entropy(x, xl, reduction="none") + F.cross_entropy(
             y, yl, reduction="none"

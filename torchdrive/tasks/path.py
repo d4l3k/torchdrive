@@ -55,6 +55,7 @@ class PathTask(BEVTask):
         self.max_seq_len = max_seq_len
         self.num_ar_iters = num_ar_iters
         self.downsample = downsample
+        self.num_buckets = num_buckets
 
         self.xy_encoder = XYEncoder(num_buckets=num_buckets, max_dist=max_dist)
 
@@ -71,6 +72,7 @@ class PathTask(BEVTask):
         )
 
         self.ae_mae = torchmetrics.MeanAbsoluteError()
+        self.perplexity = torchmetrics.Perplexity()
         self.position_mae = torchmetrics.MeanAbsoluteError()
 
     def forward(
@@ -174,6 +176,12 @@ class PathTask(BEVTask):
         # normalize by number of elements in sequence
         losses[f"position/{i}"] = loss
 
+        # calculate perplexity for x and y separately
+        x_labels, y_labels = self.xy_encoder.encode_labels(target)
+        x_pred, y_pred = self.xy_encoder.split_xy_one_hot(predicted_one_hot)
+        self.perplexity.update(x_pred.permute(0, 2, 1), x_labels)
+        self.perplexity.update(y_pred.permute(0, 2, 1), y_labels)
+
         predicted = self.xy_encoder.decode(predicted_one_hot)
         all_predicted.append(predicted)
 
@@ -186,9 +194,11 @@ class PathTask(BEVTask):
 
         if ctx.log_text:
             ctx.add_scalar("ae/mae", self.ae_mae.compute())
-            ctx.add_scalar("position/mae", self.position_mae.compute())
             self.ae_mae.reset()
+            ctx.add_scalar("position/mae", self.position_mae.compute())
             self.position_mae.reset()
+            ctx.add_scalar("position/perplexity", self.perplexity.compute())
+            self.perplexity.reset()
 
         if ctx.log_img:
             ctx.add_text("debug/target", str(target[0]))

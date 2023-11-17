@@ -60,9 +60,9 @@ sampler: DistributedSampler[Dataset] = DistributedSampler(
     dataset,
     num_replicas=WORLD_SIZE,
     rank=RANK,
-    shuffle=True,
+    shuffle=False,
     drop_last=False,
-    seed=0,
+    # seed=1,
 )
 dataloader = DataLoader[Batch](
     dataset,

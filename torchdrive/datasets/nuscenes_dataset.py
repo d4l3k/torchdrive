@@ -246,7 +246,8 @@ class TimestampMatcher:
     ) -> Tuple[SampleData, Dict[str, int]]:
         cam_front_samples = self.cam_samples[CamTypes.CAM_FRONT]
         if idx < 0 or idx >= len(cam_front_samples):
-            raise IndexError("Index out of range")
+            print(f"index out of range {idx}/{len(cam_front_samples)}")
+            return None, None
 
         cam_front_timestamp = as_num(cam_front_samples[idx]["timestamp"])
         # pyre-fixme[6]: For 1st argument expected `int` but got `str`.
@@ -300,7 +301,12 @@ class ConcatDataset(TorchDataset[T_co]):
             sample_idxs = idxs
         else:
             sample_idxs = [idx - self.cumulative_sizes[dataset_idx - 1] for idx in idxs]
-        return self.datasets[dataset_idx][sample_idxs]
+
+        dataset = self.datasets[dataset_idx]
+
+        if max(sample_idxs) >= len(dataset):
+            return None
+        return dataset[sample_idxs]
 
     @property
     def cummulative_sizes(self):
@@ -527,7 +533,8 @@ class LidarDataset:
     def __getitem__(self, idxs: List[int]) -> Tuple[torch.Tensor, torch.Tensor]:
         # Account for FPS difference between cameras (15ps) and lidar
         # (20fps)
-        sample_data = self.samples[idxs[2]]  # get 3rd lidar frame
+        target_idx = min(2, len(idxs) - 1)
+        sample_data = self.samples[idxs[target_idx]]  # get 3rd lidar frame
 
         calibrated_sensor_token = sample_data["calibrated_sensor_token"]
         calibrated_sensor = self.nusc.get("calibrated_sensor", calibrated_sensor_token)
@@ -666,7 +673,10 @@ class NuscenesDataset(Dataset):
             if min(idxs) < 0 or max(idxs) >= len(cam_scene):
                 # TODO: figure out why index is invalid
                 return None
-            data[cam] = cam_scene[idxs]
+            out = cam_scene[idxs]
+            if out is None:
+                return None
+            data[cam] = out
         data[CamTypes.CAM_FRONT] = self.cam_scenes[CamTypes.CAM_FRONT][front_idxs]
 
         token: Tensor = data[CamTypes.CAM_FRONT]["token"]
