@@ -1,12 +1,16 @@
 import json
 import os.path
+from contextlib import nullcontext
 from typing import Callable, cast, Dict, Iterator, List, Tuple
+
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.functional as F
 import torchmetrics
 from torch import nn
 from torchvision.utils import draw_bounding_boxes
+from torchworld.models.deformable_transformer import collect_sampling_locations
 
 from torchworld.transforms.img import normalize_img
 
@@ -56,6 +60,7 @@ class DetTask(BEVTask):
 
         self.cam_shape = cam_shape
         self.cameras = cameras
+        self.num_queries = num_queries
 
         decoder = DetDeformableTransformerDecoder(
             num_queries=num_queries,
@@ -100,24 +105,56 @@ class DetTask(BEVTask):
         grids = [grid.float() for grid in grids]
         num_frames = batch.distances.shape[1]
 
-        with torch.autograd.profiler.record_function("decoding"):
+        if ctx.log_img:
+            collect_ctx = collect_sampling_locations(self.decoder)
+        else:
+            collect_ctx = nullcontext()
+
+        with torch.autograd.profiler.record_function(
+            "decoding"
+        ), collect_ctx as sampling_locations:
             classes_logits, bboxes3d = self.decoder(grids)
             classes_softmax = F.softmax(classes_logits.float(), dim=-1)
 
             xyz, vel, sizes = self.decode_bboxes3d(bboxes3d.float())
 
         if ctx.log_img:
-            json_path = os.path.join(ctx.output, f"det_{ctx.global_step}.json")
-            with open(json_path, "w") as f:
-                json.dump(
-                    {
-                        "classes": classes_softmax[0].tolist(),
-                        "xyz": xyz[0].tolist(),
-                        "vel": vel[0].tolist(),
-                        "sizes": sizes[0].tolist(),
-                    },
-                    f,
-                )
+            if os.path.exists(ctx.output):
+                json_path = os.path.join(ctx.output, f"det_{ctx.global_step}.json")
+                with open(json_path, "w") as f:
+                    json.dump(
+                        {
+                            "classes": classes_softmax[0].tolist(),
+                            "xyz": xyz[0].tolist(),
+                            "vel": vel[0].tolist(),
+                            "sizes": sizes[0].tolist(),
+                        },
+                        f,
+                    )
+
+            # print each layer sampling points
+            for j, (ref_points, samples) in enumerate(sampling_locations):
+                bs, num_queries, n_levels, ch = ref_points.shape
+                assert ch == 2
+
+                for i in range(n_levels):
+                    fig = plt.figure()
+                    plt.gca().set_aspect("equal")
+                    xy = ref_points[0, :, i]
+                    plt.scatter(*xy.T.detach().cpu(), s=1)
+
+                    ctx.add_figure(f"attention/reference_points/{j}/{i}", fig)
+
+                bs, num_queries, num_heads, n_levels, n_points, ch = samples.shape
+                assert ch == 2
+
+                for i in range(n_levels):
+                    fig = plt.figure()
+                    plt.gca().set_aspect("equal")
+                    xy = samples[0, :, :, i, :, :].flatten(1, 2)
+                    plt.scatter(*xy.T.detach().cpu(), s=1)
+
+                    ctx.add_figure(f"attention/sampling_locations/{j}/{i}", fig)
 
         num_queries = classes_logits.shape[1]
 
@@ -450,11 +487,11 @@ class DetTask(BEVTask):
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
         decoder_params = list(self.decoder.bbox_decoder.parameters()) + list(
             self.decoder.reference_points_project.parameters()
-        )
+        )  # + list(self.decoder.class_decoder.parameters())
         for decoder_layer in self.decoder.decoder.layers:
             decoder_params += list(
                 decoder_layer.cross_attn.sampling_offsets.parameters()
-            )
+            ) + list(decoder_layer.project_reference_points.parameters())
 
         other_params = _params_difference(self.parameters(), decoder_params)
         return [

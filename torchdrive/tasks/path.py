@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from typing import Callable, Dict, Iterator, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -5,6 +6,7 @@ import matplotlib.pyplot as plt
 import torch
 import torchmetrics
 from torch import nn
+from torchworld.models.transformer import collect_cross_attention_weights
 from torchworld.transforms.img import render_color
 
 from torchdrive.data import Batch
@@ -56,6 +58,7 @@ class PathTask(BEVTask):
         self.num_ar_iters = num_ar_iters
         self.downsample = downsample
         self.num_buckets = num_buckets
+        self.bev_shape = bev_shape
 
         self.xy_encoder = XYEncoder(num_buckets=num_buckets, max_dist=max_dist)
 
@@ -167,7 +170,15 @@ class PathTask(BEVTask):
         i = 0
 
         inp_one_hot = self.xy_encoder.encode_one_hot(target)  # TODO
-        predicted_one_hot, ae_prev = self.transformer(bev, inp_one_hot, static_features)
+
+        if ctx.log_img:
+            collect_ctx = collect_cross_attention_weights(self.transformer)
+        else:
+            collect_ctx = nullcontext()
+        with collect_ctx as cross_attn_weights:
+            predicted_one_hot, ae_prev = self.transformer(
+                bev, inp_one_hot, static_features
+            )
 
         per_token_loss = self.xy_encoder.loss(predicted_one_hot, target)
         per_token_loss = per_token_loss[target_mask]
@@ -208,6 +219,12 @@ class PathTask(BEVTask):
             ctx.add_text("debug/predicted_one_hot", str(predicted_one_hot[0]))
 
             ctx.add_image("paths/one_hot", render_color(predicted_one_hot[0]))
+
+            # calculate cross_attn_weights
+            weights = torch.cat(cross_attn_weights, dim=1)
+            weights = weights.mean(dim=1)
+            weights = weights.unflatten(-1, self.bev_shape)
+            ctx.add_image("paths/cross_attn", render_color(weights[0]))
 
             with torch.no_grad():
                 fig = plt.figure()

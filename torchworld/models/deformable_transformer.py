@@ -9,7 +9,8 @@
 
 import copy
 import math
-from typing import Callable, Optional, Tuple
+from contextlib import contextmanager
+from typing import Callable, Generator, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -24,6 +25,39 @@ def inverse_sigmoid(x: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
     x1 = x.clamp(min=eps)
     x2 = (1 - x).clamp(min=eps)
     return torch.log(x1 / x2)
+
+
+@contextmanager
+def collect_sampling_locations(
+    m: nn.Module,
+) -> Generator[List[Tuple[torch.Tensor, torch.Tensor]], None, None]:
+    """
+    This is a context manager that captures the sampling locations used by the
+    multiscale deformable attention modules in the provided model.
+
+    Returns a list of tensors in the order they were created.
+    """
+    out: List[torch.Tensor] = []
+
+    def sampling_hook(points: torch.Tensor, locs: torch.Tensor) -> None:
+        out.append((points, locs))
+
+    to_unregister: List[MSDeformableAttention2d] = []
+
+    def register(m: nn.Module) -> None:
+        if not isinstance(m, MSDeformableAttention2d):
+            return
+
+        m.register_sampling_locations_hook(sampling_hook)
+        to_unregister.append(m)
+
+    m.apply(register)
+
+    try:
+        yield out
+    finally:
+        for m in to_unregister:
+            m.unregister_sampling_locations_hook()
 
 
 class DeformableTransformer(nn.Module):
@@ -42,6 +76,7 @@ class DeformableTransformer(nn.Module):
         enc_n_points: int = 4,
         two_stage: bool = False,
         two_stage_num_proposals: int = 300,
+        dynamic_reference_points: bool = False,
     ) -> None:
         super().__init__()
 
@@ -69,6 +104,7 @@ class DeformableTransformer(nn.Module):
             num_feature_levels,
             nhead,
             dec_n_points,
+            dynamic_reference_points=dynamic_reference_points,
         )
         self.decoder = DeformableTransformerDecoder(
             decoder_layer, num_decoder_layers, return_intermediate_dec
@@ -422,8 +458,11 @@ class DeformableTransformerDecoderLayer(nn.Module):
         n_levels: int = 4,
         n_heads: int = 8,
         n_points: int = 4,
+        dynamic_reference_points: bool = False,
     ) -> None:
         super().__init__()
+
+        self.n_levels = n_levels
 
         # cross attention
         self.cross_attn = MSDeformableAttention2d(d_model, n_levels, n_heads, n_points)
@@ -444,6 +483,14 @@ class DeformableTransformerDecoderLayer(nn.Module):
         self.linear2 = nn.Linear(d_ffn, d_model)
         self.dropout4 = nn.Dropout(dropout)
         self.norm3 = nn.LayerNorm(d_model)
+
+        # reference points
+        self.dynamic_reference_points = dynamic_reference_points
+        if dynamic_reference_points:
+            self.project_reference_points = nn.Sequential(
+                nn.Linear(d_model, n_levels * 2),
+                nn.Sigmoid(),
+            )
 
     @staticmethod
     def with_pos_embed(
@@ -474,6 +521,10 @@ class DeformableTransformerDecoderLayer(nn.Module):
         )[0].transpose(0, 1)
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
+
+        if self.dynamic_reference_points:
+            reference_points = self.project_reference_points(tgt)
+            reference_points = reference_points.unflatten(-1, (self.n_levels, 2))
 
         # cross attention
         tgt2 = self.cross_attn(

@@ -1,6 +1,6 @@
 import math
 import warnings
-from typing import Any, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -27,7 +27,7 @@ def ms_deformable_attention(
     value:
     spatial_shapes:
     level_start_index:
-    sampling_locations:
+    sampling_locations: [N, Len_q, n_heads, n_levels, n_points, 2]
     attention_weights:
     im2col_step:
     """
@@ -204,6 +204,10 @@ class MSDeformableAttention2d(nn.Module):
 
         self._reset_parameters()
 
+        self._sampling_hook: Optional[
+            Callable[[torch.Tensor, torch.Tensor], None]
+        ] = None
+
     def _reset_parameters(self) -> None:
         nn.init.constant_(self.sampling_offsets.weight.data, 0.0)
         thetas = torch.arange(self.n_heads, dtype=torch.float32) * (
@@ -225,6 +229,16 @@ class MSDeformableAttention2d(nn.Module):
         nn.init.constant_(self.value_proj.bias.data, 0.0)
         nn.init.xavier_uniform_(self.output_proj.weight.data)
         nn.init.constant_(self.output_proj.bias.data, 0.0)
+
+    def register_sampling_locations_hook(
+        self, f: Callable[[torch.Tensor, torch.Tensor], None]
+    ) -> None:
+        assert self._sampling_hook is None
+        self._sampling_hook = f
+
+    def unregister_sampling_locations_hook(self) -> None:
+        assert self._sampling_hook is not None
+        self._sampling_hook = None
 
     def forward(
         self,
@@ -286,6 +300,10 @@ class MSDeformableAttention2d(nn.Module):
                     reference_points.shape[-1]
                 )
             )
+
+        if self._sampling_hook is not None:
+            self._sampling_hook(reference_points, sampling_locations)
+
         output = ms_deformable_attention(
             value,
             input_spatial_shapes,

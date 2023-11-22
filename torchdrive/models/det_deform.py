@@ -55,6 +55,7 @@ class DetDeformableTransformerDecoder(nn.Module):
             n_levels=num_levels,
             n_points=num_points,
             dropout=dropout,
+            dynamic_reference_points=True,
         )
         self.decoder = DeformableTransformerDecoder(
             decoder_layer,

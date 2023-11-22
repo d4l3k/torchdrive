@@ -21,7 +21,7 @@ class TestDet(unittest.TestCase):
         )
         batch = dummy_batch()
         ctx = Context(
-            log_img=False,
+            log_img=True,
             log_text=True,
             global_step=0,
             writer=MagicMock(),
