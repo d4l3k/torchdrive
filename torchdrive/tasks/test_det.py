@@ -1,12 +1,15 @@
 import unittest
 from unittest.mock import MagicMock
 
+import matplotlib
+
 import torch
 
 from torchdrive.data import dummy_batch
-
 from torchdrive.tasks.bev import Context
 from torchdrive.tasks.det import DetTask
+
+matplotlib.use("agg")
 
 
 class TestDet(unittest.TestCase):

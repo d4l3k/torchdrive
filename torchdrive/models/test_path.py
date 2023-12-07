@@ -12,53 +12,6 @@ from torchdrive.models.path import (
 
 
 class PathTest(unittest.TestCase):
-    def test_path_transformer(self) -> None:
-        bev_dim = 8
-        dim = 8
-        num_points = 7
-        m = PathAutoRegressiveTransformer(
-            bev_shape=(4, 4),
-            bev_dim=bev_dim,
-            dim=dim,
-            num_heads=2,
-            max_seq_len=num_points + 3,
-        )
-        out, ae_prev = m(
-            bev=torch.rand(2, bev_dim, 4, 4),
-            positions=torch.rand(2, 3, num_points),
-            final_pos=torch.rand(2, 3),
-        )
-        self.assertEqual(out.shape, (2, 3, num_points))
-        self.assertEqual(ae_prev.shape, (2, 3, num_points))
-
-        m.set_dropout(0.2)
-
-    def test_path_transformer_infer(self) -> None:
-        bev_dim = 8
-        dim = 8
-        m = PathAutoRegressiveTransformer(
-            bev_shape=(4, 4),
-            bev_dim=bev_dim,
-            dim=dim,
-            num_heads=2,
-            max_seq_len=10,
-            pos_dim=200,
-        )
-
-        enc = XYEncoder(num_buckets=100, max_dist=10.0)
-
-        m.eval()
-        with torch.no_grad():
-            out = PathAutoRegressiveTransformer.infer(
-                enc,
-                m,
-                bev=torch.rand(1, bev_dim, 4, 4),
-                seq=torch.rand(1, 3, 2),
-                final_pos=torch.rand(1, 3),
-                n=3,
-            )
-        self.assertEqual(out.shape, (1, 2, 5))
-
     def test_rel_dists(self) -> None:
         out = rel_dists(torch.rand(2, 3, 6))
         self.assertEqual(out.shape, (2, 6))
@@ -110,11 +63,11 @@ class PathTest(unittest.TestCase):
         loss.mean().backward()
         self.assertIsNotNone(xy1h.grad)
 
-    def test_path_one_shot_transformer(self) -> None:
+    def test_path_transformer(self) -> None:
         bev_dim = 8
         dim = 8
         num_points = 7
-        m = PathOneShotTransformer(
+        m1 = PathOneShotTransformer(
             bev_shape=(4, 4),
             bev_dim=bev_dim,
             dim=dim,
@@ -123,9 +76,59 @@ class PathTest(unittest.TestCase):
             num_queries=10,
             static_features=3,
         )
-        out, _ = m(
-            bev=torch.rand(2, bev_dim, 4, 4),
-            positions=torch.rand(2, 3, num_points),
-            static_features=torch.rand(2, 3),
+        m2 = PathAutoRegressiveTransformer(
+            bev_shape=(4, 4),
+            bev_dim=bev_dim,
+            dim=dim,
+            num_heads=2,
+            max_seq_len=num_points + 3,
+            static_features=3,
         )
-        self.assertEqual(out.shape, (2, 3, num_points))
+
+        for m in [m1, m2]:
+            out, _ = m(
+                bev=torch.rand(2, bev_dim, 4, 4),
+                positions=torch.rand(2, 3, num_points),
+                static_features=torch.rand(2, 3),
+            )
+            self.assertEqual(out.shape, (2, 3, num_points))
+
+    def test_path_transformer_infer(self) -> None:
+        bev_dim = 8
+        dim = 8
+        num_points = 7
+        num_buckets = 100
+        m1 = PathOneShotTransformer(
+            bev_shape=(4, 4),
+            bev_dim=bev_dim,
+            dim=dim,
+            num_heads=2,
+            max_seq_len=num_points + 3,
+            num_queries=10,
+            static_features=3,
+            pos_dim=num_buckets * 2,
+        )
+        m2 = PathAutoRegressiveTransformer(
+            bev_shape=(4, 4),
+            bev_dim=bev_dim,
+            dim=dim,
+            num_heads=2,
+            max_seq_len=num_points + 3,
+            static_features=3,
+            pos_dim=num_buckets * 2,
+        )
+
+        enc = XYEncoder(num_buckets=num_buckets, max_dist=10.0)
+
+        for i, m in enumerate([m1, m2]):
+            with self.subTest(i=i), torch.no_grad():
+                m.eval()
+                out = m.infer(
+                    enc,
+                    m,
+                    bev=torch.rand(1, bev_dim, 4, 4),
+                    seq=torch.rand(1, 3, 2),
+                    static_features=torch.rand(1, 3),
+                    n=3,
+                )
+                self.assertEqual(out.shape, (1, 2, 5))

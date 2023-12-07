@@ -120,6 +120,7 @@ class PathAutoRegressiveTransformer(nn.Module):
         bev_dim: int,
         dim: int,
         max_seq_len: int,
+        static_features: int,
         num_heads: int = 8,
         num_layers: int = 3,
         pos_dim: int = 3,
@@ -173,7 +174,6 @@ class PathAutoRegressiveTransformer(nn.Module):
             )
         )
 
-        static_features = 2 * pos_dim
         # pyre-fixme[4]: Attribute must be annotated.
         self.static_encoder = compile_fn(
             MLP(static_features, dim, dim, num_layers=3, dropout=dropout)
@@ -192,7 +192,7 @@ class PathAutoRegressiveTransformer(nn.Module):
         self,
         bev: torch.Tensor,
         positions: torch.Tensor,
-        final_pos: torch.Tensor,
+        static_features: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         BS = len(bev)
         device = bev.device
@@ -202,22 +202,14 @@ class PathAutoRegressiveTransformer(nn.Module):
         ae_pos = self.pos_decoder(position_emb).permute(0, 2, 1)
 
         num_pos = positions.size(2)
-        start_position = positions[:, :, 0]
 
-        # feed it the target end position with random jitter added to avoid
-        # overfitting
-        # if self.training:
-        #    final_jitter = (torch.rand_like(final_pos) * 2 - 1) * self.final_jitter
-        #    final_pos = final_pos + final_jitter
-
-        static_feats = torch.cat((start_position, final_pos), dim=1).unsqueeze(-1)
-        static = self.static_encoder(static_feats).permute(0, 2, 1)
+        static = self.static_encoder(static_features.unsqueeze(-1)).permute(0, 2, 1)
+        position_emb = position_emb + static
 
         # bev features
-        bev = self.bev_encoder(bev).flatten(-2, -1).permute(0, 2, 1)
+        cross_feats = self.bev_encoder(bev).flatten(-2, -1).permute(0, 2, 1)
 
         # cross attention features to decode
-        cross_feats = torch.cat((bev, static), dim=1)
 
         out_positions = self.transformer(position_emb, cross_feats)
 
@@ -233,21 +225,20 @@ class PathAutoRegressiveTransformer(nn.Module):
         m: nn.Module,
         bev: torch.Tensor,
         seq: torch.Tensor,
-        final_pos: torch.Tensor,
+        static_features: torch.Tensor,
         n: Union[int, torch.Tensor],
     ) -> torch.Tensor:
         """
         infer runs the inference in an autoregressive manner.
         """
-        final_pos_one_hot = xy_encoder.encode_one_hot(final_pos.unsqueeze(2)).squeeze(2)
         seq = seq[:, :2]  # switch to xy
         for i in range(n):
             # add dummy item on end
-            inp = torch.cat((seq, torch.zeros_like(seq[..., -1:])), dim=-1)
-            inp_one_hot = xy_encoder.encode_one_hot(inp)
-            out, _ = m(bev, inp_one_hot, final_pos_one_hot)
+            inp_one_hot = xy_encoder.encode_one_hot(seq)
+            out, _ = m(bev, inp_one_hot, static_features)
             out = xy_encoder.decode(out)
             seq = torch.cat((seq, out[..., -1:]), dim=-1)
+
         return seq
 
     def set_dropout(self, dropout: float) -> None:
@@ -381,9 +372,9 @@ class PathOneShotTransformer(nn.Module):
         bs = seq.size(0)
         # add dummy item on end
         inp = torch.cat(
-            (seq, torch.zeros(bs, 2, n - 1, device=bev.device, dtype=bev.dtype)), dim=-1
+            (seq, torch.zeros(bs, 2, n, device=bev.device, dtype=bev.dtype)), dim=-1
         )
         inp_one_hot = xy_encoder.encode_one_hot(inp)
         out, _ = m(bev, inp_one_hot, static_features)
         out = xy_encoder.decode(out)
-        return torch.cat((seq, out), dim=-1)
+        return out

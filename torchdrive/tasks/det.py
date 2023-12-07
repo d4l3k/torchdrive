@@ -248,11 +248,28 @@ class DetTask(BEVTask):
                         "pred_boxes": bboxes2d / normalize_coords,
                     }
 
-                    pairs = self.matcher(
+                    pairs, costs = self.matcher(
                         outputs=outputs,
                         targets=targets,
                         invalid_mask=invalid_mask,
                     )
+
+                    if ctx.log_text:
+                        for key, cost in costs.items():
+                            i, j = pairs[0]
+                            matched_cost = cost[0][i, j]
+                            if matched_cost.numel() == 0:
+                                continue
+                            amin, amax = matched_cost.aminmax()
+                            mean = matched_cost.mean()
+                            ctx.add_scalars(
+                                f"costs/{frame}/{cam}/{key}/distribution",
+                                {
+                                    "min": amin,
+                                    "max": amax,
+                                    "mean": mean,
+                                },
+                            )
 
                     num_boxes = sum(len(t["labels"]) for t in targets)
                     num_boxes = torch.as_tensor(

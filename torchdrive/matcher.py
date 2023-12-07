@@ -93,7 +93,7 @@ class HungarianMatcher:
         outputs: Dict[str, Tensor],
         targets: List[Dict[str, Tensor]],
         invalid_mask: Optional[Tensor] = None,
-    ) -> List[Tuple[Tensor, Tensor]]:
+    ) -> Tuple[List[Tuple[Tensor, Tensor]], Dict[str, Tensor]]:
         """Performs the matching
 
         Params:
@@ -108,11 +108,13 @@ class HungarianMatcher:
             invalid_mask: Tensor of size (BS, num_queries) for entries that are invalid
 
         Returns:
-            A list of size batch_size, containing tuples of (index_i, index_j) where:
+          - A list of size batch_size, containing tuples of (index_i, index_j) where:
                 - index_i is the indices of the selected predictions (in order)
                 - index_j is the indices of the corresponding selected targets (in order)
             For each batch element, it holds:
                 len(index_i) = len(index_j) = min(num_queries, num_target_boxes)
+
+          - Dictionary with the different cost matrices.
         """
         bs, num_queries = outputs["pred_logits"].shape[:2]
 
@@ -144,22 +146,43 @@ class HungarianMatcher:
         if invalid_mask is not None:
             cost_invalid[invalid_mask.reshape(-1), :] = self.cost_invalid
 
+        # Apply cost weights
+        cost_bbox = cost_bbox * self.cost_bbox
+        cost_class = cost_class * self.cost_class
+        cost_giou = cost_giou * self.cost_giou
+
         # Final cost matrix
-        C = (
-            self.cost_bbox * cost_bbox
-            + self.cost_class * cost_class
-            + self.cost_giou * cost_giou
-            + cost_invalid
-        )
-        C = C.view(bs, num_queries, -1).cpu()
+        cost_total = cost_bbox + cost_class + cost_giou + cost_invalid
 
         sizes = [len(v["boxes"]) for v in targets]
-        split_C = C.split(sizes, -1)
-        indices = [linear_sum_assignment(c[i]) for i, c in enumerate(split_C)]
-        return [
+
+        cost_total = self._split_mats(bs, num_queries, cost_total, sizes)
+        cost_bbox = self._split_mats(bs, num_queries, cost_bbox, sizes)
+        cost_class = self._split_mats(bs, num_queries, cost_class, sizes)
+        cost_giou = self._split_mats(bs, num_queries, cost_giou, sizes)
+        cost_invalid = self._split_mats(bs, num_queries, cost_invalid, sizes)
+
+        costs = {
+            "bbox": cost_bbox,
+            "class": cost_class,
+            "giou": cost_giou,
+            "invalid": cost_invalid,
+            "total": cost_total,
+        }
+
+        indices = [linear_sum_assignment(mat) for mat in cost_total]
+        out = [
             (
                 torch.as_tensor(i, dtype=torch.int64),
                 torch.as_tensor(j, dtype=torch.int64),
             )
             for i, j in indices
         ]
+        return out, costs
+
+    def _split_mats(
+        self, bs: int, num_queries: int, mat: Tensor, sizes: List[int]
+    ) -> List[torch.Tensor]:
+        mat = mat.view(bs, num_queries, -1).cpu()
+        split = mat.split(sizes, -1)
+        return [c[i] for i, c in enumerate(split)]

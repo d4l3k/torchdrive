@@ -43,22 +43,31 @@ class BDD100KDet:
         "traffic sign",
         "<no match>",
     ]
-    WEIGHTS: List[float] = _normalize_weights(
-        [
-            129262,
-            6461,
-            1021857,
-            42963,
-            16505,
-            179,
-            4296,
-            10229,
-            265906,
-            343777,
-        ]
-    ) + [
-        1.0
-    ]  # no match
+    OCCURANCE_COUNT: List[float] = [
+        129262,
+        6461,
+        1021857,
+        42963,
+        16505,
+        179,
+        4296,
+        10229,
+        265906,
+        343777,
+    ]
+    WEIGHTS: List[float] = [
+        1.0,  # pedestrian
+        1.0,  # rider
+        0.1,  # car
+        1.0,  # truck
+        1.0,  # bus
+        1.0,  # train
+        2.0,  # motorcycle
+        2.0,  # bicycle
+        1.0,  # traffic light
+        1.0,  # traffic sign
+        1.0,  # invalid
+    ]
 
     def __init__(
         self,

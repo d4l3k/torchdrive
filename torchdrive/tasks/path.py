@@ -10,7 +10,11 @@ from torchworld.models.transformer import collect_cross_attention_weights
 from torchworld.transforms.img import render_color
 
 from torchdrive.data import Batch
-from torchdrive.models.path import PathOneShotTransformer, XYEncoder
+from torchdrive.models.path import (
+    PathAutoRegressiveTransformer,
+    PathOneShotTransformer,
+    XYEncoder,
+)
 from torchdrive.tasks.bev import BEVTask, Context
 
 
@@ -50,6 +54,7 @@ class PathTask(BEVTask):
         num_ar_iters: int = 1,
         max_dist: float = 128,
         num_buckets: int = 512,
+        one_shot: bool = False,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda m: m,
     ) -> None:
         super().__init__()
@@ -62,17 +67,30 @@ class PathTask(BEVTask):
 
         self.xy_encoder = XYEncoder(num_buckets=num_buckets, max_dist=max_dist)
 
-        self.transformer: nn.Module = PathOneShotTransformer(
-            bev_shape=bev_shape,
-            bev_dim=bev_dim,
-            dim=dim,
-            num_heads=num_heads,
-            num_layers=num_layers,
-            compile_fn=compile_fn,
-            max_seq_len=max_seq_len,
-            pos_dim=num_buckets * 2,
-            static_features=2 * 3 + 1,  # start, final, velocity, time
-        )
+        if one_shot:
+            self.transformer: nn.Module = PathOneShotTransformer(
+                bev_shape=bev_shape,
+                bev_dim=bev_dim,
+                dim=dim,
+                num_heads=num_heads,
+                num_layers=num_layers,
+                compile_fn=compile_fn,
+                max_seq_len=max_seq_len,
+                pos_dim=num_buckets * 2,
+                static_features=2 * 3 + 1,  # start, final, velocity, time
+            )
+        else:
+            self.transformer: nn.Module = PathAutoRegressiveTransformer(
+                bev_shape=bev_shape,
+                bev_dim=bev_dim,
+                dim=dim,
+                num_heads=num_heads,
+                num_layers=num_layers,
+                compile_fn=compile_fn,
+                max_seq_len=max_seq_len,
+                pos_dim=num_buckets * 2,
+                static_features=2 * 3 + 1,  # start, final, velocity, time
+            )
 
         self.ae_mae = torchmetrics.MeanAbsoluteError()
         self.perplexity = torchmetrics.Perplexity()
@@ -167,41 +185,48 @@ class PathTask(BEVTask):
 
         all_predicted = []
         losses = {}
-        i = 0
 
-        inp_one_hot = self.xy_encoder.encode_one_hot(target)  # TODO
+        # loop multiple times to allow model to learn from it's mistakes
+        for i in range(3):
+            inp_one_hot = self.xy_encoder.encode_one_hot(prev)  # TODO
 
-        if ctx.log_img:
-            collect_ctx = collect_cross_attention_weights(self.transformer)
-        else:
-            collect_ctx = nullcontext()
-        with collect_ctx as cross_attn_weights:
-            predicted_one_hot, ae_prev = self.transformer(
-                bev, inp_one_hot, static_features
-            )
+            if ctx.log_img:
+                collect_ctx = collect_cross_attention_weights(self.transformer)
+            else:
+                collect_ctx = nullcontext()
+            with collect_ctx as cross_attn_weights:
+                predicted_one_hot, ae_prev = self.transformer(
+                    bev, inp_one_hot, static_features
+                )
 
-        per_token_loss = self.xy_encoder.loss(predicted_one_hot, target)
-        per_token_loss = per_token_loss[target_mask]
-        loss = per_token_loss.sum() / (per_token_loss.numel() + 1)
+            per_token_loss = self.xy_encoder.loss(predicted_one_hot, target)
+            per_token_loss = per_token_loss[target_mask]
+            loss = per_token_loss.sum() / (per_token_loss.numel() + 1)
 
-        # normalize by number of elements in sequence
-        losses[f"position/{i}"] = loss
+            # normalize by number of elements in sequence
+            losses[f"position/{i}"] = loss
 
-        # calculate perplexity for x and y separately
-        x_labels, y_labels = self.xy_encoder.encode_labels(target)
-        x_pred, y_pred = self.xy_encoder.split_xy_one_hot(predicted_one_hot)
-        self.perplexity.update(x_pred.permute(0, 2, 1), x_labels)
-        self.perplexity.update(y_pred.permute(0, 2, 1), y_labels)
+            # calculate perplexity for x and y separately
+            x_labels, y_labels = self.xy_encoder.encode_labels(target)
+            x_pred, y_pred = self.xy_encoder.split_xy_one_hot(predicted_one_hot)
+            self.perplexity.update(x_pred.permute(0, 2, 1), x_labels)
+            self.perplexity.update(y_pred.permute(0, 2, 1), y_labels)
 
-        predicted = self.xy_encoder.decode(predicted_one_hot)
-        all_predicted.append(predicted)
+            predicted = self.xy_encoder.decode(predicted_one_hot)
+            all_predicted.append(predicted)
 
-        # ensure encoder and decoder are in sync
-        # losses[f"ae/{i}"] = F.l1_loss(ae_prev, prev)
-        # self.ae_mae.update(ae_prev, prev)
+            # ensure encoder and decoder are in sync
+            # losses[f"ae/{i}"] = F.l1_loss(ae_prev, prev)
+            # self.ae_mae.update(ae_prev, prev)
 
-        l2_diff = torch.linalg.vector_norm(predicted - target, dim=1)[target_mask]
-        self.position_mae.update(l2_diff, torch.zeros_like(l2_diff))
+            l2_diff = torch.linalg.vector_norm(predicted - target, dim=1)[target_mask]
+            self.position_mae.update(l2_diff, torch.zeros_like(l2_diff))
+
+            # shift predicted value by 1 to become the new input
+            # detach the gradient to ensure model doesn't learn degenerate
+            # patterns
+            prev = torch.cat((positions[..., :1], predicted[..., :-1].detach()), dim=-1)
+            assert prev.shape == target.shape, (prev.shape, target.shape)
 
         if ctx.log_text:
             ctx.add_scalar("ae/mae", self.ae_mae.compute())
@@ -229,7 +254,7 @@ class PathTask(BEVTask):
             with torch.no_grad():
                 fig = plt.figure()
                 # pyre-fixme[9]: int
-                length: int = min(lengths[0].item(), self.max_seq_len + 1)
+                length: int = min(lengths[0].item(), self.max_seq_len)
                 plt.plot(*target[0, 0:2, : length - 1].detach().cpu(), label="target")
 
                 reencoded_target = self.xy_encoder.decode(
@@ -258,18 +283,28 @@ class PathTask(BEVTask):
                 fig = plt.figure()
                 # autoregressive
                 self.eval()
-                autoregressive = PathOneShotTransformer.infer(
+                autoregressive = self.transformer.infer(
                     self.xy_encoder,
                     self.transformer,
-                    bev[:1],
-                    positions[:1, ..., :1],
-                    static_features[:1],
+                    bev,
+                    positions[..., :1],
+                    static_features,
                     n=length - 1,
                 )
-                assert autoregressive.shape == (1, 2, length), (
+                assert autoregressive.shape == (BS * downsample, 2, length), (
+                    BS,
                     autoregressive.shape,
+                    positions.shape,
                     length,
                 )
+
+                ag_target = positions[..., :length]
+                ag_mask = mask[..., :length]
+                l2_diff = torch.linalg.vector_norm(autoregressive - ag_target, dim=1)[
+                    ag_mask
+                ]
+                ctx.add_scalar("position/mae_infer", l2_diff.mean())
+
                 plt.plot(*target[0, 0:2, : length - 1].detach().cpu(), label="target")
                 plt.plot(
                     *autoregressive[0, 0:2, :length].detach().cpu(),

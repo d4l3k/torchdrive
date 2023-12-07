@@ -22,10 +22,6 @@ class TestDet(unittest.TestCase):
         self.assertIsNotNone(out)
 
     def test_bdd100kdet_weights(self) -> None:
-        self.assertGreater(
-            BDD100KDet.WEIGHTS[0], 1
-        )  # pedestrian should be weighted higher
-        self.assertLess(BDD100KDet.WEIGHTS[2], 1)  # car should be weighted lower
         self.assertEqual(len(BDD100KDet.WEIGHTS), len(BDD100KDet.LABELS))
 
     def test_det_bev_decoder(self) -> None:

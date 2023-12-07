@@ -2,15 +2,16 @@ import unittest
 from unittest.mock import MagicMock
 
 import torch
+from parameterized import parameterized
 
 from torchdrive.data import dummy_batch
-
 from torchdrive.tasks.bev import Context
 from torchdrive.tasks.path import PathTask, unflatten_strided
 
 
 class TestPath(unittest.TestCase):
-    def test_path_task(self) -> None:
+    @parameterized.expand([(True,), (False,)])
+    def test_path_task(self, one_shot: bool) -> None:
         m = PathTask(
             bev_shape=(4, 4),
             bev_dim=8,
@@ -19,6 +20,7 @@ class TestPath(unittest.TestCase):
             num_layers=1,
             num_ar_iters=3,
             downsample=2,
+            one_shot=one_shot,
         )
         batch = dummy_batch()
         ctx = Context(
@@ -38,8 +40,8 @@ class TestPath(unittest.TestCase):
             losses.keys(),
             [
                 "position/0",
-                # "position/1",
-                # "position/2",
+                "position/1",
+                "position/2",
                 # "ae/0",
                 # "ae/1",
                 # "ae/2",
