@@ -132,3 +132,13 @@ class DetDeformableTransformerDecoder(nn.Module):
         bboxes = bboxes.float().sigmoid()  # normalized 0 to 1
 
         return classes, bboxes
+
+    def decoder_params(self) -> List[object]:
+        decoder_params = list(self.bbox_decoder.parameters()) + list(
+            self.reference_points_project.parameters()
+        )  # + list(self.decoder.class_decoder.parameters())
+        for decoder_layer in self.decoder.layers:
+            decoder_params += list(
+                decoder_layer.cross_attn.sampling_offsets.parameters()
+            ) + list(decoder_layer.project_reference_points.parameters())
+        return decoder_params

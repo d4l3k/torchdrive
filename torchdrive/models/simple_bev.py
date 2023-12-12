@@ -35,7 +35,9 @@ import torchvision
 from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
 from torchvision import transforms
+from torchvision.models.regnet import Conv2dNormActivation, SimpleStemIN
 from torchvision.models.resnet import resnet18
+
 from torchworld.models.resnet_3d import resnet3d18, Upsample3DBlock
 
 from torchdrive.amp import autocast
@@ -50,7 +52,7 @@ EPS = 1e-4
 
 def set_bn_momentum(model: nn.Module, momentum: float = 0.1) -> None:
     for m in model.modules():
-        if isinstance(m, (nn.InstanceNorm1d, nn.InstanceNorm2d, nn.InstanceNorm3d)):
+        if isinstance(m, (nn.InstanceNorm1d, nn.BatchNorm2d, nn.InstanceNorm3d)):
             m.momentum = momentum
 
 
@@ -65,11 +67,11 @@ class UpsamplingConcat(nn.Module):
         )
 
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.InstanceNorm2d(out_channels),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.InstanceNorm2d(out_channels),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
         )
 
@@ -77,6 +79,16 @@ class UpsamplingConcat(nn.Module):
         x_to_upsample = self.upsample(x_to_upsample)
         x_to_upsample = torch.cat([x, x_to_upsample], dim=1)
         return self.conv(x_to_upsample)
+
+    def fuse(self) -> None:
+        torch.ao.quantization.fuse_modules(
+            self,
+            [
+                ["conv.0", "conv.1", "conv.2"],
+                ["conv.3", "conv.4", "conv.5"],
+            ],
+            inplace=True,
+        )
 
 
 class UpsamplingAdd2d(nn.Module):
@@ -93,7 +105,7 @@ class UpsamplingAdd2d(nn.Module):
                 scale_factor=scale_factor, mode="bilinear", align_corners=False
             ),
             nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0, bias=False),
-            nn.InstanceNorm2d(out_channels),
+            nn.BatchNorm2d(out_channels),
         )
 
     def forward(self, x: torch.Tensor, x_skip: torch.Tensor) -> torch.Tensor:
@@ -300,7 +312,7 @@ class Decoder(ResnetFPN2d):
                 padding=1,
                 bias=False,
             ),
-            nn.InstanceNorm2d(shared_out_channels),
+            nn.BatchNorm2d(shared_out_channels),
             nn.ReLU(inplace=True),
             nn.Conv2d(
                 shared_out_channels, shared_out_channels, kernel_size=1, padding=0
@@ -314,7 +326,7 @@ class Decoder(ResnetFPN2d):
                 padding=1,
                 bias=False,
             ),
-            nn.InstanceNorm2d(shared_out_channels),
+            nn.BatchNorm2d(shared_out_channels),
             nn.ReLU(inplace=True),
             nn.Conv2d(shared_out_channels, n_classes, kernel_size=1, padding=0),
         )
@@ -326,7 +338,7 @@ class Decoder(ResnetFPN2d):
                 padding=1,
                 bias=False,
             ),
-            nn.InstanceNorm2d(shared_out_channels),
+            nn.BatchNorm2d(shared_out_channels),
             nn.ReLU(inplace=True),
             nn.Conv2d(shared_out_channels, 2, kernel_size=1, padding=0),
         )
@@ -338,7 +350,7 @@ class Decoder(ResnetFPN2d):
                 padding=1,
                 bias=False,
             ),
-            nn.InstanceNorm2d(shared_out_channels),
+            nn.BatchNorm2d(shared_out_channels),
             nn.ReLU(inplace=True),
             nn.Conv2d(shared_out_channels, 1, kernel_size=1, padding=0),
             nn.Sigmoid(),
@@ -353,7 +365,7 @@ class Decoder(ResnetFPN2d):
                     padding=1,
                     bias=False,
                 ),
-                nn.InstanceNorm2d(shared_out_channels),
+                nn.BatchNorm2d(shared_out_channels),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(shared_out_channels, 2, kernel_size=1, padding=0),
             )
@@ -408,8 +420,8 @@ class ResNetEncoder(nn.Module):
         self.backbone = nn.Sequential(*list(resnet.children())[:-4])
         self.layer3: nn.Module = resnet.layer3
 
-        self.depth_layer = nn.Conv2d(512, self.C, kernel_size=1, padding=0)
         self.upsampling_layer = UpsamplingConcat(1536, 512)
+        self.depth_layer = nn.Conv2d(512, self.C, kernel_size=1, padding=0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x1 = self.backbone(x)
@@ -440,6 +452,20 @@ class RegNetEncoder(nn.Module):
         x = self.depth_layer(x)
 
         return x
+
+    def fuse(self) -> None:
+        for name, m in self.named_modules():
+            if m == self:
+                continue
+
+            if hasattr(m, "fuse"):
+                m.fuse()
+            elif isinstance(m, (Conv2dNormActivation, SimpleStemIN)):
+                torch.ao.quantization.fuse_modules(
+                    m,
+                    [str(i) for i in range(len(m))],
+                    inplace=True,
+                )
 
 
 class Segnet(nn.Module):
@@ -500,7 +526,7 @@ class Segnet(nn.Module):
                         stride=1,
                         bias=False,
                     ),
-                    nn.InstanceNorm2d(latent_dim),
+                    nn.BatchNorm2d(latent_dim),
                     nn.GELU(),
                 )
             else:
@@ -513,7 +539,7 @@ class Segnet(nn.Module):
                         stride=1,
                         bias=False,
                     ),
-                    nn.InstanceNorm2d(latent_dim),
+                    nn.BatchNorm2d(latent_dim),
                     nn.GELU(),
                 )
         elif self.use_lidar:
@@ -526,7 +552,7 @@ class Segnet(nn.Module):
                     stride=1,
                     bias=False,
                 ),
-                nn.InstanceNorm2d(latent_dim),
+                nn.BatchNorm2d(latent_dim),
                 nn.GELU(),
             )
         else:
@@ -540,7 +566,7 @@ class Segnet(nn.Module):
                         stride=1,
                         bias=False,
                     ),
-                    nn.InstanceNorm2d(latent_dim),
+                    nn.BatchNorm2d(latent_dim),
                     nn.GELU(),
                 )
             else:
@@ -784,7 +810,7 @@ class SegnetBackbone(BEVBackbone):
                     stride=1,
                     bias=False,
                 ),
-                nn.InstanceNorm2d(dim),
+                nn.BatchNorm2d(dim),
                 nn.GELU(),
             )
         )

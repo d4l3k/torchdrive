@@ -18,6 +18,7 @@ from torchdrive.data import Batch
 from torchdrive.losses import generalized_box_iou
 from torchdrive.matcher import HungarianMatcher
 from torchdrive.models.det import BDD100KDet
+from torchdrive.models.det_conv import DetConvDecoder
 from torchdrive.models.det_deform import DetDeformableTransformerDecoder
 from torchdrive.tasks.bev import BEVTask, Context
 from torchdrive.transforms.bboxes import (
@@ -62,11 +63,17 @@ class DetTask(BEVTask):
         self.cameras = cameras
         self.num_queries = num_queries
 
-        decoder = DetDeformableTransformerDecoder(
-            num_queries=num_queries,
-            dim=dim,
-            bev_shape=bev_shape,
-        )
+        if True:
+            decoder = DetConvDecoder(
+                dim=dim,
+                bev_shape=bev_shape,
+            )
+        else:
+            decoder = DetDeformableTransformerDecoder(
+                num_queries=num_queries,
+                dim=dim,
+                bev_shape=bev_shape,
+            )
         self.num_classes: int = decoder.num_classes
         self.decoder: nn.Module = compile_fn(decoder)
 
@@ -105,7 +112,7 @@ class DetTask(BEVTask):
         grids = [grid.float() for grid in grids]
         num_frames = batch.distances.shape[1]
 
-        if ctx.log_img:
+        if ctx.log_img and isinstance(self.decoder, DetDeformableTransformerDecoder):
             collect_ctx = collect_sampling_locations(self.decoder)
         else:
             collect_ctx = nullcontext()
@@ -132,29 +139,30 @@ class DetTask(BEVTask):
                         f,
                     )
 
-            # print each layer sampling points
-            for j, (ref_points, samples) in enumerate(sampling_locations):
-                bs, num_queries, n_levels, ch = ref_points.shape
-                assert ch == 2
+            if sampling_locations is not None:
+                # print each layer sampling points
+                for j, (ref_points, samples) in enumerate(sampling_locations):
+                    bs, num_queries, n_levels, ch = ref_points.shape
+                    assert ch == 2
 
-                for i in range(n_levels):
-                    fig = plt.figure()
-                    plt.gca().set_aspect("equal")
-                    xy = ref_points[0, :, i]
-                    plt.scatter(*xy.T.detach().cpu(), s=1)
+                    for i in range(n_levels):
+                        fig = plt.figure()
+                        plt.gca().set_aspect("equal")
+                        xy = ref_points[0, :, i]
+                        plt.scatter(*xy.T.detach().cpu(), s=1)
 
-                    ctx.add_figure(f"attention/reference_points/{j}/{i}", fig)
+                        ctx.add_figure(f"attention/reference_points/{j}/{i}", fig)
 
-                bs, num_queries, num_heads, n_levels, n_points, ch = samples.shape
-                assert ch == 2
+                    bs, num_queries, num_heads, n_levels, n_points, ch = samples.shape
+                    assert ch == 2
 
-                for i in range(n_levels):
-                    fig = plt.figure()
-                    plt.gca().set_aspect("equal")
-                    xy = samples[0, :, :, i, :, :].flatten(1, 2)
-                    plt.scatter(*xy.T.detach().cpu(), s=1)
+                    for i in range(n_levels):
+                        fig = plt.figure()
+                        plt.gca().set_aspect("equal")
+                        xy = samples[0, :, :, i, :, :].flatten(1, 2)
+                        plt.scatter(*xy.T.detach().cpu(), s=1)
 
-                    ctx.add_figure(f"attention/sampling_locations/{j}/{i}", fig)
+                        ctx.add_figure(f"attention/sampling_locations/{j}/{i}", fig)
 
         num_queries = classes_logits.shape[1]
 
@@ -502,13 +510,7 @@ class DetTask(BEVTask):
         return batch_idx, src_idx
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
-        decoder_params = list(self.decoder.bbox_decoder.parameters()) + list(
-            self.decoder.reference_points_project.parameters()
-        )  # + list(self.decoder.class_decoder.parameters())
-        for decoder_layer in self.decoder.decoder.layers:
-            decoder_params += list(
-                decoder_layer.cross_attn.sampling_offsets.parameters()
-            ) + list(decoder_layer.project_reference_points.parameters())
+        decoder_params = self.decoder.decoder_params()
 
         other_params = _params_difference(self.parameters(), decoder_params)
         return [

@@ -46,3 +46,5 @@ class TestDet(unittest.TestCase):
         classes, bboxes = m(torch.rand(2, 16, 4, 5))
         self.assertEqual(classes.shape, (2, 10, 11))
         self.assertEqual(bboxes.shape, (2, 10, 9))
+
+        self.assertIsNotNone(m.decoder_params())

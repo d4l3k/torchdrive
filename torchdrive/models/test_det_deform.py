@@ -24,3 +24,5 @@ class TestDetDeform(unittest.TestCase):
         classes, bboxes = m(levels)
         self.assertEqual(classes.shape, (2, 10, 11))
         self.assertEqual(bboxes.shape, (2, 10, 9))
+
+        self.assertIsNotNone(m.decoder_params())

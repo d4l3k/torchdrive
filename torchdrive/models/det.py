@@ -293,6 +293,9 @@ class DetBEVTransformerDecoder(nn.Module):
 
         return classes, bboxes
 
+    def decoder_params(self) -> List[object]:
+        return []
+
 
 if __name__ == "__main__":
     m = BDD100KDet(device=torch.device("cpu"))
