@@ -195,13 +195,24 @@ class BEVTaskVan(torch.nn.Module):
                         )
                     camera_feats[cam].append(feat)
 
-        for cam_feats in camera_feats.values():
+        for cam, cam_feats in camera_feats.items():
             assert (
                 len(cam_feats) == self.num_encode_frames
             ), f"{len(cam_feats)} {self.num_encode_frames}"
 
+            if torch.is_anomaly_check_nan_enabled():
+                for feats in cam_feats:
+                    assert not torch.isnan(feats).any().item(), cam
+
         with torch.autograd.profiler.record_function("backbone"):
             hr_bev, bev_feats, bev_intermediates = self.backbone(camera_feats, batch)
+
+        if torch.is_anomaly_check_nan_enabled():
+            assert not torch.isnan(hr_bev).any().item()
+            for feat in bev_feats:
+                assert not torch.isnan(feat).any().item()
+            for key, feat in bev_intermediates.items():
+                assert not torch.isnan(feat).any().item(), key
 
         if log_text and writer:
             for tag, x in bev_intermediates.items():

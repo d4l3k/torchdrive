@@ -22,10 +22,11 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
-
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
 from torchdrive.datasets.dataset import Dataset
+
+from torchdrive.debug import assert_not_nan_dict
 from torchdrive.dist import run_ddp_concat
 from torchdrive.tasks.bev import BEVTaskVan
 from torchdrive.train_config import create_parser, TrainConfig
@@ -170,9 +171,14 @@ def save(epoch: int) -> None:
     if RANK != 0:
         return
     tmp_path = CHECKPOINT_PATH + ".tmp"
+
+    state_dict = model.state_dict()
+    # don't save a corrupt checkpoint
+    assert_not_nan_dict(state_dict)
+
     torch.save(
         {
-            MODEL_KEY: model.state_dict(),
+            MODEL_KEY: state_dict,
             OPTIM_KEY: optimizer.state_dict(),
             "epoch": epoch,
             GLOBAL_STEP_KEY: global_step,
@@ -218,6 +224,8 @@ if load_path:
     # remap state_dict
     state_dict = remap_state_dict(state_dict, model)
     # state_dict = {k:v for k,v in state_dict.items() if "path" not in k}
+
+    assert_not_nan_dict(state_dict)
 
     try:
         model.load_state_dict(state_dict, strict=False)

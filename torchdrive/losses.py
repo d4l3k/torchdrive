@@ -195,6 +195,10 @@ def losses_backward(
             v = (v * weights).sum()
         else:
             v = v.mean()
+
+        if torch.is_anomaly_check_nan_enabled():
+            assert not torch.isnan(v).item(), (k, v, losses)
+
         weighted_losses[k] = v
 
     if len(weighted_losses) == 0:

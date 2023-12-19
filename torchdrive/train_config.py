@@ -325,7 +325,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True, type=str, default="out")
     parser.add_argument("--load", type=str)
     parser.add_argument("--skip_load_optim", default=False, action="store_true")
-    parser.add_argument("--anomaly-detection", default=False, action="store_true")
+    parser.add_argument("--anomaly_detection", default=False, action="store_true")
     parser.add_argument("--limit_size", type=int)
     parser.add_argument("--checkpoint_every", type=int, default=2000)
     parser.add_argument("--profile", default=False, action="store_true")
