@@ -3,6 +3,7 @@ import random
 import time
 from abc import ABC, abstractmethod
 from typing import Callable, Dict, List, Optional, Tuple
+from dataclasses import replace
 
 import torch
 from torch import nn
@@ -86,6 +87,9 @@ class BEVTaskVan(torch.nn.Module):
         self.hr_tasks = nn.ModuleDict(hr_tasks)
         if len(hr_tasks) > 0:
             assert hr_dim is not None, "must specify hr_dim for hr_tasks"
+
+        # used for torchscript inference export
+        self.infer_batch: Optional[Batch] = None
 
     def should_log(self, global_step: int, BS: int) -> Tuple[bool, bool]:
         log_text_interval = 1000 // (BS * 20)
@@ -315,3 +319,29 @@ class BEVTaskVan(torch.nn.Module):
         autograd_resume(*last_cam_feats_resume)
 
         return losses
+
+    def infer_backbone(self, camera_features: Dict[str, List[torch.Tensor]], T: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        infer_backbone takes in the preprocessed camera features and runs the
+        backbone and tasks. This requires the camera encoders to be run
+        separately.
+        """
+
+        batch = self.infer_batch
+
+        # set vehicle path transformation matrix
+        batch = replace(batch, cam_T=T)
+
+        assert batch is not None, "must have infer_batch set before running inference"
+
+        hr_bev, bev_feats, _ = self.backbone(camera_features, batch)
+
+        out = {}
+
+        for name, task in self.tasks.items():
+            out[name] = task.infer(hr_bev, bev_feats)
+
+        for name, task in self.hr_tasks.items():
+            out[name] = task.infer(hr_bev, bev_feats)
+
+        return out
