@@ -1,6 +1,7 @@
 import unittest
 
 import torch
+from torch import nn
 
 from torchworld.structures.cameras import PerspectiveCameras
 from torchworld.structures.grid import Grid3d, GridImage
@@ -8,7 +9,7 @@ from torchworld.transforms.transform3d import Transform3d
 
 
 class TestGrid(unittest.TestCase):
-    def test_grid_3d(self) -> None:
+    def test_grid3d(self) -> None:
         grid = Grid3d(
             data=torch.rand(2, 3, 4, 5, 6),
             local_to_world=Transform3d(),
@@ -17,12 +18,41 @@ class TestGrid(unittest.TestCase):
 
         grid = grid.to("cpu")
         grid = grid.cpu()
-        grid = grid.replace()
 
         self.assertEqual(len(grid), 2)
         self.assertEqual(grid.device, grid.data.device)
         self.assertEqual(grid.dtype, torch.float)
         self.assertEqual(grid.grid_shape(), (4, 5, 6))
+
+    def test_grid3d_dispatch(self) -> None:
+        grid = Grid3d(
+            data=torch.rand(2, 3, 4, 5, 6),
+            local_to_world=Transform3d(),
+            time=torch.rand(2),
+        )
+
+        scaled_grid = grid * 2
+
+        self.assertIsInstance(scaled_grid, Grid3d)
+        torch.testing.assert_close(grid._data*2, scaled_grid._data)
+        self.assertIs(grid.local_to_world, scaled_grid.local_to_world)
+        self.assertIs(grid.time, scaled_grid.time)
+
+    def test_grid3d_conv3d(self) -> None:
+        grid = Grid3d(
+            data=torch.rand(2, 3, 4, 5, 6),
+            local_to_world=Transform3d(),
+            time=torch.rand(2),
+        )
+
+        m = nn.Conv3d(3, 7, kernel_size=1)
+
+        out = m(grid)
+
+        self.assertIsInstance(out, Grid3d)
+        self.assertIs(grid.local_to_world, out.local_to_world)
+        self.assertIs(grid.time, out.time)
+
 
     def test_grid_image(self) -> None:
         grid = GridImage(

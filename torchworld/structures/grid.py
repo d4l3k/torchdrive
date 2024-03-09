@@ -19,6 +19,8 @@ class BaseGrid(ABC):
     data: torch.Tensor
     time: torch.Tensor
 
+
+
     @abstractmethod
     def to(self, target: Union[torch.device, str]) -> "Self":
         ...
@@ -44,9 +46,10 @@ class BaseGrid(ABC):
     def grid_shape(self) -> Tuple[int, ...]:
         ...
 
+import torch.utils._pytree as pytree
+from torch.utils._python_dispatch import return_and_correct_aliasing
 
-@dataclass
-class Grid3d(BaseGrid):
+class Grid3d(torch.Tensor):
     """Grid3d represents a 3D grid of features in a certain location and time in
     world space.
 
@@ -68,8 +71,62 @@ class Grid3d(BaseGrid):
     local_to_world: Transform3d
     time: torch.Tensor
 
+    @staticmethod
+    def __new__(
+        cls,
+        data: torch.Tensor,
+        local_to_world: torch.Tensor,
+        time: torch.Tensor,
+        *,
+        requires_grad: bool = False,
+    ) -> "Grid3d":
+        # new method instruct wrapper tensor from local_tensor and add
+        # placement spec, it does not do actual distribution
+        r = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
+            cls,
+            data.shape,
+            strides=data.stride(),
+            dtype=data.dtype,
+            device=data.device,
+            layout=data.layout,
+            requires_grad=requires_grad,
+        )
+
+        r._data = data
+        r.local_to_world = local_to_world
+        r.time = time
+
+        r.__post_init__()
+
+        return r
+
+    @classmethod
+    # pyre-fixme[3]: Return type must be annotated.
+    # pyre-fixme[2]: Parameter must be annotated.
+    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+        if kwargs is None:
+            kwargs = {}
+
+        args_data = pytree.tree_map_only(Grid3d, lambda x: x._data, args)
+        local_to_world = pytree.tree_map_only(Grid3d, lambda x: x.local_to_world, args)
+        local_to_world_flat = pytree.tree_leaves(local_to_world)
+        time = pytree.tree_map_only(Grid3d, lambda x: x.time, args)
+        time_flat = pytree.tree_leaves(time)
+        kwargs_data = pytree.tree_map_only(Grid3d, lambda x: x._data, kwargs)
+
+        out = func(*args_data, **kwargs_data)
+
+        out_flat, spec = pytree.tree_flatten(out)
+        out_flat = [
+            Grid3d(data, l2w, time)
+            for data, l2w, time in zip(out_flat, local_to_world_flat, time_flat)
+        ]
+        out = pytree.tree_unflatten(out_flat, spec)
+        return return_and_correct_aliasing(func, args, kwargs, out)
+
+
     def __post_init__(self) -> None:
-        if self.data.dim() != 5:
+        if self._data.dim() != 5:
             raise TypeError(f"data must be 5 dimensional, got {self.data.shape}")
         if self.time.dim() not in (0, 1):
             raise TypeError(
@@ -78,7 +135,7 @@ class Grid3d(BaseGrid):
 
         T = self.local_to_world.get_matrix()
         if (BS := T.size(0)) != 1:
-            if BS != self.data.size(0):
+            if BS != self._data.size(0):
                 raise TypeError(
                     f"data and local_to_world batch sizes don't match: {T.shape, self.data.shape}"
                 )
@@ -128,27 +185,13 @@ class Grid3d(BaseGrid):
 
     def to(self, target: Union[torch.device, str]) -> "Grid3d":
         return Grid3d(
-            data=self.data.to(target),
+            data=self._data.to(target),
             local_to_world=self.local_to_world.to(target),
             time=self.time.to(target),
         )
 
     def grid_shape(self) -> Tuple[int, int]:
-        return tuple(self.data.shape[2:5])
-
-    def replace(
-        self,
-        data: Optional[torch.Tensor] = None,
-        local_to_world: Optional[Transform3d] = None,
-        time: Optional[torch.Tensor] = None,
-    ) -> "Grid3d":
-        return Grid3d(
-            data=data if data is not None else self.data,
-            local_to_world=local_to_world
-            if local_to_world is not None
-            else self.local_to_world,
-            time=time if time is not None else self.time,
-        )
+        return tuple(self._data.shape[2:5])
 
 
 @dataclass

@@ -134,3 +134,7 @@ experiments/
 
 profile*.svg
 *.pt
+export/
+*.trt
+*.npy
+*.onnx
