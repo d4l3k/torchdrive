@@ -77,6 +77,33 @@ class TestGrid(unittest.TestCase):
         str(grid)
         repr(grid)
 
+    def test_grid_image_permute(self) -> None:
+        grid = GridImage(
+            data=torch.rand(2, 3, 4, 5),
+            camera=PerspectiveCameras(),
+            time=torch.rand(2),
+            mask=torch.rand(2, 3, 4, 5),
+        )
+
+        grid = grid.permute(3, 2, 1, 0)
+
+        self.assertEqual(grid.shape, (5, 4, 3, 2))
+        self.assertEqual(grid.mask.shape, (5, 4, 3, 2))
+
+    def test_grid_image_index(self) -> None:
+        grid = GridImage(
+            data=torch.rand(2, 3, 4, 5),
+            camera=PerspectiveCameras(),
+            time=torch.rand(2),
+            mask=torch.rand(2, 3, 4, 5),
+        )
+
+        grid = grid[1:2, 2:, 2:, :3]
+
+        self.assertEqual(grid.shape, (1, 1, 2, 3))
+        self.assertEqual(grid.mask.shape, (1, 1, 2, 3))
+        self.assertEqual(grid.time.shape, (1,))
+
     def test_grid_image_dispatch(self) -> None:
         grid = GridImage(
             data=torch.rand(2, 3, 4, 5),

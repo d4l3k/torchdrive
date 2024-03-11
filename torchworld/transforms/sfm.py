@@ -17,24 +17,24 @@ def project(
     project projects the dst target into src using depth and velocities
     corresponding to src.
     """
-    if dst.data.shape[1:] != src.data.shape[1:]:
+    if dst.shape[1:] != src.shape[1:]:
         raise TypeError("dst and src must have same non-batch shape")
-    if depth.data.shape[2:] != src.data.shape[2:]:
+    if depth.shape[2:] != src.shape[2:]:
         raise TypeError("src and depth must have same height/width dimensions")
-    if depth.data.size(1) != 1:
+    if depth.size(1) != 1:
         raise TypeError("depth must have have 1 channel")
     if vel is not None:
-        if vel.data.shape[2:] != src.data.shape[2:]:
+        if vel.shape[2:] != src.shape[2:]:
             raise TypeError("src and depth must have same height/width dimensions")
-        if vel.data.size(1) != 3:
+        if vel.size(1) != 3:
             raise TypeError("vel must have 3 channels")
         if src.camera is not vel.camera:
             raise TypeError("src camera must be same as vel")
     if src.camera is not depth.camera:
         raise TypeError("src camera must be same as depth")
 
-    device = src.data.device
-    BS = len(src.data)
+    device = src.device
+    BS = len(src)
 
     channels = torch.meshgrid(
         *(
@@ -45,7 +45,7 @@ def project(
     )
     src_points = torch.stack(channels, dim=-1)
     src_points = src_points.expand(BS, -1, -1, -1)
-    src_points = torch.cat((src_points, depth.data.permute(0, 2, 3, 1)), dim=-1)
+    src_points = torch.cat((src_points, depth.permute(0, 2, 3, 1)), dim=-1)
     src_points = src_points.flatten(1, 2)  # [bs, y*x, 3]
 
     world_points = src.camera.unproject_points(src_points)  # [bs, y*x, 3]
@@ -53,7 +53,7 @@ def project(
 
     if vel is not None:
         delta = dst.time - src.time
-        diff = vel.data.permute(0, 2, 3, 1) * delta.reshape(-1, 1, 1, 1)
+        diff = vel.permute(0, 2, 3, 1) * delta.reshape(-1, 1, 1, 1)
         world_points += diff
 
     world_points = world_points.flatten(1, 2)  # [bs, y*x, 3]
@@ -62,7 +62,7 @@ def project(
     dst_points = dst_points[..., :2]  # [bs, y, x, 2]
 
     color = F.grid_sample(
-        dst.data,
+        dst,
         dst_points,
         mode="bilinear",
         padding_mode="border",
@@ -79,7 +79,9 @@ def project(
     else:
         mask = None
 
-    return src.replace(
-        data=color,
+    return GridImage(
+        data=color._data,
         mask=mask,
+        time=src.time,
+        camera=src.camera,
     )

@@ -12,6 +12,13 @@ T = TypeVar("T")
 import torch.utils._pytree as pytree
 from torch.utils._python_dispatch import return_and_correct_aliasing
 
+aten = torch.ops.aten
+
+MASK_FUNCS = {
+    aten.permute.default,
+    aten.slice.Tensor,
+}
+
 
 class Grid3d(torch.Tensor):
     """Grid3d represents a 3D grid of features in a certain location and time in
@@ -194,7 +201,6 @@ class GridImage(torch.Tensor):
         *,
         requires_grad: bool = False,
     ) -> "GridImage":
-        print("new", data, camera, time, mask)
         # new method instruct wrapper tensor from local_tensor and add
         # placement spec, it does not do actual distribution
         r = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
@@ -223,8 +229,8 @@ class GridImage(torch.Tensor):
         if kwargs is None:
             kwargs = {}
 
-        data = pytree.tree_map_only(cls, lambda x: x._data, args)
-        kwargs_data = pytree.tree_map_only(cls, lambda x: x._data, kwargs)
+        data_args = pytree.tree_map_only(cls, lambda x: x._data, args)
+        data_kwargs = pytree.tree_map_only(cls, lambda x: x._data, kwargs)
 
         # get the first grid object from the args
         values, _ = pytree.tree_flatten(args)
@@ -232,15 +238,28 @@ class GridImage(torch.Tensor):
         assert len(values) > 0, f"failed to find {cls} in args"
         grid = values[0]
 
-        out = func(*data, **kwargs_data)
+        mask = grid.mask
+        if mask is not None:
+            if func in MASK_FUNCS:
+                mask_args = pytree.tree_map_only(cls, lambda x: x.mask, args)
+                mask_kwargs = pytree.tree_map_only(cls, lambda x: x.mask, kwargs)
+                mask = func(*mask_args, **mask_kwargs)
+
+        time = grid.time
+        if func == aten.slice.Tensor:
+            _, idx, start, end = args
+            if idx == 0:
+                time = func(time, idx, start, end)
+
+        out = func(*data_args, **data_kwargs)
         out_flat, spec = pytree.tree_flatten(out)
 
         out_flat = [
             cls(
                 data=out,
                 camera=grid.camera,
-                time=grid.time,
-                mask=grid.mask,
+                time=time,
+                mask=mask,
             )
             for out in out_flat
         ]
@@ -256,7 +275,6 @@ class GridImage(torch.Tensor):
 
     @classmethod
     def __tensor_unflatten__(cls, inner_tensors, flatten_spec, *args):
-        print(args)
         assert (
             flatten_spec is not None
         ), "Expecting spec to be not None from `__tensor_flatten__` return value!"
@@ -273,12 +291,6 @@ class GridImage(torch.Tensor):
             raise TypeError(
                 f"time must be scalar or 1-dimensional, got {self.time.shape}"
             )
-
-        if (mask := self.mask) is not None:
-            if self._data.shape[2:] != mask.shape[2:]:
-                raise TypeError(
-                    f"mask is not the same shape as data {self._data.shape} {mask.shape}"
-                )
 
         T = self.camera.get_projection_transform().get_matrix()
 

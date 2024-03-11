@@ -29,8 +29,8 @@ def lift_image_to_3d(
     features: grid with features
     mask: grid of the mask where the camera could see
     """
-    if dst.data.numel() != 0:
-        raise TypeError(f"dst should be batch size zero {dst.data.shape}")
+    if dst.numel() != 0:
+        raise TypeError(f"dst should be batch size zero {dst.shape}")
 
     device = src.device
     BS = len(src)
@@ -74,14 +74,23 @@ def lift_image_to_3d(
         valid = valid.expand(BS, -1, -1, -1, -1)
 
     # grid_sample doesn't support bfloat16 so cast to float
-    values = F.grid_sample(src.data.float(), image_points, align_corners=False)
-    values = values.to(src.data.dtype)
+    values = F.grid_sample(src.float(), image_points, align_corners=False)
+    values = values.to(src.dtype)
 
     # restore to grid shape
     values = values.squeeze(2).unflatten(-1, grid_shape)
     values *= valid
 
+    # convert to dst type
     return (
-        dst.replace(data=values, time=src.time),
-        dst.replace(data=valid, time=src.time),
+        Grid3d(
+            data=values._data,
+            local_to_world=dst.local_to_world,
+            time=dst.time,
+        ),
+        Grid3d(
+            data=valid,
+            local_to_world=dst.local_to_world,
+            time=dst.time,
+        ),
     )
