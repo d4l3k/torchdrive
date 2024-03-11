@@ -160,7 +160,7 @@ def grid_image(image: GridImage) -> pythreejs.Object3D:
     )
 
     # convert to compressed jpg image
-    data = image.data[0]
+    data = image._data[0]
     data = normalize_img_cuda(data)
     data = (data.float() * 255).byte()
     pil_image = to_pil_image(data)
@@ -220,7 +220,7 @@ def grid_3d_occupancy(
 
     colors = _get_cmap(palette)
 
-    data = grid.data.permute(0, 1, 4, 3, 2)
+    data = grid._data.permute(0, 1, 4, 3, 2)
     grid_shape = grid_shape[::-1]
 
     channels = torch.meshgrid(

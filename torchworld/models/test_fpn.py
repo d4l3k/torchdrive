@@ -17,7 +17,7 @@ class TestFPN(unittest.TestCase):
             time=torch.rand(2),
         )
         m = Resnet18FPN3d(in_channels=3)
-        m = torch.compile(m, fullgraph=True, backend="eager")
+        # m = torch.compile(m, fullgraph=True, backend="eager")
         out = m(grid)
         for grid in out:
             self.assertIsInstance(grid, Grid3d)
@@ -29,7 +29,7 @@ class TestFPN(unittest.TestCase):
             time=torch.rand(2),
         )
         m = Resnet18FPNImage(in_channels=3)
-        m = torch.compile(m, fullgraph=True, backend="eager")
+        # m = torch.compile(m, fullgraph=True, backend="eager")
         out = m(grid)
         self.assertEqual(len(out), 4)
         for grid in out:

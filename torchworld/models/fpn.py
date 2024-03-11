@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, TypeVar
 
 import torch
 from torch import nn
@@ -6,7 +6,7 @@ from torchvision.models.resnet import resnet18
 
 from torchworld.models.resnet_3d import resnet3d18
 
-from torchworld.structures.grid import Grid3d, GridImage
+T = TypeVar("T", bound=torch.Tensor)
 
 
 class Resnet18FPNImage(nn.Module):
@@ -32,9 +32,7 @@ class Resnet18FPNImage(nn.Module):
         self.up2_skip = UpsamplingAdd2d(128, 64, scale_factor=2)
         self.up1_skip = UpsamplingAdd2d(64, in_channels, scale_factor=2)
 
-    def forward(
-        self, grid: GridImage
-    ) -> Tuple[GridImage, GridImage, GridImage, GridImage]:
+    def forward(self, x: T) -> Tuple[T, T, T, T]:
         """
         Args:
             x: [BS, in_channels, H, W]
@@ -45,8 +43,6 @@ class Resnet18FPNImage(nn.Module):
             * (128, H/4, W/4)
             * (256, H/8, W/8)
         """
-        x = grid.data
-
         # (H, W)
         skip_x = {"1": x}
         x = self.first_conv(x)
@@ -71,12 +67,7 @@ class Resnet18FPNImage(nn.Module):
         # Third upsample to (H, W)
         x1 = self.up1_skip(x2, skip_x["1"])
 
-        return (
-            grid.replace(data=x1),
-            grid.replace(data=x2),
-            grid.replace(data=x3),
-            grid.replace(data=x4),
-        )
+        return x1, x2, x3, x4
 
 
 class Resnet18FPN3d(nn.Module):
@@ -111,7 +102,7 @@ class Resnet18FPN3d(nn.Module):
         )
         self.up1_skip = UpsamplingAdd3d(in_channels * 2, in_channels, scale_factor=2)
 
-    def forward(self, grid: Grid3d) -> Tuple[Grid3d, Grid3d, Grid3d, Grid3d]:
+    def forward(self, x: T) -> Tuple[T, T, T, T]:
         """
         Args:
             x: [BS, in_channels, Z, Y, X]
@@ -122,8 +113,6 @@ class Resnet18FPN3d(nn.Module):
             * (final_channels/2, Z/4, Y/4, X/4)
             * (final_channels, Z/8, Y/8, Z/8)
         """
-        x = grid.data
-
         # (H, W)
         skip_x = {"1": x}
         x = self.first_conv(x)
@@ -148,12 +137,7 @@ class Resnet18FPN3d(nn.Module):
         # Third upsample to (H, W)
         x1 = self.up1_skip(x2, skip_x["1"])
 
-        return (
-            grid.replace(data=x1),
-            grid.replace(data=x2),
-            grid.replace(data=x3),
-            grid.replace(data=x4),
-        )
+        return x1, x2, x3, x4
 
 
 class UpsamplingAdd2d(nn.Module):

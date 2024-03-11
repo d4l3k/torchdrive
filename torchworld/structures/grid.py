@@ -1,6 +1,4 @@
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Optional, Tuple, TYPE_CHECKING, TypeVar, Union
+from typing import Optional, Tuple, TypeVar, Union
 
 import torch
 from pytorch3d.structures.volumes import VolumeLocator
@@ -8,46 +6,12 @@ from pytorch3d.structures.volumes import VolumeLocator
 from torchworld.structures.cameras import CamerasBase
 from torchworld.transforms.transform3d import Transform3d
 
-if TYPE_CHECKING:
-    from typing import Self
-
 T = TypeVar("T")
 
 
-@dataclass
-class BaseGrid(ABC):
-    data: torch.Tensor
-    time: torch.Tensor
-
-
-
-    @abstractmethod
-    def to(self, target: Union[torch.device, str]) -> "Self":
-        ...
-
-    def cuda(self) -> "Self":
-        return self.to(torch.device("cuda"))
-
-    def cpu(self) -> "Self":
-        return self.to(torch.device("cpu"))
-
-    @property
-    def device(self) -> torch.device:
-        return self.data.device
-
-    @property
-    def dtype(self) -> torch.dtype:
-        return self.data.dtype
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @abstractmethod
-    def grid_shape(self) -> Tuple[int, ...]:
-        ...
-
 import torch.utils._pytree as pytree
 from torch.utils._python_dispatch import return_and_correct_aliasing
+
 
 class Grid3d(torch.Tensor):
     """Grid3d represents a 3D grid of features in a certain location and time in
@@ -66,10 +30,6 @@ class Grid3d(torch.Tensor):
     time: scalar or [bs]
         Time corresponding to the grid
     """
-
-    data: torch.Tensor
-    local_to_world: Transform3d
-    time: torch.Tensor
 
     @staticmethod
     def __new__(
@@ -107,27 +67,45 @@ class Grid3d(torch.Tensor):
         if kwargs is None:
             kwargs = {}
 
-        args_data = pytree.tree_map_only(Grid3d, lambda x: x._data, args)
-        local_to_world = pytree.tree_map_only(Grid3d, lambda x: x.local_to_world, args)
-        local_to_world_flat = pytree.tree_leaves(local_to_world)
-        time = pytree.tree_map_only(Grid3d, lambda x: x.time, args)
-        time_flat = pytree.tree_leaves(time)
-        kwargs_data = pytree.tree_map_only(Grid3d, lambda x: x._data, kwargs)
+        args_data = pytree.tree_map_only(cls, lambda x: x._data, args)
+        kwargs_data = pytree.tree_map_only(cls, lambda x: x._data, kwargs)
+
+        # get the first grid object from the args
+        values, _ = pytree.tree_flatten(args)
+        values = [v for v in values if isinstance(v, cls)]
+        assert len(values) > 0, f"failed to find {cls} in args"
+        grid = values[0]
 
         out = func(*args_data, **kwargs_data)
 
         out_flat, spec = pytree.tree_flatten(out)
         out_flat = [
-            Grid3d(data, l2w, time)
-            for data, l2w, time in zip(out_flat, local_to_world_flat, time_flat)
+            cls(data=data, local_to_world=grid.local_to_world, time=grid.time)
+            for data in out_flat
         ]
         out = pytree.tree_unflatten(out_flat, spec)
         return return_and_correct_aliasing(func, args, kwargs, out)
 
+    def __tensor_flatten__(self):
+        """
+        protocol to inform how to flatten to tensor for PT2 tracing
+        """
+        return ["_data"], (self.local_to_world, self.time)
+
+    @classmethod
+    def __tensor_unflatten__(cls, inner_tensors, flatten_spec, *args):
+        assert (
+            flatten_spec is not None
+        ), "Expecting spec to be not None from `__tensor_flatten__` return value!"
+        data = inner_tensors["_data"]
+        return cls(
+            data,
+            *flatten_spec,
+        )
 
     def __post_init__(self) -> None:
-        if self._data.dim() != 5:
-            raise TypeError(f"data must be 5 dimensional, got {self.data.shape}")
+        # if self._data.dim() != 5:
+        #    raise TypeError(f"data must be 5 dimensional, got {self._data.shape}")
         if self.time.dim() not in (0, 1):
             raise TypeError(
                 f"time must be scalar or 1-dimensional, got {self.time.shape}"
@@ -137,7 +115,7 @@ class Grid3d(torch.Tensor):
         if (BS := T.size(0)) != 1:
             if BS != self._data.size(0):
                 raise TypeError(
-                    f"data and local_to_world batch sizes don't match: {T.shape, self.data.shape}"
+                    f"data and local_to_world batch sizes don't match: {T.shape, self._data.shape}"
                 )
 
     @classmethod
@@ -183,19 +161,14 @@ class Grid3d(torch.Tensor):
             time=time,
         )
 
-    def to(self, target: Union[torch.device, str]) -> "Grid3d":
-        return Grid3d(
-            data=self._data.to(target),
-            local_to_world=self.local_to_world.to(target),
-            time=self.time.to(target),
-        )
+    def __repr__(self):
+        return f"Grid3d(data={self._data}, local_to_world={self.local_to_world}, time={self.time})"
 
     def grid_shape(self) -> Tuple[int, int]:
         return tuple(self._data.shape[2:5])
 
 
-@dataclass
-class GridImage(BaseGrid):
+class GridImage(torch.Tensor):
     """GridImage represents a 2D grid of features corresponding to certain
     camera (and thus location) and time.
 
@@ -211,54 +184,112 @@ class GridImage(BaseGrid):
         Optional mask for the features.
     """
 
-    data: torch.Tensor
-    camera: CamerasBase
-    time: torch.Tensor
-    mask: Optional[torch.Tensor] = None
+    @staticmethod
+    def __new__(
+        cls,
+        data: torch.Tensor,
+        camera: CamerasBase,
+        time: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        *,
+        requires_grad: bool = False,
+    ) -> "GridImage":
+        print("new", data, camera, time, mask)
+        # new method instruct wrapper tensor from local_tensor and add
+        # placement spec, it does not do actual distribution
+        r = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
+            cls,
+            data.shape,
+            strides=data.stride(),
+            dtype=data.dtype,
+            device=data.device,
+            layout=data.layout,
+            requires_grad=requires_grad,
+        )
+
+        r._data = data
+        r.camera = camera
+        r.time = time
+        r.mask = mask
+
+        r.__post_init__()
+
+        return r
+
+    @classmethod
+    # pyre-fixme[3]: Return type must be annotated.
+    # pyre-fixme[2]: Parameter must be annotated.
+    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+        if kwargs is None:
+            kwargs = {}
+
+        data = pytree.tree_map_only(cls, lambda x: x._data, args)
+        kwargs_data = pytree.tree_map_only(cls, lambda x: x._data, kwargs)
+
+        # get the first grid object from the args
+        values, _ = pytree.tree_flatten(args)
+        values = [v for v in values if isinstance(v, cls)]
+        assert len(values) > 0, f"failed to find {cls} in args"
+        grid = values[0]
+
+        out = func(*data, **kwargs_data)
+        out_flat, spec = pytree.tree_flatten(out)
+
+        out_flat = [
+            cls(
+                data=out,
+                camera=grid.camera,
+                time=grid.time,
+                mask=grid.mask,
+            )
+            for out in out_flat
+        ]
+        out = pytree.tree_unflatten(out_flat, spec)
+        out = return_and_correct_aliasing(func, args, kwargs, out)
+        return out
+
+    def __tensor_flatten__(self):
+        """
+        protocol to inform how to flatten to tensor for PT2 tracing
+        """
+        return ["_data"], (self.camera, self.time, self.mask)
+
+    @classmethod
+    def __tensor_unflatten__(cls, inner_tensors, flatten_spec, *args):
+        print(args)
+        assert (
+            flatten_spec is not None
+        ), "Expecting spec to be not None from `__tensor_flatten__` return value!"
+        data = inner_tensors["_data"]
+        return cls(
+            data,
+            *flatten_spec,
+        )
 
     def __post_init__(self) -> None:
-        if self.data.dim() != 4:
-            raise TypeError(f"data must be 4 dimensional, got {self.data.shape}")
+        # if self._data.dim() != 4:
+        #    raise TypeError(f"data must be 4 dimensional, got {self._data.shape}")
         if self.time.dim() not in (0, 1):
             raise TypeError(
                 f"time must be scalar or 1-dimensional, got {self.time.shape}"
             )
 
         if (mask := self.mask) is not None:
-            if self.data.shape[2:] != mask.shape[2:]:
+            if self._data.shape[2:] != mask.shape[2:]:
                 raise TypeError(
-                    f"mask is not the same shape as data {self.data.shape} {mask.shape}"
+                    f"mask is not the same shape as data {self._data.shape} {mask.shape}"
                 )
 
         T = self.camera.get_projection_transform().get_matrix()
+
         if (BS := T.size(0)) != 1:
-            if BS != self.data.size(0):
+            if BS != self._data.size(0):
                 raise TypeError(
-                    f"data and transform batch sizes don't match: {T.shape, self.data.shape}"
+                    f"data and transform batch sizes don't match: {T.shape, self._data.shape}"
                 )
 
-    def to(self, target: Union[torch.device, str]) -> "GridImage":
-        return GridImage(
-            data=self.data.to(target),
-            # pyre-fixme[6]: For 2nd argument expected `CamerasBase` but got
-            #  `TensorProperties`.
-            camera=self.camera.to(target),
-            time=self.time.to(target),
-        )
-
     def grid_shape(self) -> Tuple[int, int]:
-        return tuple(self.data.shape[2:4])
+        return tuple(self._data.shape[2:4])
 
-    def replace(
-        self,
-        data: Optional[torch.Tensor] = None,
-        camera: Optional[CamerasBase] = None,
-        time: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-    ) -> "GridImage":
-        return GridImage(
-            data=data if data is not None else self.data,
-            camera=camera if camera is not None else self.camera,
-            time=time if time is not None else self.time,
-            mask=mask if mask is not None else self.mask,
-        )
+    def __repr__(self):
+        return f"GridImage(data={self._data}, camera={self.camera}, time={self.time}), mask={self.mask}"

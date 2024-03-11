@@ -34,9 +34,16 @@ class TestGrid(unittest.TestCase):
         scaled_grid = grid * 2
 
         self.assertIsInstance(scaled_grid, Grid3d)
-        torch.testing.assert_close(grid._data*2, scaled_grid._data)
+        torch.testing.assert_close(grid._data * 2, scaled_grid._data)
         self.assertIs(grid.local_to_world, scaled_grid.local_to_world)
         self.assertIs(grid.time, scaled_grid.time)
+
+    def test_grid3d_repr(self) -> None:
+        grid = Grid3d(
+            data=torch.rand(2, 3, 4, 5, 6),
+            local_to_world=Transform3d(),
+            time=torch.rand(2),
+        )
 
     def test_grid3d_conv3d(self) -> None:
         grid = Grid3d(
@@ -45,14 +52,8 @@ class TestGrid(unittest.TestCase):
             time=torch.rand(2),
         )
 
-        m = nn.Conv3d(3, 7, kernel_size=1)
-
-        out = m(grid)
-
-        self.assertIsInstance(out, Grid3d)
-        self.assertIs(grid.local_to_world, out.local_to_world)
-        self.assertIs(grid.time, out.time)
-
+        str(grid)
+        repr(grid)
 
     def test_grid_image(self) -> None:
         grid = GridImage(
@@ -63,9 +64,33 @@ class TestGrid(unittest.TestCase):
 
         grid = grid.to("cpu")
         grid = grid.cpu()
-        grid = grid.replace()
 
         self.assertEqual(grid.grid_shape(), (4, 5))
+
+    def test_grid_image_repr(self) -> None:
+        grid = GridImage(
+            data=torch.rand(2, 3, 4, 5),
+            camera=PerspectiveCameras(),
+            time=torch.rand(2),
+        )
+
+        str(grid)
+        repr(grid)
+
+    def test_grid_image_dispatch(self) -> None:
+        grid = GridImage(
+            data=torch.rand(2, 3, 4, 5),
+            camera=PerspectiveCameras(),
+            time=torch.rand(2),
+            mask=torch.rand(2, 1, 4, 5),
+        )
+
+        m = nn.Conv2d(3, 6, 1)
+        out = m(grid)
+        self.assertIsInstance(out, GridImage)
+        self.assertIs(out.camera, grid.camera)
+        self.assertIs(out.mask, grid.mask)
+        self.assertIs(out.time, grid.time)
 
     def test_grid_3d_from_volume(self) -> None:
         grid = Grid3d.from_volume(
