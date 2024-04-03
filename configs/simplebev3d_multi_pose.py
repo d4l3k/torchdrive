@@ -12,8 +12,8 @@ CONFIG = TrainConfig(
         "CAM_BACK_RIGHT",
     ],
     dim=256,
-    cam_dim=96,
-    hr_dim=384,
+    cam_dim=128,
+    hr_dim=128*16,
     backbone="simple_bev3d",
     cam_encoder="simple_regnet",
     num_frames=9,
@@ -29,16 +29,17 @@ CONFIG = TrainConfig(
     step_size=1000,
     # dataset
     dataset=Datasets.NUSCENES,
-    dataset_path="/mnt/ext3/nuscenes",
-    autolabel_path="/mnt/ext3/autolabel2",
+    dataset_path="/home/tristanr/nuscenes",
+    autolabel_path=None,#"/mnt/ext3/autolabel2",
     mask_path="n/a",  # only used for rice dataset
     num_workers=4,
-    batch_size=4,
+    batch_size=6,
     # tasks
-    det=True,
+    det=False,
     ae=False,
-    voxel=True,
+    voxel=False,
     # pyre-fixme[6]: For 26th argument expected `List[str]` but got `bool`.
-    voxelsem=True,
-    path=True,
+    voxelsem=False,
+    path=False,
+    voxel_jepa=True,
 )

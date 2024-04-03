@@ -857,7 +857,7 @@ class SegnetBackbone(BEVBackbone):
         Ts = []
         # camera order doesn't matter for segnet
         for cam, time_feats in camera_features.items():
-            for i, feats in enumerate(time_feats):
+            for i, feats in enumerate(time_feats[:self.num_frames]):
                 with autocast():
                     features.append(self.project[i](feats))
                 Ks.append(batch.K[cam])
@@ -1002,7 +1002,7 @@ class Segnet3DBackbone(BEVBackbone):
         Ts = []
         # camera order doesn't matter for segnet
         for cam, time_feats in camera_features.items():
-            for i, feats in enumerate(time_feats):
+            for i, feats in enumerate(time_feats[:self.num_frames]):
                 with autocast():
                     features.append(self.project[i](feats))
                 Ks.append(batch.K[cam])

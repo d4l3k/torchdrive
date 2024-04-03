@@ -47,6 +47,7 @@ class TrainConfig:
     voxel: bool
     voxelsem: List[str]
     path: bool
+    voxel_jepa: bool
 
     # det config
     det_num_queries: int = 1000
@@ -236,6 +237,23 @@ class TrainConfig:
                 z_offset=0.4,  # TODO: share across SimpleBev and here
                 device=device,
                 semantic=self.voxelsem,
+                # camera_overlap=dataset.CAMERA_OVERLAP,
+                compile_fn=compile_fn,
+                start_offsets=self.start_offsets,
+            )
+        if self.voxel_jepa:
+            from torchdrive.tasks.voxel_jepa import VoxelJEPATask
+
+            hr_tasks["voxel_jepa"] = VoxelJEPATask(
+                cameras=self.cameras,
+                cam_shape=self.cam_shape,
+                dim=self.dim,
+                hr_dim=self.hr_dim,
+                cam_dim=self.cam_dim,
+                cam_feats_shape=cam_feats_shape,
+                height=self.grid_shape[2],  # z
+                z_offset=0.4,  # TODO: share across SimpleBev and here
+                device=device,
                 # camera_overlap=dataset.CAMERA_OVERLAP,
                 compile_fn=compile_fn,
                 start_offsets=self.start_offsets,

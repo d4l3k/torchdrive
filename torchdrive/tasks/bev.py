@@ -42,6 +42,9 @@ class BEVTask(torch.nn.Module, ABC):
             {"name": "default", "params": self.parameters(), "lr": lr},
         ]
 
+    def set_camera_encoders(self, camera_encoders: nn.ModuleDict) -> None:
+        pass
+
 
 class BEVTaskVan(torch.nn.Module):
     def __init__(
@@ -80,6 +83,11 @@ class BEVTaskVan(torch.nn.Module):
         self.camera_encoders = nn.ModuleDict(
             {cam: compile_fn(cam_encoder()) for cam in cameras}
         )
+
+        for task in tasks.values():
+            task.set_camera_encoders(self.camera_encoders)
+        for task in hr_tasks.values():
+            task.set_camera_encoders(self.camera_encoders)
 
         self.tasks = nn.ModuleDict(tasks)
 
@@ -140,70 +148,25 @@ class BEVTaskVan(torch.nn.Module):
         dropout_cameras = set(self.cameras) - set(drop_cameras)
 
         with autocast(), torch.autograd.profiler.record_function("camera_feats"):
-            first_backprop_frame = max(
-                self.num_encode_frames - self.num_backprop_frames, 0
-            )
-
             # individual frames
             camera_feats = {cam: [] for cam in dropout_cameras}
-            last_cam_feats_resume = []
-
-            # these first set of frames don't use backprop so set them to eval
-            # mode and don't collect gradient
-            with torch.no_grad():
-                for cam in dropout_cameras:
-                    # run frames in parallel
-                    encoder = self.camera_encoders[cam]
-                    encoder.eval()
-                    inp = batch.color[cam][:, 0:first_backprop_frame]
-                    feats = encoder(inp.flatten(0, 1)).unflatten(0, inp.shape[0:2])
-                    assert not feats.requires_grad
-                    for i in range(first_backprop_frame):
-                        camera_feats[cam].append(feats[:, i])
 
             # frames we want backprop for
             for cam in dropout_cameras:
                 # run frames in parallel
                 encoder = self.camera_encoders[cam]
                 encoder.train()
-                inp = batch.color[cam][:, first_backprop_frame : self.num_encode_frames]
-                feats = encoder(inp.flatten(0, 1)).unflatten(0, inp.shape[0:2])
-                num_frames = feats.size(1)
+                inp = batch.color[cam][:, :self.num_encode_frames]
 
-                # pause the last cam encoder backprop for tasks with image
-                # space losses
-                feats = autograd_pause(feats)
-                last_cam_feats_resume.append(feats)
+                # use gradient checkpointing to save memory
+                feats = torch.utils.checkpoint.checkpoint(encoder, inp.flatten(0, 1)).unflatten(0, inp.shape[0:2])
+                num_frames = feats.size(1)
 
                 for i in range(num_frames):
                     feat = feats[:, i]
-                    if i == (num_frames - 1):
-                        cam_feat = feat
-                        if log_text:
-                            cam_feat = log_grad_norm(
-                                cam_feat,
-                                writer,
-                                f"grad/norm/encoder/{cam}",
-                                "cam_feats",
-                                global_step,
-                            )
-                        last_cam_feats[cam] = cam_feat
-
-                    if log_text:
-                        feat = log_grad_norm(
-                            feat,
-                            writer,
-                            f"grad/norm/encoder/{cam}",
-                            "bev",
-                            global_step,
-                        )
                     camera_feats[cam].append(feat)
 
         for cam, cam_feats in camera_feats.items():
-            assert (
-                len(cam_feats) == self.num_encode_frames
-            ), f"{len(cam_feats)} {self.num_encode_frames}"
-
             if torch.is_anomaly_check_nan_enabled():
                 for feats in cam_feats:
                     assert not torch.isnan(feats).any().item(), cam
@@ -258,7 +221,7 @@ class BEVTaskVan(torch.nn.Module):
             output=output,
             start_frame=start_frame,
             weights=batch.weight,
-            cam_feats=last_cam_feats,
+            cam_feats=camera_feats,
         )
 
         def _run_tasks(
@@ -314,9 +277,6 @@ class BEVTaskVan(torch.nn.Module):
 
         assert len(to_resume) > 0, "no bev grids requiring grad"
         autograd_resume(*to_resume)
-
-        # resume autograd on cameras
-        autograd_resume(*last_cam_feats_resume)
 
         return losses
 
