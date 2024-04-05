@@ -2,8 +2,8 @@ import itertools
 import random
 import time
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional, Tuple
 from dataclasses import replace
+from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
 from torch import nn
@@ -55,7 +55,9 @@ class BEVTaskVan(torch.nn.Module):
         hr_tasks: Dict[str, BEVTask],
         cameras: List[str],
         dim: int,
+        cam_dim: int,
         hr_dim: int,
+        cam_features_mask_ratio: float = 0.0,
         num_encode_frames: int = 3,
         num_backprop_frames: int = 2,
         num_drop_encode_cameras: int = 0,
@@ -99,6 +101,10 @@ class BEVTaskVan(torch.nn.Module):
         # used for torchscript inference export
         self.infer_batch: Optional[Batch] = None
 
+        # cam masking
+        self.cam_features_mask_ratio = cam_features_mask_ratio
+        self.cam_mask_value = nn.Embedding(1, cam_dim)
+
     def should_log(self, global_step: int, BS: int) -> Tuple[bool, bool]:
         log_text_interval = 1000 // (BS * 20)
         # log_text_interval = 1
@@ -115,7 +121,12 @@ class BEVTaskVan(torch.nn.Module):
         per_cam_lr = lr
         per_cam_lr /= len(self.cameras)
         groups: List[Dict[str, object]] = [
-            {"name": "backbone", "params": list(self.backbone.parameters()), "lr": lr},
+            {
+                "name": "backbone",
+                "params": list(self.backbone.parameters())
+                + list(self.cam_mask_value.parameters()),
+                "lr": lr,
+            },
             {"name": "per_cam", "params": per_cam_params, "lr": per_cam_lr},
         ]
         for name, task in itertools.chain(self.tasks.items(), self.hr_tasks.items()):
@@ -156,11 +167,23 @@ class BEVTaskVan(torch.nn.Module):
                 # run frames in parallel
                 encoder = self.camera_encoders[cam]
                 encoder.train()
-                inp = batch.color[cam][:, :self.num_encode_frames]
+                inp = batch.color[cam][:, : self.num_encode_frames]
 
                 # use gradient checkpointing to save memory
-                feats = torch.utils.checkpoint.checkpoint(encoder, inp.flatten(0, 1)).unflatten(0, inp.shape[0:2])
+                feats = torch.utils.checkpoint.checkpoint(
+                    encoder, inp.flatten(0, 1)
+                ).unflatten(0, inp.shape[0:2])
                 num_frames = feats.size(1)
+
+                to_mask = (
+                    torch.rand(feats.shape[-2:], device=feats.device)
+                    < self.cam_features_mask_ratio
+                )
+                feats[:, :, :, to_mask] = (
+                    self.cam_mask_value.weight.unsqueeze(0)
+                    .unsqueeze(-1)
+                    .to(feats.dtype)
+                )
 
                 for i in range(num_frames):
                     feat = feats[:, i]
@@ -280,7 +303,9 @@ class BEVTaskVan(torch.nn.Module):
 
         return losses
 
-    def infer_backbone(self, camera_features: Dict[str, List[torch.Tensor]], T: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def infer_backbone(
+        self, camera_features: Dict[str, List[torch.Tensor]], T: torch.Tensor
+    ) -> Dict[str, torch.Tensor]:
         """
         infer_backbone takes in the preprocessed camera features and runs the
         backbone and tasks. This requires the camera encoders to be run

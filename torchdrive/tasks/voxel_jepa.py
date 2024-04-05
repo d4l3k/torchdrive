@@ -6,11 +6,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torchmetrics
-from torch.optim.swa_utils import AveragedModel
 from pytorch3d.renderer import ImplicitRenderer, NDCMultinomialRaysampler
 from pytorch3d.structures import Volumes
 from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
+from torch.optim.swa_utils import AveragedModel
 from torchworld.transforms.img import normalize_img, normalize_mask, render_color
 
 from torchdrive.amp import autocast
@@ -99,6 +99,7 @@ class VoxelJEPATask(BEVTask):
         self.render_batch_size = render_batch_size
         self.start_offsets = start_offsets
         self.offsets = offsets
+        self.hr_dim = hr_dim
 
         # TODO support non-centered voxel grids
         self.volume_translation: Tuple[float, float, float] = (
@@ -111,12 +112,15 @@ class VoxelJEPATask(BEVTask):
         h, w = cam_shape
 
         voxel_dim = max(hr_dim // height, 1)
-        self.decoders = nn.ModuleDict({
-            str(offset): compile_fn(
-                nn.Conv3d(voxel_dim, voxel_dim+1, kernel_size=1)
-            )
-            for offset in offsets
-        })
+        self.voxel_dim = voxel_dim
+        self.decoders = nn.ModuleDict(
+            {
+                str(offset): compile_fn(
+                    nn.Conv3d(voxel_dim, voxel_dim + 1, kernel_size=1)
+                )
+                for offset in offsets
+            }
+        )
         resnet_init(self.decoders)
 
         self.max_depth: float = n_pts_per_ray / scale
@@ -145,12 +149,13 @@ class VoxelJEPATask(BEVTask):
         # pyre-fixme[6]: nn.Module
         self.projection_loss: nn.Module = compile_fn(multi_scale_projection_loss)
 
-
     def set_camera_encoders(self, camera_encoders: nn.ModuleDict) -> None:
-        self.ema_camera_encoders = AveragedModel(camera_encoders, multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.999))
+        self.ema_camera_encoders = AveragedModel(
+            camera_encoders,
+            multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.998),
+        )
         # use a list so it's not tracked as a module
         self.camera_encoders = [camera_encoders]
-
 
     def forward(
         self, ctx: Context, batch: Batch, grids: List[torch.Tensor]
@@ -188,18 +193,21 @@ class VoxelJEPATask(BEVTask):
                     f"grid/{frame}/minmax",
                     {"max": grid.max(), "min": grid.min(), "mean": grid.mean()},
                 )
-
+            if ctx.log_img:
+                ctx.add_image(
+                    f"grid/{frame}/z",
+                    render_color(grid[0, 0].sum(dim=2)),
+                )
 
             # total variation loss to encourage sharp edges
-            #tvl1_grid = ctx.log_grad_norm(grid, "grad/norm/grid", "tvl1")
-            #losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1)) * 0.5
+            # tvl1_grid = ctx.log_grad_norm(grid, "grad/norm/grid", "tvl1")
+            # losses["tvl1"] = tvl1_loss(tvl1_grid.squeeze(1)) * 0.5
 
             losses.update(self._losses_frame(ctx, batch, grid, feat_grid, frame))
 
             # we need to run tvl1 loss early as the child losses don't run
             # backwards on the whole set of losses
             ctx.backward(losses)
-
 
         return losses
 
@@ -229,9 +237,11 @@ class VoxelJEPATask(BEVTask):
 
         volumes = Volumes(
             densities=grid.permute(0, 1, 4, 2, 3).to(dtype),
-            features=feat_grid.permute(0, 1, 4, 2, 3).to(dtype)
-            if feat_grid is not None
-            else None,
+            features=(
+                feat_grid.permute(0, 1, 4, 2, 3).to(dtype)
+                if feat_grid is not None
+                else None
+            ),
             voxel_size=1 / self.scale,
             volume_translation=self.volume_translation,
         )
@@ -252,7 +262,7 @@ class VoxelJEPATask(BEVTask):
                 T=T,
                 K=K,
                 image_size=torch.tensor(
-                    [[h // 8, w // 8]], device=device, dtype=torch.float
+                    [[h // 2, w // 2]], device=device, dtype=torch.float
                 ).expand(BS, -1),
                 device=device,
             )
@@ -269,12 +279,48 @@ class VoxelJEPATask(BEVTask):
                 )
             semantic_img = semantic_img.permute(0, 3, 1, 2)
 
-
             with torch.no_grad(), autocast():
-                target_feats = self.ema_camera_encoders.module[cam](batch.color[cam][:, frame]).detach()
+                color = batch.color[cam][:, frame]
+                target_feats = self.ema_camera_encoders.module[cam](color).detach()
+                # normalize target features on the channel dimension
+                target_feats = F.layer_norm(
+                    target_feats.permute(0, 2, 3, 1),
+                    (self.voxel_dim,),
+                ).permute(0, 3, 1, 2)
 
             losses[f"cam_features/{cam}/{frame}"] = F.l1_loss(
                 semantic_img, target_feats
             )
+
+            if ctx.log_text:
+                ctx.add_scalars(
+                    f"{cam}/{frame}/predicted-minmax",
+                    {
+                        "max": semantic_img.max(),
+                        "min": semantic_img.min(),
+                        "mean": semantic_img.mean(),
+                    },
+                )
+                ctx.add_scalars(
+                    f"{cam}/{frame}/target-minmax",
+                    {
+                        "max": target_feats.max(),
+                        "min": target_feats.min(),
+                        "mean": target_feats.mean(),
+                    },
+                )
+            if ctx.log_img:
+                ctx.add_image(
+                    f"{cam}/{frame}/target",
+                    render_color(target_feats[0].sum(dim=0)),
+                )
+                ctx.add_image(
+                    f"{cam}/{frame}/predicted",
+                    render_color(semantic_img[0].sum(dim=0)),
+                )
+                ctx.add_image(
+                    f"{cam}/{frame}/color",
+                    normalize_img(color[0]),
+                )
 
         return losses

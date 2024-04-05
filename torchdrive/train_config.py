@@ -11,6 +11,12 @@ from torchdrive.datasets.dataset import Dataset, Datasets
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
 
 
+def freeze(module: nn.Module) -> nn.Module:
+    for param in module.parameters():
+        param.requires_grad = False
+    return module
+
+
 @dataclass_json
 @dataclass
 class TrainConfig:
@@ -53,6 +59,8 @@ class TrainConfig:
     det_num_queries: int = 1000
 
     start_offsets: Tuple[int, ...] = (0,)
+    freeze_cam_backbone: bool = False
+    cam_features_mask_ratio: float = 0.0
 
     def create_dataset(self, smoke: bool = False) -> Dataset:
         if self.dataset == Datasets.RICE:
@@ -182,9 +190,10 @@ class TrainConfig:
             cam_feats_shape = (h // 8, w // 8)
 
             def cam_encoder() -> RegNetEncoder:
-                return RegNetEncoder(
-                    C=self.cam_dim, regnet=models.regnet_x_800mf(pretrained=True)
-                )
+                cam_backbone = models.regnet_x_800mf(pretrained=True)
+                if self.freeze_cam_backbone:
+                    cam_backbone = freeze(cam_backbone)
+                return RegNetEncoder(C=self.cam_dim, regnet=cam_backbone)
 
         else:
             raise ValueError(f"unknown cam encoder {self.cam_encoder}")
@@ -265,6 +274,8 @@ class TrainConfig:
             cameras=self.cameras,
             dim=self.dim,
             hr_dim=self.hr_dim,
+            cam_dim=self.cam_dim,
+            cam_features_mask_ratio=self.cam_features_mask_ratio,
             compile_fn=compile_fn,
             num_encode_frames=self.num_encode_frames,
             backbone=backbone,

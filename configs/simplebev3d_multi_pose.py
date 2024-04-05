@@ -13,10 +13,12 @@ CONFIG = TrainConfig(
     ],
     dim=256,
     cam_dim=128,
-    hr_dim=128*16,
+    hr_dim=128 * 16,
     backbone="simple_bev3d",
     cam_encoder="simple_regnet",
-    num_frames=9,
+    # freeze_cam_backbone=True,
+    cam_features_mask_ratio=0.5,
+    num_frames=5,
     num_encode_frames=3,
     start_offsets=(0, 4),
     cam_shape=(480, 640),
@@ -30,7 +32,7 @@ CONFIG = TrainConfig(
     # dataset
     dataset=Datasets.NUSCENES,
     dataset_path="/home/tristanr/nuscenes",
-    autolabel_path=None,#"/mnt/ext3/autolabel2",
+    autolabel_path=None,  # "/mnt/ext3/autolabel2",
     mask_path="n/a",  # only used for rice dataset
     num_workers=4,
     batch_size=6,

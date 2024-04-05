@@ -405,11 +405,11 @@ class Decoder(ResnetFPN2d):
             "instance_offset": instance_offset_output.view(
                 b, *instance_offset_output.shape[1:]
             ),
-            "instance_flow": instance_future_output.view(
-                b, *instance_future_output.shape[1:]
-            )
-            if instance_future_output is not None
-            else None,
+            "instance_flow": (
+                instance_future_output.view(b, *instance_future_output.shape[1:])
+                if instance_future_output is not None
+                else None
+            ),
         }
 
 
@@ -857,7 +857,7 @@ class SegnetBackbone(BEVBackbone):
         Ts = []
         # camera order doesn't matter for segnet
         for cam, time_feats in camera_features.items():
-            for i, feats in enumerate(time_feats[:self.num_frames]):
+            for i, feats in enumerate(time_feats[: self.num_frames]):
                 with autocast():
                     features.append(self.project[i](feats))
                 Ks.append(batch.K[cam])
@@ -1002,7 +1002,7 @@ class Segnet3DBackbone(BEVBackbone):
         Ts = []
         # camera order doesn't matter for segnet
         for cam, time_feats in camera_features.items():
-            for i, feats in enumerate(time_feats[:self.num_frames]):
+            for i, feats in enumerate(time_feats[: self.num_frames]):
                 with autocast():
                     features.append(self.project[i](feats))
                 Ks.append(batch.K[cam])
