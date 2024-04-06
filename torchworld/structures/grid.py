@@ -67,6 +67,9 @@ class Grid3d(torch.Tensor):
 
         return r
 
+    def numpy(self) -> object:
+        return self._data.numpy()
+
     @classmethod
     # pyre-fixme[3]: Return type must be annotated.
     # pyre-fixme[2]: Parameter must be annotated.
@@ -122,13 +125,6 @@ class Grid3d(torch.Tensor):
                 f"time must be scalar or 1-dimensional, got {self.time.shape}"
             )
 
-        T = self.local_to_world.get_matrix()
-        if (BS := T.size(0)) != 1:
-            if BS != self._data.size(0):
-                raise TypeError(
-                    f"data and local_to_world batch sizes don't match: {T.shape, self._data.shape}"
-                )
-
     @classmethod
     def from_volume(
         cls,
@@ -155,6 +151,7 @@ class Grid3d(torch.Tensor):
         """
         device = data.device
         grid_sizes = tuple(data.shape[2:5])
+        print(grid_sizes)
         locator = VolumeLocator(
             batch_size=len(data),
             grid_sizes=grid_sizes,
@@ -264,7 +261,7 @@ class GridImage(torch.Tensor):
                 camera=grid.camera,
                 time=time,
                 mask=mask,
-            )
+            ) if isinstance(out, torch.Tensor) else out
             for out in out_flat
         ]
         out = pytree.tree_unflatten(out_flat, spec)
@@ -296,16 +293,11 @@ class GridImage(torch.Tensor):
                 f"time must be scalar or 1-dimensional, got {self.time.shape}"
             )
 
-        T = self.camera.get_projection_transform().get_matrix()
-
-        if (BS := T.size(0)) != 1:
-            if BS != self._data.size(0):
-                raise TypeError(
-                    f"data and transform batch sizes don't match: {T.shape, self._data.shape}"
-                )
-
     def grid_shape(self) -> Tuple[int, int]:
         return tuple(self._data.shape[2:4])
 
     def __repr__(self):
         return f"GridImage(data={self._data}, camera={self.camera}, time={self.time}), mask={self.mask}"
+
+    def numpy(self) -> object:
+        return self._data.numpy()

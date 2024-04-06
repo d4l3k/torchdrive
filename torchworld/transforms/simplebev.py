@@ -29,8 +29,8 @@ def lift_image_to_3d(
     features: grid with features
     mask: grid of the mask where the camera could see
     """
-    if dst.numel() != 0:
-        raise TypeError(f"dst should be batch size zero {dst.shape}")
+    #if dst.numel() != 0:
+    #    raise TypeError(f"dst should be batch size zero {dst.shape}")
 
     device = src.device
     BS = len(src)
@@ -94,7 +94,6 @@ def lift_image_to_3d(
             time=dst.time,
         ),
     )
-
 
 def merge_grids(
     grids: Tuple[Grid3d, ...],

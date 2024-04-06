@@ -44,16 +44,17 @@ class TestGrid(unittest.TestCase):
             local_to_world=Transform3d(),
             time=torch.rand(2),
         )
+        str(grid)
+        repr(grid)
 
-    def test_grid3d_conv3d(self) -> None:
+    def test_grid3d_numpy(self) -> None:
         grid = Grid3d(
             data=torch.rand(2, 3, 4, 5, 6),
             local_to_world=Transform3d(),
             time=torch.rand(2),
         )
+        grid.numpy()
 
-        str(grid)
-        repr(grid)
 
     def test_grid_image(self) -> None:
         grid = GridImage(
@@ -76,6 +77,14 @@ class TestGrid(unittest.TestCase):
 
         str(grid)
         repr(grid)
+
+    def test_grid_image_numpy(self) -> None:
+        grid = GridImage(
+            data=torch.rand(2, 3, 4, 5),
+            camera=PerspectiveCameras(),
+            time=torch.rand(2),
+        )
+        grid.numpy()
 
     def test_grid_image_permute(self) -> None:
         grid = GridImage(

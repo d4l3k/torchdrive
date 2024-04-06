@@ -151,12 +151,11 @@ class TrainConfig:
             from torchworld.models.simplebev_3d import SimpleBEV3DBackbone
 
             backbone = SimpleBEV3DBackbone(
-                grid_shape=adjusted_grid_shape,
+                grid_shape=self.grid_shape,
                 dim=self.dim,
                 hr_dim=self.hr_dim,
                 cam_dim=self.cam_dim,
                 num_frames=3,
-                scale=3 / adjust,
                 compile_fn=compile_fn,
             )
         else:
@@ -274,6 +273,8 @@ class TrainConfig:
             dim=self.dim,
             hr_dim=self.hr_dim,
             cam_dim=self.cam_dim,
+            grid_shape=self.grid_shape,
+            scale=3.0,
             cam_features_mask_ratio=self.cam_features_mask_ratio,
             compile_fn=compile_fn,
             num_encode_frames=self.num_encode_frames,

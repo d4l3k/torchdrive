@@ -9,7 +9,9 @@ import torch
 from torch import nn
 from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
+
 from torchworld.transforms.img import render_color
+from torchworld.structures.grid import Grid3d
 
 from torchdrive.amp import autocast
 from torchdrive.autograd import (
@@ -57,6 +59,8 @@ class BEVTaskVan(torch.nn.Module):
         dim: int,
         cam_dim: int,
         hr_dim: int,
+        scale: float,
+        grid_shape: Tuple[int, int, int],
         cam_features_mask_ratio: float = 0.0,
         num_encode_frames: int = 3,
         num_backprop_frames: int = 2,
@@ -85,6 +89,9 @@ class BEVTaskVan(torch.nn.Module):
         self.camera_encoders = nn.ModuleDict(
             {cam: compile_fn(cam_encoder()) for cam in cameras}
         )
+        self.grid_shape = grid_shape
+        self.hr_dim = hr_dim
+        self.scale = scale
 
         for task in tasks.values():
             task.set_camera_encoders(self.camera_encoders)
@@ -167,27 +174,28 @@ class BEVTaskVan(torch.nn.Module):
                 # run frames in parallel
                 encoder = self.camera_encoders[cam]
                 encoder.train()
-                inp = batch.color[cam][:, : self.num_encode_frames]
+                inp = [batch.grid_image(cam, i) for i in range(self.num_encode_frames)]
 
                 # use gradient checkpointing to save memory
-                feats = torch.utils.checkpoint.checkpoint(
-                    encoder, inp.flatten(0, 1)
-                ).unflatten(0, inp.shape[0:2])
-                num_frames = feats.size(1)
+                feats = [
+                    torch.utils.checkpoint.checkpoint(
+                        encoder, frame_inp
+                    ) for frame_inp in inp
+                ]
+                num_frames = self.num_encode_frames
 
                 to_mask = (
-                    torch.rand(feats.shape[-2:], device=feats.device)
+                    torch.rand(feats[0].shape[-2:], device=feats[0].device)
                     < self.cam_features_mask_ratio
                 )
-                feats[:, :, :, to_mask] = (
-                    self.cam_mask_value.weight.unsqueeze(0)
-                    .unsqueeze(-1)
-                    .to(feats.dtype)
-                )
+                for feat in feats:
+                    feat[:, :, to_mask] = (
+                        self.cam_mask_value.weight.unsqueeze(0)
+                        .unsqueeze(-1)
+                        .to(feat.dtype)
+                    )
 
-                for i in range(num_frames):
-                    feat = feats[:, i]
-                    camera_feats[cam].append(feat)
+                camera_feats[cam] = feats
 
         for cam, cam_feats in camera_feats.items():
             if torch.is_anomaly_check_nan_enabled():
@@ -195,7 +203,13 @@ class BEVTaskVan(torch.nn.Module):
                     assert not torch.isnan(feats).any().item(), cam
 
         with torch.autograd.profiler.record_function("backbone"):
-            hr_bev, bev_feats, bev_intermediates = self.backbone(camera_feats, batch)
+            feat = camera_feats[cam][start_frame]
+            target_grid = Grid3d.from_volume(
+                data=torch.empty(feat.size(0), self.hr_dim, *self.grid_shape, device=feat.device, dtype=feat.dtype),
+                voxel_size=1.0/self.scale,
+                time=feat.time,
+            )
+            hr_bev, bev_feats, bev_intermediates = self.backbone(batch, camera_feats, target_grid)
 
         if torch.is_anomaly_check_nan_enabled():
             assert not torch.isnan(hr_bev).any().item()
