@@ -125,7 +125,7 @@ class VoxelJEPATask(BEVTask):
 
         self.max_depth: float = n_pts_per_ray / scale
         self.min_depth = 0.5
-        raysampler = NDCMultinomialRaysampler(
+        self.raysampler = NDCMultinomialRaysampler(
             image_width=w // 8,
             image_height=h // 8,
             n_pts_per_ray=n_pts_per_ray,
@@ -142,7 +142,7 @@ class VoxelJEPATask(BEVTask):
             )
         )
         self.renderer = ImplicitRenderer(
-            raysampler=raysampler,
+            raysampler=self.raysampler,
             raymarcher=self.raymarcher,
         )
 

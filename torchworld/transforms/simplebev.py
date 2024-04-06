@@ -94,3 +94,29 @@ def lift_image_to_3d(
             time=dst.time,
         ),
     )
+
+
+def merge_grids(
+    grids: Tuple[Grid3d, ...],
+    masks: Tuple[Grid3d, ...],
+) -> Tuple[Grid3d, Grid3d]:
+    """
+    Merge multiple grids into a single grid.
+
+    Arguments
+    ---------
+    grids: Tuple of grids to merge.
+    masks: Tuple of masks to merge.
+
+    Returns
+    -------
+    merged_grid: Merged grid
+    merged_mask: Merged mask
+    """
+
+    merged_grid = torch.stack(grids).sum(dim=0)
+    merged_mask = torch.stack(masks).sum(dim=0)
+    clamped_mask = merged_mask.clamp(min=0.0, max=1.0)
+    scale = (1.0 / merged_mask.clamp(min=1.0)) * clamped_mask
+    merged_grid *= scale
+    return merged_grid, clamped_mask

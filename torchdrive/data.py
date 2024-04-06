@@ -89,6 +89,13 @@ class Batch:
         )
 
     def grid_image(self, cam: str, frame: int) -> GridImage:
+        """
+        Return the camera color for the specified frame.
+
+        Returns
+        -------
+        tensor [bs, nframes, 3, H, W]
+        """
         color = self.color[cam][:, frame]
         return GridImage(
             data=color,

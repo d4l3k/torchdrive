@@ -148,16 +148,15 @@ class TrainConfig:
                 compile_fn=compile_fn,
             )
         elif self.backbone == "simple_bev3d":
-            from torchdrive.models.simple_bev import Segnet3DBackbone
+            from torchworld.models.simplebev_3d import SimpleBEV3DBackbone
 
-            backbone = Segnet3DBackbone(
+            backbone = SimpleBEV3DBackbone(
                 grid_shape=adjusted_grid_shape,
                 dim=self.dim,
                 hr_dim=self.hr_dim,
                 cam_dim=self.cam_dim,
                 num_frames=3,
                 scale=3 / adjust,
-                num_upsamples=self.num_upsamples,
                 compile_fn=compile_fn,
             )
         else:

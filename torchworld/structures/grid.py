@@ -87,7 +87,11 @@ class Grid3d(torch.Tensor):
 
         out_flat, spec = pytree.tree_flatten(out)
         out_flat = [
-            cls(data=data, local_to_world=grid.local_to_world, time=grid.time)
+            (
+                cls(data=data, local_to_world=grid.local_to_world, time=grid.time)
+                if isinstance(data, torch.Tensor)
+                else data
+            )
             for data in out_flat
         ]
         out = pytree.tree_unflatten(out_flat, spec)

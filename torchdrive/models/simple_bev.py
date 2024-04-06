@@ -1023,7 +1023,7 @@ class Segnet3DBackbone(BEVBackbone):
             (x1, x2, x3, x4), grad_norms = self.fpn(x)
             assert x1.shape == feat_mem.shape
 
-            x0 = self.upsample(x1)
+            x0 = x1  # self.upsample(x1)
 
             # project to BEV grids
             x1 = self.bev_project[0](x1.flatten(1, 2))
