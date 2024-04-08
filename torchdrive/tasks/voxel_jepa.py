@@ -23,7 +23,7 @@ from torchdrive.render.raymarcher import (
     DepthEmissionRaymarcher,
     # DepthEmissionSoftmaxRaymarcher,
 )
-from torchdrive.render.volume_sampler import VolumeSampler
+from torchworld.transforms.grid_sampler import GridSampler
 from torchdrive.tasks.bev import BEVTask, Context
 
 
@@ -125,9 +125,11 @@ class VoxelJEPATask(BEVTask):
 
         self.max_depth: float = n_pts_per_ray / scale
         self.min_depth = 0.5
+        self.image_width = w // 8
+        self.image_height = h // 8
         self.raysampler = NDCMultinomialRaysampler(
-            image_width=w // 8,
-            image_height=h // 8,
+            image_width=self.image_width,
+            image_height=self.image_height,
             n_pts_per_ray=n_pts_per_ray,
             min_depth=self.min_depth,
             max_depth=self.max_depth,
@@ -235,37 +237,22 @@ class VoxelJEPATask(BEVTask):
 
         dtype = torch.bfloat16 if grid.is_cuda else torch.float32
 
-        volumes = Volumes(
+        volumetric_function = GridSampler(
             densities=grid.permute(0, 1, 4, 2, 3).to(dtype),
             features=(
                 feat_grid.permute(0, 1, 4, 2, 3).to(dtype)
                 if feat_grid is not None
                 else None
             ),
-            voxel_size=1 / self.scale,
-            volume_translation=self.volume_translation,
-        )
-
-        volumetric_function = VolumeSampler(
-            volumes,
             # we set padding_mode so points outside the grid will inherit from
             # the border so we don't need custom endpoint logic
             padding_mode="border",
         )
 
         for cam in self.cameras:
-            K = batch.K[cam]
             # create world to camera transformation matrix
             # T = batch.world_to_cam(cam, start_frame)
-            T = batch.world_to_cam(cam, frame)
-            cameras = CustomPerspectiveCameras(
-                T=T,
-                K=K,
-                image_size=torch.tensor(
-                    [[h // 2, w // 2]], device=device, dtype=torch.float
-                ).expand(BS, -1),
-                device=device,
-            )
+            cameras = batch.camera(cam, frame)
             with torch.autograd.profiler.record_function("render"):
                 (
                     voxel_depth,

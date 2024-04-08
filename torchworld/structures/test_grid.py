@@ -55,6 +55,13 @@ class TestGrid(unittest.TestCase):
         )
         grid.numpy()
 
+    def test_grid3d_nan(self) -> None:
+        grid = Grid3d(
+            data=torch.rand(2, 3, 4, 5, 6),
+            local_to_world=Transform3d(),
+            time=torch.rand(2),
+        )
+        self.assertFalse(torch.isnan(grid).any().item())
 
     def test_grid_image(self) -> None:
         grid = GridImage(

@@ -1,6 +1,7 @@
 from typing import Optional, Tuple, TypeVar, Union
 
 import torch
+from pytorch3d.structures import Volumes
 from pytorch3d.structures.volumes import VolumeLocator
 
 from torchworld.structures.cameras import CamerasBase
@@ -71,14 +72,28 @@ class Grid3d(torch.Tensor):
         return self._data.numpy()
 
     @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        out = super().__torch_function__(func, types, args, kwargs)
+        if isinstance(out, Grid3d):
+            if not hasattr(out, "_data"):
+                raise TypeError(f"missing required variable in output from {func}")
+            assert out._data is not None
+        return out
+
+    @classmethod
     # pyre-fixme[3]: Return type must be annotated.
     # pyre-fixme[2]: Parameter must be annotated.
     def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
         if kwargs is None:
             kwargs = {}
 
-        args_data = pytree.tree_map_only(cls, lambda x: x._data, args)
-        kwargs_data = pytree.tree_map_only(cls, lambda x: x._data, kwargs)
+        def map_data(x):
+            if not hasattr(x, "_data"):
+                breakpoint()
+            return x._data
+
+        args_data = pytree.tree_map_only(cls, map_data, args)
+        kwargs_data = pytree.tree_map_only(cls, map_data, kwargs)
 
         # get the first grid object from the args
         values, _ = pytree.tree_flatten(args)
@@ -151,7 +166,6 @@ class Grid3d(torch.Tensor):
         """
         device = data.device
         grid_sizes = tuple(data.shape[2:5])
-        print(grid_sizes)
         locator = VolumeLocator(
             batch_size=len(data),
             grid_sizes=grid_sizes,
