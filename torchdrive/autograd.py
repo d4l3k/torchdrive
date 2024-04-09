@@ -13,6 +13,8 @@ def autograd_pause(tensor: torch.Tensor) -> torch.Tensor:
 
     See autograd_resume.
     """
+    if not torch.is_grad_enabled():
+        return tensor
     assert tensor.requires_grad, f"tensor does not require grad {tensor}"
     detatched = tensor.detach()
     detatched.requires_grad = True
@@ -29,6 +31,8 @@ def autograd_resume(*tensors: torch.Tensor) -> None:
     autograd_resume resumes the backwards pass for the provided tensors that were
     graph broken via autograd_pause.
     """
+    if not torch.is_grad_enabled():
+        return
     # ignore zero sized tensors
     tensors = tuple([t for t in tensors if t.numel() > 0])
 
@@ -48,16 +52,14 @@ def autograd_resume(*tensors: torch.Tensor) -> None:
 
 @overload
 @contextmanager
-def autograd_context(tensor: torch.Tensor) -> Generator[torch.Tensor, None, None]:
-    ...
+def autograd_context(tensor: torch.Tensor) -> Generator[torch.Tensor, None, None]: ...
 
 
 @overload
 @contextmanager
 def autograd_context(
     tensor: torch.Tensor, *tensors: torch.Tensor
-) -> Generator[Tuple[torch.Tensor, ...], None, None]:
-    ...
+) -> Generator[Tuple[torch.Tensor, ...], None, None]: ...
 
 
 @contextmanager
@@ -98,6 +100,8 @@ def register_log_grad_norm(
     global_step: int,
 ) -> None:
     if writer is None:
+        return
+    if not torch.is_grad_enabled():
         return
     nonopt_writer: SummaryWriter = writer
 

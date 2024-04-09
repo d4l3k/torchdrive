@@ -88,13 +88,13 @@ class SimpleBEV3DBackbone(BEVBackbone):
             x0 = x1
 
             # project to BEV grids
-            x1 = x1.transpose(2, 4).clone().flatten(1, 2)
+            x1 = x1.flatten(1, 2)
             x1 = self.bev_project[0](x1)
-            x2 = x2.transpose(2, 4).clone().flatten(1, 2)
+            x2 = x2.flatten(1, 2)
             x2 = self.bev_project[1](x2)
-            x3 = x3.transpose(2, 4).clone().flatten(1, 2)
+            x3 = x3.flatten(1, 2)
             x3 = self.bev_project[2](x3)
-            x4 = x4.transpose(2, 4).clone().flatten(1, 2)
+            x4 = x4.flatten(1, 2)
             x4 = self.bev_project[3](x4)
 
             return x0, (x1, x2, x3, x4), {}

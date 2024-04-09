@@ -37,7 +37,9 @@ class GridSampler(torch.nn.Module):
         """
         super().__init__()
         if not isinstance(densities, Grid3d):
-            raise ValueError("'densities' have to be an instance of the 'Grid3d' class.")
+            raise ValueError(
+                "'densities' have to be an instance of the 'Grid3d' class."
+            )
         if not isinstance(features, Grid3d):
             raise ValueError("'features' have to be an instance of the 'Grid3d' class.")
         self._densities = densities
@@ -52,7 +54,7 @@ class GridSampler(torch.nn.Module):
         from the volume global-to-local coords transform.
         """
         world2local = self._features.local_to_world.inverse().get_matrix()
-        #world2local = self._volumes.get_world_to_local_coords_transform().get_matrix()
+        # world2local = self._volumes.get_world_to_local_coords_transform().get_matrix()
         directions_transform_matrix = eyes(
             4,
             N=world2local.shape[0],
@@ -116,7 +118,7 @@ class GridSampler(torch.nn.Module):
         rays_origins_local = world_to_local.transform_points(
             rays_origins_world.view(pts_shape[0], -1, 3),
         ).view(pts_shape)
-        #rays_origins_local = self._volumes.world_to_local_coords(rays_origins_world)
+        # rays_origins_local = self._volumes.world_to_local_coords(rays_origins_world)
 
         # obtain the Transform3d object that transforms ray directions to local coords
         directions_transform = self._get_ray_directions_transform()

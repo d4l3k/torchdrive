@@ -9,9 +9,9 @@ import torch
 from torch import nn
 from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
+from torchworld.structures.grid import Grid3d
 
 from torchworld.transforms.img import render_color
-from torchworld.structures.grid import Grid3d
 
 from torchdrive.amp import autocast
 from torchdrive.autograd import (
@@ -178,9 +178,8 @@ class BEVTaskVan(torch.nn.Module):
 
                 # use gradient checkpointing to save memory
                 feats = [
-                    torch.utils.checkpoint.checkpoint(
-                        encoder, frame_inp
-                    ) for frame_inp in inp
+                    torch.utils.checkpoint.checkpoint(encoder, frame_inp)
+                    for frame_inp in inp
                 ]
                 num_frames = self.num_encode_frames
 
@@ -205,11 +204,21 @@ class BEVTaskVan(torch.nn.Module):
         with torch.autograd.profiler.record_function("backbone"):
             feat = camera_feats[cam][start_frame]
             target_grid = Grid3d.from_volume(
-                data=torch.empty(feat.size(0), self.hr_dim, *self.grid_shape, device=feat.device, dtype=feat.dtype),
-                voxel_size=1.0/self.scale,
+                # Grid3d reference frame is [z, y, x]
+                data=torch.empty(
+                    feat.size(0),
+                    self.hr_dim,
+                    *self.grid_shape[::-1],
+                    device=feat.device,
+                    dtype=feat.dtype,
+                ),
+                voxel_size=1.0 / self.scale,
                 time=feat.time,
+                volume_translation=(0, 0, -4.0 / self.scale),
             )
-            hr_bev, bev_feats, bev_intermediates = self.backbone(batch, camera_feats, target_grid)
+            hr_bev, bev_feats, bev_intermediates = self.backbone(
+                batch, camera_feats, target_grid
+            )
 
         if torch.is_anomaly_check_nan_enabled():
             assert not torch.isnan(hr_bev).any().item()

@@ -68,9 +68,6 @@ class Grid3d(torch.Tensor):
 
         return r
 
-    def numpy(self) -> object:
-        return self._data.numpy()
-
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
         out = super().__torch_function__(func, types, args, kwargs)
@@ -189,6 +186,9 @@ class Grid3d(torch.Tensor):
     def grid_shape(self) -> Tuple[int, int]:
         return tuple(self._data.shape[2:5])
 
+    def numpy(self, **kwargs: object) -> object:
+        return self._data.numpy(**kwargs)
+
 
 class GridImage(torch.Tensor):
     """GridImage represents a 2D grid of features corresponding to certain
@@ -270,12 +270,16 @@ class GridImage(torch.Tensor):
         out_flat, spec = pytree.tree_flatten(out)
 
         out_flat = [
-            cls(
-                data=out,
-                camera=grid.camera,
-                time=time,
-                mask=mask,
-            ) if isinstance(out, torch.Tensor) else out
+            (
+                cls(
+                    data=out,
+                    camera=grid.camera,
+                    time=time,
+                    mask=mask,
+                )
+                if isinstance(out, torch.Tensor)
+                else out
+            )
             for out in out_flat
         ]
         out = pytree.tree_unflatten(out_flat, spec)
@@ -313,5 +317,5 @@ class GridImage(torch.Tensor):
     def __repr__(self):
         return f"GridImage(data={self._data}, camera={self.camera}, time={self.time}), mask={self.mask}"
 
-    def numpy(self) -> object:
-        return self._data.numpy()
+    def numpy(self, **kwargs: object) -> object:
+        return self._data.numpy(**kwargs)

@@ -18,7 +18,9 @@ from torchworld.transforms.transform3d import RotateAxisAngle, Transform3d
 
 
 def _transform_to_mat(transform: Transform3d) -> Tuple[float, ...]:
-    return tuple(transform.get_matrix().contiguous().view(-1).tolist())
+    flat = transform.get_matrix().contiguous().view(-1)
+    assert not flat.sum().isnan()
+    return tuple(flat.tolist())
 
 
 def renderer(

@@ -11,6 +11,7 @@ from pytorch3d.structures import Volumes
 from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
 from torch.optim.swa_utils import AveragedModel
+from torchworld.transforms.grid_sampler import GridSampler
 from torchworld.transforms.img import normalize_img, normalize_mask, render_color
 
 from torchdrive.amp import autocast
@@ -23,7 +24,6 @@ from torchdrive.render.raymarcher import (
     DepthEmissionRaymarcher,
     # DepthEmissionSoftmaxRaymarcher,
 )
-from torchworld.transforms.grid_sampler import GridSampler
 from torchdrive.tasks.bev import BEVTask, Context
 
 
