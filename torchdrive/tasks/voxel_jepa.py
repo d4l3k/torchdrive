@@ -11,7 +11,6 @@ from pytorch3d.structures import Volumes
 from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
 from torch.optim.swa_utils import AveragedModel
-from torchworld.transforms.grid_sampler import GridSampler
 from torchworld.transforms.img import normalize_img, normalize_mask, render_color
 
 from torchdrive.amp import autocast
@@ -24,6 +23,7 @@ from torchdrive.render.raymarcher import (
     DepthEmissionRaymarcher,
     # DepthEmissionSoftmaxRaymarcher,
 )
+from torchworld.transforms.grid_sampler import GridSampler
 from torchdrive.tasks.bev import BEVTask, Context
 
 
@@ -100,6 +100,7 @@ class VoxelJEPATask(BEVTask):
         self.start_offsets = start_offsets
         self.offsets = offsets
         self.hr_dim = hr_dim
+        self.dim = dim
 
         # TODO support non-centered voxel grids
         self.volume_translation: Tuple[float, float, float] = (
@@ -124,7 +125,7 @@ class VoxelJEPATask(BEVTask):
         resnet_init(self.decoders)
 
         self.max_depth: float = n_pts_per_ray / scale
-        self.min_depth = 0.5
+        self.min_depth = 2#0.5
         self.image_width = w // 8
         self.image_height = h // 8
         self.raysampler = NDCMultinomialRaysampler(
@@ -190,10 +191,18 @@ class VoxelJEPATask(BEVTask):
             grid = grid.permute(0, 1, 4, 3, 2)
             feat_grid = feat_grid.permute(0, 1, 4, 3, 2)
 
+            #grid, feat_grid = axis_grid(grid)
+            #feat_grid = feat_grid.sum(dim=1, keepdim=True).expand(-1, self.voxel_dim, -1, -1, -1)
+
             if ctx.log_text:
                 ctx.add_scalars(
                     f"grid/{frame}/minmax",
                     {"max": grid.max(), "min": grid.min(), "mean": grid.mean()},
+                )
+            if ctx.log_text:
+                ctx.add_scalars(
+                    f"feat_grid/{frame}/minmax",
+                    {"max": feat_grid.max(), "min": feat_grid.min(), "mean": feat_grid.mean()},
                 )
             if ctx.log_img:
                 ctx.add_image(
@@ -296,6 +305,14 @@ class VoxelJEPATask(BEVTask):
                         "mean": target_feats.mean(),
                     },
                 )
+                ctx.add_scalars(
+                    f"{cam}/{frame}/depth-minmax",
+                    {
+                        "max": voxel_depth.max(),
+                        "min": voxel_depth.min(),
+                        "mean": voxel_depth.mean(),
+                    },
+                )
             if ctx.log_img:
                 ctx.add_image(
                     f"{cam}/{frame}/target",
@@ -308,6 +325,10 @@ class VoxelJEPATask(BEVTask):
                 ctx.add_image(
                     f"{cam}/{frame}/color",
                     normalize_img(color[0]),
+                )
+                ctx.add_image(
+                    f"{cam}/{frame}/depth",
+                    render_color(voxel_depth[0]),
                 )
 
         return losses
