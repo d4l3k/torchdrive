@@ -56,6 +56,9 @@ class TestBEV(unittest.TestCase):
             cameras=cameras,
             dim=dim,
             hr_dim=hr_dim,
+            cam_dim=dim,
+            scale=3.0,
+            grid_shape=grid_shape,
             num_encode_frames=2,
             num_backprop_frames=1,
             backbone=RiceBackbone(

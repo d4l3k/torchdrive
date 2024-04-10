@@ -9,9 +9,11 @@ import torch
 from torch import nn
 from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
-from torchworld.structures.grid import Grid3d
+import torch.nn.functional as F
 
+from torchworld.structures.grid import Grid3d
 from torchworld.transforms.img import render_color
+from torchworld.transforms.mask import random_block_mask
 
 from torchdrive.amp import autocast
 from torchdrive.autograd import (
@@ -183,12 +185,22 @@ class BEVTaskVan(torch.nn.Module):
                 ]
                 num_frames = self.num_encode_frames
 
-                to_mask = (
-                    torch.rand(feats[0].shape[-2:], device=feats[0].device)
-                    < self.cam_features_mask_ratio
+                to_mask = random_block_mask(
+                    feats[0],
+                    block_size=(25, 25),
+                    num_blocks=8,
                 )
-                for feat in feats:
-                    feat[:, :, to_mask] = (
+                # TODO: support data normal masks
+                #to_mask = torch.bitwise_and(to_mask, F.interpolate(batch.mask[cam], to_mask.shape) > 0.5)
+
+                if log_img and writer:
+                    writer.add_image(
+                        f"mask/{cam}",
+                        render_color(to_mask),
+                        global_step=global_step,
+                    )
+                for i, feat in enumerate(feats):
+                    feat[:, :, ~to_mask] = (
                         self.cam_mask_value.weight.unsqueeze(0)
                         .unsqueeze(-1)
                         .to(feat.dtype)
