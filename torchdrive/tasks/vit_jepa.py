@@ -15,6 +15,7 @@ from torchdrive.losses import losses_backward
 from torchdrive.tasks.van import Van
 from torchworld.transforms.img import normalize_img, normalize_mask, render_color
 from torchworld.transforms.mask import random_block_mask, true_mask
+from torchworld.transforms.pca import structured_pca
 
 class MaskViT(nn.Module):
     def __init__(
@@ -225,6 +226,7 @@ class ViTJEPA(nn.Module, Van):
                     target_feats = self.ema_encoders.module[cam](all_color.flatten(0, 1), mask).detach()
                     target_feats = target_feats.unflatten(0, all_color.shape[:2])
                     target_feats = target_feats.unflatten(2, self.feat_shape)
+                    all_target_feats_raw = target_feats
                     # normalize on hidden dim
                     all_target_feats = F.layer_norm(
                         target_feats,
@@ -237,6 +239,7 @@ class ViTJEPA(nn.Module, Van):
 
                 for frame in range(self.num_frames):
                     target_feats = all_target_feats[:, frame]
+                    target_feats_raw = all_target_feats_raw[:, frame]
                     pred_feats = all_pred_feats[:, frame]
                     color = all_color[:, frame]
 
@@ -271,6 +274,11 @@ class ViTJEPA(nn.Module, Van):
                             global_step=global_step,
                         )
                         writer.add_image(
+                            f"{cam}/{frame}/target_raw",
+                            render_color(target_feats_raw[0].sum(dim=-1)),
+                            global_step=global_step,
+                        )
+                        writer.add_image(
                             f"{cam}/{frame}/predicted",
                             render_color(pred_feats[0].sum(dim=-1)),
                             global_step=global_step,
@@ -278,6 +286,17 @@ class ViTJEPA(nn.Module, Van):
                         writer.add_image(
                             f"{cam}/{frame}/color",
                             normalize_img(color[0]),
+                            global_step=global_step,
+                        )
+                        pca = structured_pca(
+                            torch.cat((pred_feats[0], target_feats_raw[0]), dim=0),
+                            dim=3,
+                        )
+                        writer.add_image(
+                            f"{cam}/{frame}/pca",
+                            normalize_img(
+                                pca
+                            ),
                             global_step=global_step,
                         )
 
