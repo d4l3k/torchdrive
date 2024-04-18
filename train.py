@@ -22,10 +22,12 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
+from torch.distributed.elastic.multiprocessing.errors import record
+
+
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
 from torchdrive.datasets.dataset import Dataset
-
 from torchdrive.debug import assert_not_nan_dict
 from torchdrive.dist import run_ddp_concat
 from torchdrive.tasks.bev import BEVTaskVan
@@ -269,105 +271,113 @@ if args.profile:  # and rank == 0:
 else:
     prof = None
 
-for epoch in range(NUM_EPOCHS):
-    batch_idx = 0
-    save(epoch)
+@record
+def run():
+    global global_step
 
-    if writer:
-        writer.add_scalars(
-            "lr",
-            {
-                name: group["lr"]
-                for name, group in zip(name_groups, optimizer.param_groups)
-            },
-            global_step,
-        )
+    for epoch in range(NUM_EPOCHS):
+        batch_idx = 0
+        save(epoch)
 
-    # only show progress on rank 0
-    batch_iter = tqdm(collator, desc=f"epoch {epoch}") if LOCAL_RANK == 0 else collator
-    for batch in batch_iter:
-        batch = cast(Optional[Batch], batch)
-        if batch is None:
-            print("empty batch")
-            continue
-
-        batch = batch.to(device)
-
-        log_img, log_text = model.should_log(global_step, BS)
-
-        optimizer.zero_grad(set_to_none=True)
-
-        losses = ddp_model(
-            batch, global_step, writer=writer, output=args.output
-        )
-        loss: torch.Tensor = cast(torch.Tensor, sum(losses.values()))
-        assert not loss.requires_grad
-
-        run_ddp_concat(model.parameters())
-
-        if log_text and writer and args.grad_sizes:
-            with torch.no_grad():
-                max_grad = 0
-                max_weight = 0
-                max_param = "n/a"
-                for name, p in model.named_parameters():
-                    # find unused parameters
-                    if p.requires_grad:
-                        assert p.grad is not None, f"missing grad on param {name}"
-
-                    if p.grad is None:
-                        continue
-
-                    grad_abs = p.grad.abs().amax()
-                    if grad_abs > max_grad:
-                        max_grad = grad_abs
-                        max_weight = p.abs().amax()
-                        max_param = name
-                writer.add_scalar("grad/max", max_grad, global_step)
-                writer.add_scalar("grad/max_weight", max_weight, global_step)
-                writer.add_text("grad/max_name", max_param, global_step)
-        if config.grad_clip > 0:
-            # clip gradients to avoid loss explosion
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(), max_norm=config.grad_clip
+        if writer:
+            writer.add_scalars(
+                "lr",
+                {
+                    name: group["lr"]
+                    for name, group in zip(name_groups, optimizer.param_groups)
+                },
+                global_step,
             )
 
-        optimizer.step()
+        # only show progress on rank 0
+        batch_iter = tqdm(collator, desc=f"epoch {epoch}") if LOCAL_RANK == 0 else collator
+        for batch in batch_iter:
+            batch = cast(Optional[Batch], batch)
+            if batch is None:
+                print("empty batch")
+                continue
 
-        with torch.no_grad():
-            # pyre-fixme[9]: int
-            rollup: Dict[str, torch.Tensor] = defaultdict(lambda: 0)
-            for k, v in losses.items():
-                meaned_losses[k].update(v.sum())
-                # compute roll up metrics
-                rollupk = "loss/" + k.partition("/")[0]
-                if rollupk != k:
-                    rollup[rollupk] += v.sum()
-            for k, v in rollup.items():
-                meaned_losses[k].update(v.sum())
-            meaned_losses["loss"].update(loss)
+            batch = batch.to(device)
 
-            if log_text and writer is not None:
-                for k, v in meaned_losses.items():
-                    writer.add_scalar(k, v.compute(), global_step)
-                    v.reset()
+            log_img, log_text = model.should_log(global_step, BS)
 
-            if log_img:
+            optimizer.zero_grad(set_to_none=True)
+
+            losses = ddp_model(
+                batch, global_step, writer=writer, output=args.output
+            )
+            loss: torch.Tensor = cast(torch.Tensor, sum(losses.values()))
+            assert not loss.requires_grad
+
+            run_ddp_concat(model.parameters())
+
+            if log_text and writer and args.grad_sizes:
+                with torch.no_grad():
+                    max_grad = 0
+                    max_weight = 0
+                    max_param = "n/a"
+                    for name, p in model.named_parameters():
+                        # find unused parameters
+                        if p.requires_grad:
+                            assert p.grad is not None, f"missing grad on param {name}"
+
+                        if p.grad is None:
+                            continue
+
+                        grad_abs = p.grad.abs().amax()
+                        if grad_abs > max_grad:
+                            max_grad = grad_abs
+                            max_weight = p.abs().amax()
+                            max_param = name
+                    writer.add_scalar("grad/max", max_grad, global_step)
+                    writer.add_scalar("grad/max_weight", max_weight, global_step)
+                    writer.add_text("grad/max_name", max_param, global_step)
+            if config.grad_clip > 0:
+                # clip gradients to avoid loss explosion
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=config.grad_clip
+                )
+
+            optimizer.step()
+
+            with torch.no_grad():
+                # pyre-fixme[9]: int
+                rollup: Dict[str, torch.Tensor] = defaultdict(lambda: 0)
                 for k, v in losses.items():
-                    print(f"- {k}: {v.item()}")
-                print(f"= {loss.item()}")
+                    meaned_losses[k].update(v.sum())
+                    # compute roll up metrics
+                    rollupk = "loss/" + k.partition("/")[0]
+                    if rollupk != k:
+                        rollup[rollupk] += v.sum()
+                for k, v in rollup.items():
+                    meaned_losses[k].update(v.sum())
+                meaned_losses["loss"].update(loss)
 
-            if global_step > 0 and (global_step % (args.checkpoint_every // BS)) == 0:
-                save(epoch)
+                if log_text and writer is not None:
+                    for k, v in meaned_losses.items():
+                        writer.add_scalar(k, v.compute(), global_step)
+                        v.reset()
 
-            batch_idx += 1
-            global_step += 1
+                if log_img:
+                    for k, v in losses.items():
+                        print(f"- {k}: {v.item()}")
+                    print(f"= {loss.item()}")
 
-        if prof:
-            prof.step()
+                if global_step > 0 and (global_step % (args.checkpoint_every // BS)) == 0:
+                    save(epoch)
 
-    print(f"epoch {epoch}")
+                batch_idx += 1
+                global_step += 1
 
-    lr_scheduler.step()
+            if prof:
+                prof.step()
 
-save(epoch + 1)
+        print(f"epoch {epoch}")
+
+        lr_scheduler.step()
+
+    save(epoch + 1)
+
+
+if __name__ == "__main__":
+    run()

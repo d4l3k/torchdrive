@@ -18,3 +18,4 @@ class TestViTJEPA(unittest.TestCase):
         batch = dummy_batch()
         writer = MagicMock()
         losses = m(batch, global_step=0, writer=writer)
+        self.assertIsNotNone(m.encoders["left"].encoder.encoder.pos_embedding.grad)

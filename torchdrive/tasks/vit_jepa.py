@@ -9,7 +9,10 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.swa_utils import AveragedModel
 
 from torchdrive.amp import autocast
-from torchdrive.autograd import autograd_context
+from torchdrive.autograd import (
+    autograd_context,
+    register_log_grad_norm,
+)
 from torchdrive.data import Batch
 from torchdrive.losses import losses_backward
 from torchdrive.tasks.van import Van
@@ -200,7 +203,20 @@ class ViTJEPA(nn.Module, Van):
             with autocast():
                 # checkpoint encoders to save memory
                 encoder = self.encoders[cam]
-                cam_feats = torch.utils.checkpoint.checkpoint(encoder, feats.flatten(0, 1), mask)
+                cam_feats = torch.utils.checkpoint.checkpoint(
+                    encoder, feats.flatten(0, 1), mask, use_reentrant=False,
+                )
+                assert cam_feats.requires_grad, f"missing grad for cam {cam}"
+
+            if writer is not None and log_text:
+                register_log_grad_norm(
+                    t=cam_feats,
+                    writer=writer,
+                    key="gradnorm/cam-encoder",
+                    tag=cam,
+                    global_step=global_step,
+                )
+
             # (n, seq_len, hidden_dim) -> (bs, num_encode_frames, seq_len, hidden_dim)
             cam_feats = cam_feats.unflatten(0, feats.shape[:2])
             cam_feats += self.encode_time_embedding  # broadcast across batch and seq len
@@ -236,6 +252,15 @@ class ViTJEPA(nn.Module, Van):
                 with autocast():
                     pred_feats = self.decoders[cam](input_tokens)
                     all_pred_feats = pred_feats.unflatten(1, target_feats.shape[1:4])
+
+                if writer is not None and log_text:
+                    register_log_grad_norm(
+                        t=pred_feats,
+                        writer=writer,
+                        key="gradnorm/cam-decoder",
+                        tag=cam,
+                        global_step=global_step,
+                    )
 
                 for frame in range(self.num_frames):
                     target_feats = all_target_feats[:, frame]
@@ -289,9 +314,9 @@ class ViTJEPA(nn.Module, Van):
                             global_step=global_step,
                         )
                         pca = structured_pca(
-                            torch.cat((pred_feats[0], target_feats_raw[0]), dim=0),
+                            torch.cat((pred_feats[0], target_feats[0]), dim=1),
                             dim=3,
-                        )
+                        ).permute(2, 0, 1)
                         writer.add_image(
                             f"{cam}/{frame}/pca",
                             normalize_img(
