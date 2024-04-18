@@ -15,6 +15,7 @@ from torchworld.structures.grid import Grid3d
 from torchworld.transforms.img import render_color
 from torchworld.transforms.mask import random_block_mask
 
+from torchdrive.tasks.van import Van
 from torchdrive.amp import autocast
 from torchdrive.autograd import (
     autograd_pause,
@@ -50,7 +51,7 @@ class BEVTask(torch.nn.Module, ABC):
         pass
 
 
-class BEVTaskVan(torch.nn.Module):
+class BEVTaskVan(Van, torch.nn.Module):
     def __init__(
         self,
         backbone: BEVBackbone,
@@ -114,17 +115,6 @@ class BEVTaskVan(torch.nn.Module):
         self.cam_features_mask_ratio = cam_features_mask_ratio
         self.cam_mask_value = nn.Embedding(1, cam_dim)
 
-    def should_log(self, global_step: int, BS: int) -> Tuple[bool, bool]:
-        log_text_interval = 1000 // (BS * 20)
-        # log_text_interval = 1
-        # It's important to scale the less frequent interval off the more
-        # frequent one to avoid divisor issues.
-        log_img_interval = log_text_interval * 10
-        log_img = (global_step % log_img_interval) == 0
-        log_text = (global_step % log_text_interval) == 0
-
-        return log_img, log_text
-
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
         per_cam_params = list(self.camera_encoders.parameters())
         per_cam_lr = lr
@@ -154,7 +144,6 @@ class BEVTaskVan(torch.nn.Module):
         output: str = "out",
     ) -> Dict[str, torch.Tensor]:
         BS = len(batch.distances)
-        log_text: bool
         log_img, log_text = self.should_log(global_step, BS)
 
         start_frame = self.num_encode_frames - 1

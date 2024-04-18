@@ -9,6 +9,7 @@ from torch import nn
 
 from torchdrive.datasets.dataset import Dataset, Datasets
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
+from torchdrive.tasks.vit_jepa import ViTJEPA
 
 
 def freeze(module: nn.Module) -> nn.Module:
@@ -16,51 +17,21 @@ def freeze(module: nn.Module) -> nn.Module:
         param.requires_grad = False
     return module
 
-
-@dataclass_json
 @dataclass
-class TrainConfig:
-    # backbone settings
+class DatasetConfig:
+    # shared
     cameras: List[str]
-    dim: int
-    cam_dim: int
-    hr_dim: int
-    num_upsamples: int  # number of upsamples to do after the backbone
-    grid_shape: Tuple[int, int, int]  # [x, y, z]
-    cam_shape: Tuple[int, int]
-    backbone: str
-    cam_encoder: str
     num_frames: int
-    num_encode_frames: int
+    cam_shape: Tuple[int, int]
 
-    # optimizer settings
-    epochs: int
-    lr: float
-    grad_clip: float
-    step_size: int
-
-    # dataset config
+    # dataset only params
     dataset: Datasets
     dataset_path: str
     mask_path: str
     batch_size: int
     num_workers: int
     autolabel_path: str
-
-    # tasks
-    det: bool
-    ae: bool
-    voxel: bool
-    voxelsem: List[str]
-    path: bool
-    voxel_jepa: bool
-
-    # det config
-    det_num_queries: int = 1000
-
-    start_offsets: Tuple[int, ...] = (0,)
-    freeze_cam_backbone: bool = False
-    cam_features_mask_ratio: float = 0.0
+    autolabel: bool
 
     def create_dataset(self, smoke: bool = False) -> Dataset:
         if self.dataset == Datasets.RICE:
@@ -94,13 +65,50 @@ class TrainConfig:
         else:
             raise ValueError(f"unknown dataset type {self.dataset}")
 
-        if self.voxelsem:
+        if self.autolabel:
             from torchdrive.datasets.autolabeler import AutoLabeler
 
             dataset = AutoLabeler(dataset, path=self.autolabel_path)
 
         assert set(dataset.cameras) == set(self.cameras)
         return dataset
+
+@dataclass
+class OptimizerConfig:
+    epochs: int
+    lr: float
+    grad_clip: float
+    step_size: int
+
+@dataclass_json
+@dataclass
+class TrainConfig(DatasetConfig, OptimizerConfig):
+    # backbone settings
+    dim: int
+    cam_dim: int
+    hr_dim: int
+    num_upsamples: int  # number of upsamples to do after the backbone
+    grid_shape: Tuple[int, int, int]  # [x, y, z]
+    backbone: str
+    cam_encoder: str
+    num_encode_frames: int
+
+
+
+    # tasks
+    det: bool
+    ae: bool
+    voxel: bool
+    voxelsem: List[str]
+    path: bool
+    voxel_jepa: bool
+
+    # det config
+    det_num_queries: int = 1000
+
+    start_offsets: Tuple[int, ...] = (0,)
+    freeze_cam_backbone: bool = False
+    cam_features_mask_ratio: float = 0.0
 
     def create_model(
         self,
@@ -289,6 +297,23 @@ class TrainConfig:
 
         model = model.to(device)
         return model
+
+@dataclass_json
+@dataclass
+class ViTJEPATrainConfig(DatasetConfig, OptimizerConfig):
+    num_encode_frames: int
+
+    def create_model(
+        self,
+        device: torch.device,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
+    ) -> ViTJEPA:
+        return ViTJEPA(
+            cameras=self.cameras,
+            num_encode_frames=self.num_encode_frames,
+            cam_shape=self.cam_shape,
+            num_frames=self.num_frames,
+        ).to(device)
 
 
 class _ConfigAction(argparse.Action):

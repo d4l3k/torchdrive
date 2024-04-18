@@ -2,6 +2,17 @@ from typing import Tuple
 
 import torch
 
+def true_mask(t: torch.Tensor) -> torch.Tensor:
+    """
+    Returns a tensor of shape (h, w) where True is where it is not masked.
+
+    Returns
+    -------
+    mask : torch.Tensor
+        A tensor of shape (h, w) where True is where it is not masked.
+    """
+    return torch.ones(t.shape[-2:], dtype=torch.bool, device=t.device)
+
 def random_block_mask(t: torch.Tensor, block_size: Tuple[int, int], num_blocks: int) -> torch.Tensor:
     """
     Randomly masks a tensor with blocks of zeros.

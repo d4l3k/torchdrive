@@ -156,9 +156,6 @@ optimizer = optim.AdamW(
 lr_scheduler = optim.lr_scheduler.StepLR(
     optimizer, step_size=config.step_size, gamma=0.1
 )
-# scaler is only needed for fp16 not bf16
-# scaler: amp.GradScaler = amp.GradScaler()
-scaler: Optional[amp.GradScaler] = None
 
 global_step: int = 0
 CHECKPOINT_PATH: str = os.path.join(args.output, "model.pt")
@@ -301,15 +298,13 @@ for epoch in range(NUM_EPOCHS):
         optimizer.zero_grad(set_to_none=True)
 
         losses = ddp_model(
-            batch, global_step, scaler, writer=writer, output=args.output
+            batch, global_step, writer=writer, output=args.output
         )
         loss: torch.Tensor = cast(torch.Tensor, sum(losses.values()))
         assert not loss.requires_grad
 
         run_ddp_concat(model.parameters())
 
-        if scaler:
-            scaler.unscale_(optimizer)
         if log_text and writer and args.grad_sizes:
             with torch.no_grad():
                 max_grad = 0
@@ -337,11 +332,7 @@ for epoch in range(NUM_EPOCHS):
                 model.parameters(), max_norm=config.grad_clip
             )
 
-        if scaler:
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            optimizer.step()
+        optimizer.step()
 
         with torch.no_grad():
             # pyre-fixme[9]: int
