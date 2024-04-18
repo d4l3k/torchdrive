@@ -35,7 +35,7 @@ CONFIG = TrainConfig(
     autolabel_path=None,  # "/mnt/ext3/autolabel2",
     mask_path="n/a",  # only used for rice dataset
     num_workers=4,
-    batch_size=6,
+    batch_size=4,
     # tasks
     det=False,
     ae=False,
