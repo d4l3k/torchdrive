@@ -114,6 +114,7 @@ class ViTJEPA(nn.Module, Van):
         super().__init__()
 
         self.cameras = cameras
+        self.num_frames = num_frames
         self.num_encode_frames = num_encode_frames
         self.cam_shape = cam_shape
         self.feat_shape = (cam_shape[0] // 16, cam_shape[1] // 16)
@@ -175,12 +176,26 @@ class ViTJEPA(nn.Module, Van):
 
         for cam in self.cameras:
             feats = batch.color[cam][:, :self.num_encode_frames]
-            block_size = min(*self.feat_shape) // 4
+            block_size = min(*self.feat_shape) // 3
             mask = random_block_mask(
                 empty_mask,
                 block_size=(block_size, block_size),
                 num_blocks=8,
             )
+
+
+            if writer is not None and log_text:
+                writer.add_scalar(
+                    f"mask/{cam}/count",
+                    mask.long().sum(),
+                    global_step=global_step,
+                )
+            if writer is not None and log_img:
+                writer.add_image(
+                    f"mask/{cam}/mask",
+                    render_color(mask),
+                    global_step=global_step,
+                )
             with autocast():
                 # checkpoint encoders to save memory
                 encoder = self.encoders[cam]
@@ -203,12 +218,12 @@ class ViTJEPA(nn.Module, Van):
             losses = {}
 
             for cam in self.cameras:
-                feats = batch.color[cam]
+                all_color = batch.color[cam]
                 mask = true_mask(empty_mask)
 
                 with torch.no_grad(), autocast():
-                    target_feats = self.ema_encoders.module[cam](feats.flatten(0, 1), mask).detach()
-                    target_feats = target_feats.unflatten(0, feats.shape[:2])
+                    target_feats = self.ema_encoders.module[cam](all_color.flatten(0, 1), mask).detach()
+                    target_feats = target_feats.unflatten(0, all_color.shape[:2])
                     target_feats = target_feats.unflatten(2, self.feat_shape)
                     # normalize on hidden dim
                     all_target_feats = F.layer_norm(
@@ -220,9 +235,10 @@ class ViTJEPA(nn.Module, Van):
                     pred_feats = self.decoders[cam](input_tokens)
                     all_pred_feats = pred_feats.unflatten(1, target_feats.shape[1:4])
 
-                for frame in range(self.num_encode_frames):
+                for frame in range(self.num_frames):
                     target_feats = all_target_feats[:, frame]
                     pred_feats = all_pred_feats[:, frame]
+                    color = all_color[:, frame]
 
                     losses[f"cam_features/{cam}/{frame}"] = F.l1_loss(
                         pred_feats, target_feats
@@ -236,6 +252,7 @@ class ViTJEPA(nn.Module, Van):
                                 "min": pred_feats.min(),
                                 "mean": pred_feats.mean(),
                             },
+                            global_step=global_step,
                         )
                         writer.add_scalars(
                             f"{cam}/{frame}/target-minmax",
@@ -244,16 +261,24 @@ class ViTJEPA(nn.Module, Van):
                                 "min": target_feats.min(),
                                 "mean": target_feats.mean(),
                             },
+                            global_step=global_step,
                         )
 
                     if writer is not None and log_img:
                         writer.add_image(
                             f"{cam}/{frame}/target",
                             render_color(target_feats[0].sum(dim=-1)),
+                            global_step=global_step,
                         )
                         writer.add_image(
                             f"{cam}/{frame}/predicted",
                             render_color(pred_feats[0].sum(dim=-1)),
+                            global_step=global_step,
+                        )
+                        writer.add_image(
+                            f"{cam}/{frame}/color",
+                            normalize_img(color[0]),
+                            global_step=global_step,
                         )
 
                 # run camera specific backwards pass
