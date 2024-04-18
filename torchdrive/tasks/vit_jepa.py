@@ -8,10 +8,13 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.swa_utils import AveragedModel
 
-from torchdrive.tasks.van import Van
-from torchdrive.data import Batch
-from torchworld.transforms.mask import random_block_mask, true_mask
 from torchdrive.amp import autocast
+from torchdrive.autograd import autograd_context
+from torchdrive.data import Batch
+from torchdrive.losses import losses_backward
+from torchdrive.tasks.van import Van
+from torchworld.transforms.img import normalize_img, normalize_mask, render_color
+from torchworld.transforms.mask import random_block_mask, true_mask
 
 class MaskViT(nn.Module):
     def __init__(
@@ -179,7 +182,9 @@ class ViTJEPA(nn.Module, Van):
                 num_blocks=8,
             )
             with autocast():
-                cam_feats = self.encoders[cam](feats.flatten(0, 1), mask)
+                # checkpoint encoders to save memory
+                encoder = self.encoders[cam]
+                cam_feats = torch.utils.checkpoint.checkpoint(encoder, feats.flatten(0, 1), mask)
             # (n, seq_len, hidden_dim) -> (bs, num_encode_frames, seq_len, hidden_dim)
             cam_feats = cam_feats.unflatten(0, feats.shape[:2])
             cam_feats += self.encode_time_embedding  # broadcast across batch and seq len
@@ -192,28 +197,66 @@ class ViTJEPA(nn.Module, Van):
 
         input_tokens = torch.cat(all_feats, dim=1)
 
-        losses = {}
+        # pause gradient on the input tokens so we can run backprop on each decoder camera separately
+        with autograd_context(input_tokens) as input_tokens:
 
-        for cam in self.cameras:
-            feats = batch.color[cam]
-            mask = true_mask(empty_mask)
+            losses = {}
 
-            with torch.no_grad(), autocast():
-                target_feats = self.ema_encoders.module[cam](feats.flatten(0, 1), mask).detach()
-                target_feats = target_feats.unflatten(0, feats.shape[:2])
-                # normalize on hidden dim
-                target_feats = F.layer_norm(
-                    target_feats,
-                    (target_feats.size(-1),),
-                )
+            for cam in self.cameras:
+                feats = batch.color[cam]
+                mask = true_mask(empty_mask)
 
-            with autocast():
-                pred_feats = self.decoders[cam](input_tokens)
-                pred_feats = pred_feats.unflatten(1, target_feats.shape[1:3])
+                with torch.no_grad(), autocast():
+                    target_feats = self.ema_encoders.module[cam](feats.flatten(0, 1), mask).detach()
+                    target_feats = target_feats.unflatten(0, feats.shape[:2])
+                    target_feats = target_feats.unflatten(2, self.feat_shape)
+                    # normalize on hidden dim
+                    all_target_feats = F.layer_norm(
+                        target_feats,
+                        (target_feats.size(-1),),
+                    )
 
-            for frame in range(self.num_encode_frames):
-                losses[f"cam_features/{cam}/{frame}"] = F.l1_loss(
-                    pred_feats[:, frame], target_feats[:, frame]
-                )
+                with autocast():
+                    pred_feats = self.decoders[cam](input_tokens)
+                    all_pred_feats = pred_feats.unflatten(1, target_feats.shape[1:4])
+
+                for frame in range(self.num_encode_frames):
+                    target_feats = all_target_feats[:, frame]
+                    pred_feats = all_pred_feats[:, frame]
+
+                    losses[f"cam_features/{cam}/{frame}"] = F.l1_loss(
+                        pred_feats, target_feats
+                    )
+
+                    if writer is not None and log_text:
+                        writer.add_scalars(
+                            f"{cam}/{frame}/predicted-minmax",
+                            {
+                                "max": pred_feats.max(),
+                                "min": pred_feats.min(),
+                                "mean": pred_feats.mean(),
+                            },
+                        )
+                        writer.add_scalars(
+                            f"{cam}/{frame}/target-minmax",
+                            {
+                                "max": target_feats.max(),
+                                "min": target_feats.min(),
+                                "mean": target_feats.mean(),
+                            },
+                        )
+
+                    if writer is not None and log_img:
+                        writer.add_image(
+                            f"{cam}/{frame}/target",
+                            render_color(target_feats[0].sum(dim=-1)),
+                        )
+                        writer.add_image(
+                            f"{cam}/{frame}/predicted",
+                            render_color(pred_feats[0].sum(dim=-1)),
+                        )
+
+                # run camera specific backwards pass
+                losses_backward(losses)
 
         return losses
