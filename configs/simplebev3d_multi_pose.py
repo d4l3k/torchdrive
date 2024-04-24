@@ -32,6 +32,7 @@ CONFIG = TrainConfig(
     # dataset
     dataset=Datasets.NUSCENES,
     dataset_path="/home/tristanr/nuscenes",
+    autolabel=False,
     autolabel_path=None,  # "/mnt/ext3/autolabel2",
     mask_path="n/a",  # only used for rice dataset
     num_workers=4,

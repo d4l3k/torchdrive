@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from typing import Dict, List
 
 from torchdrive.data import Batch, dummy_batch
@@ -14,7 +14,10 @@ class TestViTJEPA(unittest.TestCase):
             num_frames=3,
             num_encode_frames=2,
             cam_shape=(48, 64),
+            num_layers=2,
+            dim_feedforward=16,
         )
+        m.param_opts(lr=1e-4)
         batch = dummy_batch()
         writer = MagicMock()
         losses = m(batch, global_step=0, writer=writer)

@@ -169,7 +169,7 @@ class BEVTaskVan(Van, torch.nn.Module):
 
                 # use gradient checkpointing to save memory
                 feats = [
-                    torch.utils.checkpoint.checkpoint(encoder, frame_inp)
+                    torch.utils.checkpoint.checkpoint(encoder, frame_inp, use_reentrant=False)
                     for frame_inp in inp
                 ]
                 num_frames = self.num_encode_frames

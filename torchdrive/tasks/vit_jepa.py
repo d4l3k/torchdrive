@@ -114,6 +114,9 @@ class ViTJEPA(nn.Module, Van):
         num_encode_frames: int,
         cam_shape: Tuple[int, int],
         dim: int = 768,
+        dim_feedforward: int = 3072,
+        dropout: float = 0.1,
+        num_layers: int = 12,
     ):
         super().__init__()
 
@@ -133,15 +136,24 @@ class ViTJEPA(nn.Module, Van):
             self.encoders,
             multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.998),
         )
+        self.backbone = Decoder(
+            cam_shape=(32, 32),
+            hidden_dim=dim,
+            mlp_dim=dim_feedforward,
+            num_heads=12,
+            num_layers=num_layers,
+            attention_dropout=dropout,
+            num_frames=1,
+        )
         self.decoders = nn.ModuleDict({
             cam: Decoder(
                 num_frames=num_frames,
                 cam_shape=self.feat_shape,
                 hidden_dim=dim,
-                mlp_dim=3072,
+                mlp_dim=dim_feedforward,
                 num_heads=12,
-                num_layers=12,
-                attention_dropout=0.1,
+                num_layers=num_layers,
+                attention_dropout=dropout,
             )
             for cam in cameras
         })
@@ -152,10 +164,30 @@ class ViTJEPA(nn.Module, Van):
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
         return [
             {
-                "name": "default",
-                "params": list(self.parameters()),
+                "name": "encoders",
+                "params": list(self.encoders.parameters()),
+                "lr": lr / 10,
+            },
+            {
+                "name": "decoders",
+                "params": list(self.decoders.parameters()),
                 "lr": lr,
-            }
+            },
+            {
+                "name": "backbone",
+                "params": list(self.backbone.parameters()),
+                "lr": lr,
+            },
+            {
+                "name": "time_embedding",
+                "params": [self.encode_time_embedding],
+                "lr": lr,
+            },
+            {
+                "name": "ema",
+                "params": list(self.ema_encoders.parameters()),
+                "lr": 0.0,
+            },
         ]
 
     def forward(
@@ -229,6 +261,11 @@ class ViTJEPA(nn.Module, Van):
 
         input_tokens = torch.cat(all_feats, dim=1)
 
+        # run backbone
+        input_tokens = torch.utils.checkpoint.checkpoint(
+            self.backbone, input_tokens, use_reentrant=False,
+        )
+
         # pause gradient on the input tokens so we can run backprop on each decoder camera separately
         with autograd_context(input_tokens) as input_tokens:
 
@@ -248,6 +285,7 @@ class ViTJEPA(nn.Module, Van):
                         target_feats,
                         (target_feats.size(-1),),
                     )
+                assert not all_target_feats.requires_grad
 
                 with autocast():
                     pred_feats = self.decoders[cam](input_tokens)
