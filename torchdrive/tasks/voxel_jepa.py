@@ -15,6 +15,7 @@ from torchworld.transforms.img import normalize_img, normalize_mask, render_colo
 
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context
+from torchworld.transforms.pca import structured_pca
 from torchdrive.data import Batch
 from torchdrive.losses import multi_scale_projection_loss, smooth_loss, tvl1_loss
 from torchdrive.models.regnet import resnet_init
@@ -329,6 +330,16 @@ class VoxelJEPATask(BEVTask):
                 ctx.add_image(
                     f"{cam}/{frame}/depth",
                     render_color(voxel_depth[0]),
+                )
+                pca = structured_pca(
+                    torch.cat((semantic_img[0], target_feats[0]), dim=2).permute(1, 2, 0),
+                    dim=3,
+                ).permute(2, 0, 1)
+                ctx.add_image(
+                    f"{cam}/{frame}/pca",
+                    normalize_img(
+                        pca
+                    ),
                 )
 
         return losses
