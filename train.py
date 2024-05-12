@@ -23,6 +23,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from torch.distributed.elastic.multiprocessing.errors import record
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
 from torchdrive.checkpoint import remap_state_dict
@@ -60,6 +61,7 @@ else:
     device = torch.device("cpu")
 
 torch.set_float32_matmul_precision("high")
+sdpa_kernel(SDPBackend.FLASH_ATTENTION).__enter__() # force flash attention
 
 BS: int = config.batch_size
 NUM_EPOCHS: int = config.epochs

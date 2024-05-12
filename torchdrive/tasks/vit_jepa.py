@@ -25,6 +25,7 @@ class MaskViT(nn.Module):
         self,
         attention_dropout: float,
         cam_shape: Tuple[int, int],
+        dim: int,
     ) -> None:
         super().__init__()
 
@@ -42,6 +43,7 @@ class MaskViT(nn.Module):
                 cam_shape[1] // self.encoder.patch_size,
             ).normal_(std=0.02)
         )
+        self.project = nn.Linear(self.encoder.hidden_dim, dim)
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         # Reshape and permute the input tensor
@@ -64,7 +66,8 @@ class MaskViT(nn.Module):
         # embedding dimension
         x = x.permute(0, 2, 1)
 
-        return self.encoder.encoder.ln(self.encoder.encoder.layers(self.encoder.encoder.dropout(x)))
+        x = self.encoder.encoder.ln(self.encoder.encoder.layers(self.encoder.encoder.dropout(x)))
+        return self.project(x)
 
 
 class Decoder(nn.Module):
@@ -113,10 +116,11 @@ class ViTJEPA(nn.Module, Van):
         num_frames: int,
         num_encode_frames: int,
         cam_shape: Tuple[int, int],
-        dim: int = 768,
-        dim_feedforward: int = 3072,
+        dim: int = 1024,
+        dim_feedforward: int = 4096,
         dropout: float = 0.1,
-        num_layers: int = 12,
+        num_layers: int = 24,
+        num_heads: int = 16,
     ):
         super().__init__()
 
@@ -128,6 +132,7 @@ class ViTJEPA(nn.Module, Van):
         self.encoders = nn.ModuleDict({
             cam: MaskViT(
                 cam_shape=cam_shape,
+                dim=dim,
                 attention_dropout=0.1,
             )
             for cam in cameras
@@ -140,7 +145,7 @@ class ViTJEPA(nn.Module, Van):
             cam_shape=(32, 32),
             hidden_dim=dim,
             mlp_dim=dim_feedforward,
-            num_heads=12,
+            num_heads=num_heads,
             num_layers=num_layers,
             attention_dropout=dropout,
             num_frames=1,
@@ -151,8 +156,8 @@ class ViTJEPA(nn.Module, Van):
                 cam_shape=self.feat_shape,
                 hidden_dim=dim,
                 mlp_dim=dim_feedforward,
-                num_heads=12,
-                num_layers=num_layers,
+                num_heads=num_heads,
+                num_layers=12,  # num_layers,
                 attention_dropout=dropout,
             )
             for cam in cameras
@@ -166,12 +171,12 @@ class ViTJEPA(nn.Module, Van):
             {
                 "name": "encoders",
                 "params": list(self.encoders.parameters()),
-                "lr": lr / 10,
+                "lr": lr / len(self.encoders),
             },
             {
                 "name": "decoders",
                 "params": list(self.decoders.parameters()),
-                "lr": lr,
+                "lr": lr / len(self.decoders),
             },
             {
                 "name": "backbone",
@@ -236,7 +241,7 @@ class ViTJEPA(nn.Module, Van):
                 # checkpoint encoders to save memory
                 encoder = self.encoders[cam]
                 cam_feats = torch.utils.checkpoint.checkpoint(
-                    encoder, feats.flatten(0, 1), mask, use_reentrant=False,
+                    autocast()(encoder), feats.flatten(0, 1), mask, use_reentrant=False,
                 )
                 assert cam_feats.requires_grad, f"missing grad for cam {cam}"
 
@@ -262,9 +267,10 @@ class ViTJEPA(nn.Module, Van):
         input_tokens = torch.cat(all_feats, dim=1)
 
         # run backbone
-        input_tokens = torch.utils.checkpoint.checkpoint(
-            self.backbone, input_tokens, use_reentrant=False,
-        )
+        with autocast():
+            input_tokens = torch.utils.checkpoint.checkpoint(
+                autocast()(self.backbone), input_tokens, use_reentrant=False,
+            )
 
         # pause gradient on the input tokens so we can run backprop on each decoder camera separately
         with autograd_context(input_tokens) as input_tokens:
@@ -306,7 +312,7 @@ class ViTJEPA(nn.Module, Van):
                     pred_feats = all_pred_feats[:, frame]
                     color = all_color[:, frame]
 
-                    losses[f"cam_features/{cam}/{frame}"] = F.l1_loss(
+                    losses[f"cam_features/{cam}/{frame}"] = F.mse_loss(
                         pred_feats, target_feats
                     )
 
