@@ -20,6 +20,8 @@ from torchworld.transforms.mask import random_block_mask, true_mask
 from torchworld.transforms.pca import structured_pca
 from torchworld.models.vit import MaskViT
 
+
+
 class Decoder(nn.Module):
     """Transformer Model Encoder for sequence to sequence translation."""
 
