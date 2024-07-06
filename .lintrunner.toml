@@ -42,6 +42,6 @@ init_command = [
     'run',
     'pip_init',
     '--dry-run={{DRYRUN}}',
-    'pyre==1.12.5',
+    'pyre-check==0.9.22',
 ]
 is_formatter = false
