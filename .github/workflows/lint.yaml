@@ -21,10 +21,10 @@ jobs:
       - name: Install Dependencies
         run: |
           set -eux
-          pip install usort==1.0.2
-          pip install black
-          pip install flake8==3.9.0
+          pip install lintrunner lintrunner-adapters
+          lintrunner init
       - name: Run Lint
         run: |
-          git config --global url."https://${{ secrets.GITHUB_TOKEN }}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
-          scripts/lint.sh
+          set -eux
+
+          lintrunner --skip PYRE --force-color --all-files
