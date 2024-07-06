@@ -7,6 +7,9 @@ from torch import nn
 from torch.optim.swa_utils import AveragedModel
 from torch.utils.tensorboard import SummaryWriter
 
+from diffusers import DDPMScheduler
+from torchtune.modules import RotaryPositionalEmbeddings
+
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context, register_log_grad_norm
 from torchdrive.data import Batch
@@ -19,25 +22,23 @@ from torchworld.transforms.pca import structured_pca
 
 
 class Decoder(nn.Module):
-    """Transformer Model Encoder for sequence to sequence translation."""
+    """Transformer decoder model for 1d sequences"""
 
     def __init__(
         self,
-        cam_shape: int,
-        num_frames: int,
+        max_seq_len: int,
         num_layers: int,
         num_heads: int,
-        hidden_dim: int,
+        dim: int,
         mlp_dim: int,
         attention_dropout: float,
     ):
         super().__init__()
         self.cam_shape = cam_shape
-        self.queries = nn.Parameter(
-            torch.empty(
-                1, num_frames * cam_shape[0] * cam_shape[1], hidden_dim
-            ).normal_(std=0.02)
-        )  # from BERT
+        self.dim = dim
+        self.num_heads = num_heads
+        self.positional_embedding = RotaryPositionalEmbeddings(dim//num_heads, max_seq_len=max_seq_len)
+
         layers: OrderedDict[str, nn.Module] = OrderedDict()
         for i in range(num_layers):
             layers[f"encoder_layer_{i}"] = nn.TransformerDecoderLayer(
@@ -50,24 +51,111 @@ class Decoder(nn.Module):
             )
         self.layers = nn.Sequential(layers)
 
-    def forward(self, input: torch.Tensor):
+    def forward(self, input: torch.Tensor, condition: torch.Tensor):
         torch._assert(
             input.dim() == 3,
             f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}",
         )
-        x = self.queries.repeat(input.shape[0], 1, 1)
+        torch._assert(
+            condition.dim() == 3,
+            f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}",
+        )
+
+        x = input
+
+        # apply rotary embeddings
+        # RoPE applies to each head separately
+        x = self.positional_embedding(
+            x.unflatten(-1, (self.num_heads, self.dim // self.num_heads))
+        ).flatten(-1)
+
         for layer in self.layers:
-            x = layer(x, input)
+            x = layer(x, condition)
 
         return x
 
+class XYEmbedding(nn.Module):
+    def __init__(self, shape: Tuple[int, int], scale: float, dim: int):
+        """
+        Initialize the XYEmbedding
 
-class ViTJEPA(nn.Module, Van):
+        Arguments:
+            shape: the size of the embedding grid [x, y], the center is 0,0
+            scale: the max coordinate value
+            dim: dimension of the embedding
+        """
+        super().__init__()
+
+        self.scale = scale
+        self.shape = shape
+
+        self.embedding = nn.Parameter(
+            torch.empty(*shape, dim).normal_(std=0.02)
+        )
+
+    def forward(self, pos: torch.Tensor):
+        """
+        Args:
+            pos: the list of positions(..., 2)
+
+        Returns:
+            the embedding of the position (..., dim)
+        """
+
+        dx = (self.shape[0]-1) // 2
+        dy = (self.shape[1]-1) // 2
+        x = (pos[..., 0] * dx / self.scale + dx).long()
+        y = (pos[..., 1] * dy / self.scale + dy).long()
+
+        x = x.clamp(min=0, max=self.shape[0]-1)
+        y = y.clamp(min=0, max=self.shape[1]-1)
+
+        return self.embedding[x, y]
+
+    def decode(self, input: torch.Tensor) -> torch.Tensor:
+        """
+        Convert the embedding back to the position using a cosine similarity distance function.
+
+        Args:
+            input: input embedding to decode (bs, seq_len, dim)
+        
+        Returns:
+            the position (bs, seq_len, 2)
+        """
+
+        bs = input.size(0)
+        flattened_embedding = self.embedding.flatten(0, 1)
+
+        # (bs, seq_len, dim) @ (x*y, dim) -> (bs, seq_len, x*y)
+        similarity = torch.einsum("bsd,xd->bsx", input, flattened_embedding)
+
+        # (bs, seq_len, x*y) -> (bs, seq_len, xy index)
+        classes = torch.argmax(similarity, dim=-1)
+
+        # (bs, seq_len, xy index) -> (bs, seq_len, 2)
+        x = torch.div(classes, self.shape[1], rounding_mode="floor")
+        y = torch.remainder(classes, self.shape[1])
+
+        dx = (self.shape[0]-1) // 2
+        dy = (self.shape[1]-1) // 2
+
+        x = (x.float() - dx) * self.scale / dx
+        y = (y.float() - dy) * self.scale / dy
+
+        # 2x (bs, seq_len) -> (bs, seq_len, 2)
+        return torch.stack([x, y], dim=-1)
+
+        
+
+
+
+class DiffTraj(nn.Module, Van):
+    """
+    A diffusion model for trajectory detection.
+    """
     def __init__(
         self,
         cameras: List[str],
-        num_frames: int,
-        num_encode_frames: int,
         cam_shape: Tuple[int, int],
         dim: int = 1024,
         dim_feedforward: int = 4096,
@@ -92,35 +180,16 @@ class ViTJEPA(nn.Module, Van):
                 for cam in cameras
             }
         )
-        self.ema_encoders = AveragedModel(
-            self.encoders,
-            multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.998),
-        )
-        self.backbone = Decoder(
-            cam_shape=(32, 32),
-            hidden_dim=dim,
-            mlp_dim=dim_feedforward,
-            num_heads=num_heads,
+
+        self.trajectory_
+
+        self.decoder = Decoder(
+            max_seq_len=20,
             num_layers=num_layers,
+            num_heads=num_heads,
+            dim=dim,
+            mlp_dim=dim_feedforward,
             attention_dropout=dropout,
-            num_frames=1,
-        )
-        self.decoders = nn.ModuleDict(
-            {
-                cam: Decoder(
-                    num_frames=num_frames,
-                    cam_shape=self.feat_shape,
-                    hidden_dim=dim,
-                    mlp_dim=dim_feedforward,
-                    num_heads=num_heads,
-                    num_layers=12,  # num_layers,
-                    attention_dropout=dropout,
-                )
-                for cam in cameras
-            }
-        )
-        self.encode_time_embedding = nn.Parameter(
-            torch.empty(1, num_encode_frames, 1, dim).normal_(std=0.02)
         )
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
@@ -131,24 +200,9 @@ class ViTJEPA(nn.Module, Van):
                 "lr": lr / len(self.encoders),
             },
             {
-                "name": "decoders",
-                "params": list(self.decoders.parameters()),
-                "lr": lr / len(self.decoders),
-            },
-            {
-                "name": "backbone",
+                "name": "decoder",
                 "params": list(self.backbone.parameters()),
                 "lr": lr,
-            },
-            {
-                "name": "time_embedding",
-                "params": [self.encode_time_embedding],
-                "lr": lr,
-            },
-            {
-                "name": "ema",
-                "params": list(self.ema_encoders.parameters()),
-                "lr": 0.0,
             },
         ]
 
@@ -226,112 +280,11 @@ class ViTJEPA(nn.Module, Van):
 
         input_tokens = torch.cat(all_feats, dim=1)
 
-        # run backbone
-        with autocast():
-            input_tokens = torch.utils.checkpoint.checkpoint(
-                self.backbone,
-                input_tokens,
-                use_reentrant=False,
-            )
 
-        # pause gradient on the input tokens so we can run backprop on each decoder camera separately
-        with autograd_context(input_tokens) as input_tokens:
 
-            losses = {}
-
-            for cam in self.cameras:
-                all_color = batch.color[cam]
-                mask = true_mask(empty_mask)
-
-                with torch.no_grad(), autocast():
-                    target_feats = self.ema_encoders.module[cam](
-                        all_color.flatten(0, 1), mask
-                    ).detach()
-                    target_feats = target_feats.unflatten(0, all_color.shape[:2])
-                    target_feats = target_feats.unflatten(2, self.feat_shape)
-                    all_target_feats_raw = target_feats
-                    # normalize on hidden dim
-                    all_target_feats = F.layer_norm(
-                        target_feats,
-                        (target_feats.size(-1),),
-                    )
-                assert not all_target_feats.requires_grad
-
-                with autocast():
-                    pred_feats = self.decoders[cam](input_tokens)
-                    all_pred_feats = pred_feats.unflatten(1, target_feats.shape[1:4])
-
-                if writer is not None and log_text:
-                    register_log_grad_norm(
-                        t=pred_feats,
-                        writer=writer,
-                        key="gradnorm/cam-decoder",
-                        tag=cam,
-                        global_step=global_step,
-                    )
-
-                for frame in range(self.num_frames):
-                    target_feats = all_target_feats[:, frame]
-                    target_feats_raw = all_target_feats_raw[:, frame]
-                    pred_feats = all_pred_feats[:, frame]
-                    color = all_color[:, frame]
-
-                    losses[f"cam_features/{cam}/{frame}"] = F.mse_loss(
-                        pred_feats, target_feats
-                    )
-
-                    if writer is not None and log_text:
-                        writer.add_scalars(
-                            f"{cam}/{frame}/predicted-minmax",
-                            {
-                                "max": pred_feats.max(),
-                                "min": pred_feats.min(),
-                                "mean": pred_feats.mean(),
-                            },
-                            global_step=global_step,
-                        )
-                        writer.add_scalars(
-                            f"{cam}/{frame}/target-minmax",
-                            {
-                                "max": target_feats.max(),
-                                "min": target_feats.min(),
-                                "mean": target_feats.mean(),
-                            },
-                            global_step=global_step,
-                        )
-
-                    if writer is not None and log_img:
-                        writer.add_image(
-                            f"{cam}/{frame}/target",
-                            render_color(target_feats[0].sum(dim=-1)),
-                            global_step=global_step,
-                        )
-                        writer.add_image(
-                            f"{cam}/{frame}/target_raw",
-                            render_color(target_feats_raw[0].sum(dim=-1)),
-                            global_step=global_step,
-                        )
-                        writer.add_image(
-                            f"{cam}/{frame}/predicted",
-                            render_color(pred_feats[0].sum(dim=-1)),
-                            global_step=global_step,
-                        )
-                        writer.add_image(
-                            f"{cam}/{frame}/color",
-                            normalize_img(color[0]),
-                            global_step=global_step,
-                        )
-                        pca = structured_pca(
-                            torch.cat((pred_feats[0], target_feats[0]), dim=1),
-                            dim=3,
-                        ).permute(2, 0, 1)
-                        writer.add_image(
-                            f"{cam}/{frame}/pca",
-                            normalize_img(pca),
-                            global_step=global_step,
-                        )
-
-                # run camera specific backwards pass
-                losses_backward(losses)
+        noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
+        noise = torch.randn(sample_image.shape)
+        timesteps = torch.LongTensor([50])
+        noisy_image = noise_scheduler.add_noise(sample_image, noise, timesteps)
 
         return losses
