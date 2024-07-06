@@ -31,3 +31,5 @@ torchx
 StrEnum
 pandas
 pythreejs
+lintrunner
+lintrunner-adapters
