@@ -241,7 +241,7 @@ class ViTJEPA(nn.Module, Van):
                 # checkpoint encoders to save memory
                 encoder = self.encoders[cam]
                 cam_feats = torch.utils.checkpoint.checkpoint(
-                    autocast()(encoder), feats.flatten(0, 1), mask, use_reentrant=False,
+                    encoder, feats.flatten(0, 1), mask, use_reentrant=False,
                 )
                 assert cam_feats.requires_grad, f"missing grad for cam {cam}"
 
@@ -269,7 +269,7 @@ class ViTJEPA(nn.Module, Van):
         # run backbone
         with autocast():
             input_tokens = torch.utils.checkpoint.checkpoint(
-                autocast()(self.backbone), input_tokens, use_reentrant=False,
+                self.backbone, input_tokens, use_reentrant=False,
             )
 
         # pause gradient on the input tokens so we can run backprop on each decoder camera separately

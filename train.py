@@ -202,7 +202,7 @@ if LOAD_FAULT_TOLERANCE:
 
 if load_path:
     ckpt: Dict[str, torch.Tensor] = torch.load(
-        load_path, map_location=device, weights_only=True
+        load_path, weights_only=True
     )
 
     if not args.skip_load_optim or LOAD_FAULT_TOLERANCE:
@@ -279,7 +279,6 @@ def run():
 
     for epoch in range(NUM_EPOCHS):
         batch_idx = 0
-        save(epoch)
 
         if writer:
             writer.add_scalars(
@@ -377,6 +376,7 @@ def run():
         print(f"epoch {epoch}")
 
         lr_scheduler.step()
+        save(epoch)
 
     save(epoch + 1)
 
