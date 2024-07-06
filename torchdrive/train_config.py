@@ -17,6 +17,7 @@ def freeze(module: nn.Module) -> nn.Module:
         param.requires_grad = False
     return module
 
+
 @dataclass
 class DatasetConfig:
     # shared
@@ -73,12 +74,14 @@ class DatasetConfig:
         assert set(dataset.cameras) == set(self.cameras)
         return dataset
 
+
 @dataclass
 class OptimizerConfig:
     epochs: int
     lr: float
     grad_clip: float
     step_size: int
+
 
 @dataclass_json
 @dataclass
@@ -92,8 +95,6 @@ class TrainConfig(DatasetConfig, OptimizerConfig):
     backbone: str
     cam_encoder: str
     num_encode_frames: int
-
-
 
     # tasks
     det: bool
@@ -297,6 +298,7 @@ class TrainConfig(DatasetConfig, OptimizerConfig):
 
         model = model.to(device)
         return model
+
 
 @dataclass_json
 @dataclass

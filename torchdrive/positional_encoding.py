@@ -49,11 +49,14 @@ def sin_cos_enc(
         raise ValueError(f"dim must be a multiple of 2, got {dim}")
 
     position = torch.arange(seq_len, dtype=dtype, device=device).unsqueeze(1)
-    div_term = torch.exp(torch.arange(0, dim, 2, dtype=dtype, device=device) * (-math.log(10000.0) / dim))
+    div_term = torch.exp(
+        torch.arange(0, dim, 2, dtype=dtype, device=device) * (-math.log(10000.0) / dim)
+    )
     pe = torch.zeros(seq_len, dim, dtype=dtype, device=device)
     pe[:, 0::2] = torch.sin(position * div_term)
     pe[:, 1::2] = torch.cos(position * div_term)
     return pe
+
 
 def apply_sin_cos_enc1d(x: torch.Tensor) -> torch.Tensor:
     """

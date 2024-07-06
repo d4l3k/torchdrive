@@ -18,13 +18,12 @@ import torchinfo
 import torchmetrics
 from torch import nn, optim
 from torch.cuda import amp
+from torch.distributed.elastic.multiprocessing.errors import record
+from torch.nn.attention import sdpa_kernel, SDPBackend
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
-from torch.distributed.elastic.multiprocessing.errors import record
-from torch.nn.attention import SDPBackend, sdpa_kernel
-
 
 from torchdrive.checkpoint import remap_state_dict
 from torchdrive.data import Batch, transfer, TransferCollator
@@ -61,7 +60,7 @@ else:
     device = torch.device("cpu")
 
 torch.set_float32_matmul_precision("high")
-sdpa_kernel(SDPBackend.FLASH_ATTENTION).__enter__() # force flash attention
+sdpa_kernel(SDPBackend.FLASH_ATTENTION).__enter__()  # force flash attention
 
 BS: int = config.batch_size
 NUM_EPOCHS: int = config.epochs
@@ -201,9 +200,7 @@ if LOAD_FAULT_TOLERANCE:
     load_path = CHECKPOINT_PATH
 
 if load_path:
-    ckpt: Dict[str, torch.Tensor] = torch.load(
-        load_path, weights_only=True
-    )
+    ckpt: Dict[str, torch.Tensor] = torch.load(load_path, weights_only=True)
 
     if not args.skip_load_optim or LOAD_FAULT_TOLERANCE:
         print("loading optim state_dict")
@@ -273,6 +270,7 @@ if args.profile:  # and rank == 0:
 else:
     prof = None
 
+
 @record
 def run():
     global global_step
@@ -291,7 +289,9 @@ def run():
             )
 
         # only show progress on rank 0
-        batch_iter = tqdm(collator, desc=f"epoch {epoch}") if LOCAL_RANK == 0 else collator
+        batch_iter = (
+            tqdm(collator, desc=f"epoch {epoch}") if LOCAL_RANK == 0 else collator
+        )
         for batch in batch_iter:
             batch = cast(Optional[Batch], batch)
             if batch is None:
@@ -304,9 +304,7 @@ def run():
 
             optimizer.zero_grad(set_to_none=True)
 
-            losses = ddp_model(
-                batch, global_step, writer=writer, output=args.output
-            )
+            losses = ddp_model(batch, global_step, writer=writer, output=args.output)
             loss: torch.Tensor = cast(torch.Tensor, sum(losses.values()))
             assert not loss.requires_grad
 
@@ -364,7 +362,10 @@ def run():
                         print(f"- {k}: {v.item()}")
                     print(f"= {loss.item()}")
 
-                if global_step > 0 and (global_step % (args.checkpoint_every // BS)) == 0:
+                if (
+                    global_step > 0
+                    and (global_step % (args.checkpoint_every // BS)) == 0
+                ):
                     save(epoch)
 
                 batch_idx += 1

@@ -1,6 +1,7 @@
 """
 This contains helper methods for visualizing data in Jupyter notebooks.
 """
+
 import torch
 from IPython.display import display
 from torchvision.transforms.functional import to_pil_image

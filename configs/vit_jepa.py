@@ -14,13 +14,11 @@ CONFIG = ViTJEPATrainConfig(
     num_frames=5,
     num_encode_frames=3,
     cam_shape=(480, 640),
-
     # optimizer settings
     epochs=20,
     lr=1e-4,
     grad_clip=1.0,
     step_size=1000,
-
     # dataset
     dataset=Datasets.NUSCENES,
     dataset_path="/home/tristanr/nuscenes",

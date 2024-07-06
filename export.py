@@ -15,10 +15,10 @@ from torch import nn
 from torch.ao.pruning import WeightNormSparsifier
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-
-from torchdrive.transforms.batch import NormalizeCarPosition
 from torchdrive.data import Batch, TransferCollator
 from torchdrive.train_config import create_parser, TrainConfig
+
+from torchdrive.transforms.batch import NormalizeCarPosition
 from tqdm import tqdm
 
 # pyre-fixme[5]: Global expression must be annotated.
@@ -154,6 +154,7 @@ def export_cam_encoders() -> None:
             with open(os.path.join(args.output, f"{cam}.trt"), "wb") as f:
                 f.write(engine)
 
+
 @torch.no_grad()
 def export_backbone() -> None:
     camera_features = {}
@@ -167,7 +168,6 @@ def export_backbone() -> None:
     model.infer_batch = batch
     T = batch.cam_T
     out = model.infer_backbone(camera_features, T=T)
-
 
 
 export_backbone()

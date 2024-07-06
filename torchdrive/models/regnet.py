@@ -35,8 +35,7 @@ def resnet_init(module: nn.Module) -> None:
 
 
 class RegNetConstructor(Protocol):
-    def __call__(self, pretrained: bool = False) -> models.RegNet:
-        ...
+    def __call__(self, pretrained: bool = False) -> models.RegNet: ...
 
 
 class RegNetEncoder(nn.Module):

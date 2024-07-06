@@ -11,11 +11,9 @@ from pytorch3d.structures import Volumes
 from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
 from torch.optim.swa_utils import AveragedModel
-from torchworld.transforms.img import normalize_img, normalize_mask, render_color
 
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context
-from torchworld.transforms.pca import structured_pca
 from torchdrive.data import Batch
 from torchdrive.losses import multi_scale_projection_loss, smooth_loss, tvl1_loss
 from torchdrive.models.regnet import resnet_init
@@ -24,8 +22,10 @@ from torchdrive.render.raymarcher import (
     DepthEmissionRaymarcher,
     # DepthEmissionSoftmaxRaymarcher,
 )
-from torchworld.transforms.grid_sampler import GridSampler
 from torchdrive.tasks.bev import BEVTask, Context
+from torchworld.transforms.grid_sampler import GridSampler
+from torchworld.transforms.img import normalize_img, normalize_mask, render_color
+from torchworld.transforms.pca import structured_pca
 
 
 def axis_grid(grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -126,7 +126,7 @@ class VoxelJEPATask(BEVTask):
         resnet_init(self.decoders)
 
         self.max_depth: float = n_pts_per_ray / scale
-        self.min_depth = 2#0.5
+        self.min_depth = 2  # 0.5
         self.image_width = w // 8
         self.image_height = h // 8
         self.raysampler = NDCMultinomialRaysampler(
@@ -192,8 +192,8 @@ class VoxelJEPATask(BEVTask):
             grid = grid.permute(0, 1, 4, 3, 2)
             feat_grid = feat_grid.permute(0, 1, 4, 3, 2)
 
-            #grid, feat_grid = axis_grid(grid)
-            #feat_grid = feat_grid.sum(dim=1, keepdim=True).expand(-1, self.voxel_dim, -1, -1, -1)
+            # grid, feat_grid = axis_grid(grid)
+            # feat_grid = feat_grid.sum(dim=1, keepdim=True).expand(-1, self.voxel_dim, -1, -1, -1)
 
             if ctx.log_text:
                 ctx.add_scalars(
@@ -203,7 +203,11 @@ class VoxelJEPATask(BEVTask):
             if ctx.log_text:
                 ctx.add_scalars(
                     f"feat_grid/{frame}/minmax",
-                    {"max": feat_grid.max(), "min": feat_grid.min(), "mean": feat_grid.mean()},
+                    {
+                        "max": feat_grid.max(),
+                        "min": feat_grid.min(),
+                        "mean": feat_grid.mean(),
+                    },
                 )
             if ctx.log_img:
                 ctx.add_image(
@@ -332,14 +336,14 @@ class VoxelJEPATask(BEVTask):
                     render_color(voxel_depth[0]),
                 )
                 pca = structured_pca(
-                    torch.cat((semantic_img[0], target_feats[0]), dim=2).permute(1, 2, 0),
+                    torch.cat((semantic_img[0], target_feats[0]), dim=2).permute(
+                        1, 2, 0
+                    ),
                     dim=3,
                 ).permute(2, 0, 1)
                 ctx.add_image(
                     f"{cam}/{frame}/pca",
-                    normalize_img(
-                        pca
-                    ),
+                    normalize_img(pca),
                 )
 
         return losses

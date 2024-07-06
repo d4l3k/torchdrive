@@ -204,9 +204,9 @@ class MSDeformableAttention2d(nn.Module):
 
         self._reset_parameters()
 
-        self._sampling_hook: Optional[
-            Callable[[torch.Tensor, torch.Tensor], None]
-        ] = None
+        self._sampling_hook: Optional[Callable[[torch.Tensor, torch.Tensor], None]] = (
+            None
+        )
 
     def _reset_parameters(self) -> None:
         nn.init.constant_(self.sampling_offsets.weight.data, 0.0)

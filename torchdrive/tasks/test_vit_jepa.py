@@ -1,11 +1,12 @@
 import unittest
-from unittest.mock import MagicMock, patch
 from typing import Dict, List
+from unittest.mock import MagicMock, patch
+
+import torch
 
 from torchdrive.data import Batch, dummy_batch
 from torchdrive.tasks.vit_jepa import ViTJEPA
 
-import torch
 
 class TestViTJEPA(unittest.TestCase):
     def test_vit_jepa(self) -> None:

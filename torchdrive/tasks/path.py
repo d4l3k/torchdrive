@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 import torch
 import torchmetrics
 from torch import nn
-from torchworld.models.transformer import collect_cross_attention_weights
-from torchworld.transforms.img import render_color
 
 from torchdrive.data import Batch
 from torchdrive.models.path import (
@@ -16,6 +14,8 @@ from torchdrive.models.path import (
     XYEncoder,
 )
 from torchdrive.tasks.bev import BEVTask, Context
+from torchworld.models.transformer import collect_cross_attention_weights
+from torchworld.transforms.img import render_color
 
 
 def unflatten_strided(x: torch.Tensor, stride: int) -> torch.Tensor:

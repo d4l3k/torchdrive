@@ -10,7 +10,6 @@ from pytorch3d.renderer import ImplicitRenderer, NDCMultinomialRaysampler
 from pytorch3d.structures import Volumes
 from pytorch3d.structures.volumes import VolumeLocator
 from torch import nn
-from torchworld.transforms.img import normalize_img, normalize_mask, render_color
 
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context
@@ -33,6 +32,7 @@ from torchdrive.transforms.depth import (
     disp_to_depth,
     Project3D,
 )
+from torchworld.transforms.img import normalize_img, normalize_mask, render_color
 
 
 def axis_grid(grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -544,9 +544,11 @@ class VoxelTask(BEVTask):
 
         volumes = Volumes(
             densities=grid.permute(0, 1, 4, 2, 3).to(dtype),
-            features=feat_grid.permute(0, 1, 4, 2, 3).to(dtype)
-            if feat_grid is not None
-            else None,
+            features=(
+                feat_grid.permute(0, 1, 4, 2, 3).to(dtype)
+                if feat_grid is not None
+                else None
+            ),
             voxel_size=1 / self.scale,
             volume_translation=self.volume_translation,
         )

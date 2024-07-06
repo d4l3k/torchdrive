@@ -14,8 +14,7 @@ class BatchTransform(ABC):
     """
 
     @abstractmethod
-    def __call__(self, batch: Batch) -> Batch:
-        ...
+    def __call__(self, batch: Batch) -> Batch: ...
 
 
 class Identity(BatchTransform):

@@ -3,13 +3,13 @@ from typing import Dict, List
 from unittest.mock import call, MagicMock
 
 import torch
-from torchvision import models
 
 from torchdrive.data import Batch, dummy_batch
 from torchdrive.models.bev import RiceBackbone
 from torchdrive.models.regnet import RegNetEncoder
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan, Context
 from torchdrive.transforms.batch import Compose, NormalizeCarPosition, RandomRotation
+from torchvision import models
 
 
 class DummyBEVTask(BEVTask):

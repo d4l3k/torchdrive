@@ -33,6 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 https://github.com/pytorch/vision/blob/main/LICENSE
 """
+
 from typing import Any, Callable, List, Optional, Type
 
 import torch

@@ -1,25 +1,21 @@
-from typing import List, Optional, Dict, Tuple
 from collections import OrderedDict
+from typing import Dict, List, Optional, Tuple
 
 import torch
-from torch import nn
 import torch.nn.functional as F
-from torch.utils.tensorboard import SummaryWriter
+from torch import nn
 from torch.optim.swa_utils import AveragedModel
+from torch.utils.tensorboard import SummaryWriter
 
 from torchdrive.amp import autocast
-from torchdrive.autograd import (
-    autograd_context,
-    register_log_grad_norm,
-)
+from torchdrive.autograd import autograd_context, register_log_grad_norm
 from torchdrive.data import Batch
 from torchdrive.losses import losses_backward
 from torchdrive.tasks.van import Van
+from torchworld.models.vit import MaskViT
 from torchworld.transforms.img import normalize_img, normalize_mask, render_color
 from torchworld.transforms.mask import random_block_mask, true_mask
 from torchworld.transforms.pca import structured_pca
-from torchworld.models.vit import MaskViT
-
 
 
 class Decoder(nn.Module):
@@ -38,7 +34,9 @@ class Decoder(nn.Module):
         super().__init__()
         self.cam_shape = cam_shape
         self.queries = nn.Parameter(
-            torch.empty(1, num_frames * cam_shape[0] * cam_shape[1], hidden_dim).normal_(std=0.02)
+            torch.empty(
+                1, num_frames * cam_shape[0] * cam_shape[1], hidden_dim
+            ).normal_(std=0.02)
         )  # from BERT
         layers: OrderedDict[str, nn.Module] = OrderedDict()
         for i in range(num_layers):
@@ -53,7 +51,10 @@ class Decoder(nn.Module):
         self.layers = nn.Sequential(layers)
 
     def forward(self, input: torch.Tensor):
-        torch._assert(input.dim() == 3, f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}")
+        torch._assert(
+            input.dim() == 3,
+            f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}",
+        )
         x = self.queries.repeat(input.shape[0], 1, 1)
         for layer in self.layers:
             x = layer(x, input)
@@ -81,14 +82,16 @@ class ViTJEPA(nn.Module, Van):
         self.num_encode_frames = num_encode_frames
         self.cam_shape = cam_shape
         self.feat_shape = (cam_shape[0] // 16, cam_shape[1] // 16)
-        self.encoders = nn.ModuleDict({
-            cam: MaskViT(
-                cam_shape=cam_shape,
-                dim=dim,
-                attention_dropout=0.1,
-            )
-            for cam in cameras
-        })
+        self.encoders = nn.ModuleDict(
+            {
+                cam: MaskViT(
+                    cam_shape=cam_shape,
+                    dim=dim,
+                    attention_dropout=0.1,
+                )
+                for cam in cameras
+            }
+        )
         self.ema_encoders = AveragedModel(
             self.encoders,
             multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.998),
@@ -102,18 +105,20 @@ class ViTJEPA(nn.Module, Van):
             attention_dropout=dropout,
             num_frames=1,
         )
-        self.decoders = nn.ModuleDict({
-            cam: Decoder(
-                num_frames=num_frames,
-                cam_shape=self.feat_shape,
-                hidden_dim=dim,
-                mlp_dim=dim_feedforward,
-                num_heads=num_heads,
-                num_layers=12,  # num_layers,
-                attention_dropout=dropout,
-            )
-            for cam in cameras
-        })
+        self.decoders = nn.ModuleDict(
+            {
+                cam: Decoder(
+                    num_frames=num_frames,
+                    cam_shape=self.feat_shape,
+                    hidden_dim=dim,
+                    mlp_dim=dim_feedforward,
+                    num_heads=num_heads,
+                    num_layers=12,  # num_layers,
+                    attention_dropout=dropout,
+                )
+                for cam in cameras
+            }
+        )
         self.encode_time_embedding = nn.Parameter(
             torch.empty(1, num_encode_frames, 1, dim).normal_(std=0.02)
         )
@@ -161,21 +166,19 @@ class ViTJEPA(nn.Module, Van):
 
         # for size, device only
         empty_mask = torch.empty(
-            self.feat_shape,
-            device=self.encode_time_embedding.device
+            self.feat_shape, device=self.encode_time_embedding.device
         )
 
         all_feats = []
 
         for cam in self.cameras:
-            feats = batch.color[cam][:, :self.num_encode_frames]
+            feats = batch.color[cam][:, : self.num_encode_frames]
             block_size = min(*self.feat_shape) // 3
             mask = random_block_mask(
                 empty_mask,
                 block_size=(block_size, block_size),
                 num_blocks=8,
             )
-
 
             if writer is not None and log_text:
                 writer.add_scalar(
@@ -193,7 +196,10 @@ class ViTJEPA(nn.Module, Van):
                 # checkpoint encoders to save memory
                 encoder = self.encoders[cam]
                 cam_feats = torch.utils.checkpoint.checkpoint(
-                    encoder, feats.flatten(0, 1), mask, use_reentrant=False,
+                    encoder,
+                    feats.flatten(0, 1),
+                    mask,
+                    use_reentrant=False,
                 )
                 assert cam_feats.requires_grad, f"missing grad for cam {cam}"
 
@@ -208,7 +214,9 @@ class ViTJEPA(nn.Module, Van):
 
             # (n, seq_len, hidden_dim) -> (bs, num_encode_frames, seq_len, hidden_dim)
             cam_feats = cam_feats.unflatten(0, feats.shape[:2])
-            cam_feats += self.encode_time_embedding  # broadcast across batch and seq len
+            cam_feats += (
+                self.encode_time_embedding
+            )  # broadcast across batch and seq len
 
             # flatten time
             # (bs, num_encode_frames, seq_len, hidden_dim) -> (bs, num_encode_frames * seq_len, hidden_dim)
@@ -221,7 +229,9 @@ class ViTJEPA(nn.Module, Van):
         # run backbone
         with autocast():
             input_tokens = torch.utils.checkpoint.checkpoint(
-                self.backbone, input_tokens, use_reentrant=False,
+                self.backbone,
+                input_tokens,
+                use_reentrant=False,
             )
 
         # pause gradient on the input tokens so we can run backprop on each decoder camera separately
@@ -234,7 +244,9 @@ class ViTJEPA(nn.Module, Van):
                 mask = true_mask(empty_mask)
 
                 with torch.no_grad(), autocast():
-                    target_feats = self.ema_encoders.module[cam](all_color.flatten(0, 1), mask).detach()
+                    target_feats = self.ema_encoders.module[cam](
+                        all_color.flatten(0, 1), mask
+                    ).detach()
                     target_feats = target_feats.unflatten(0, all_color.shape[:2])
                     target_feats = target_feats.unflatten(2, self.feat_shape)
                     all_target_feats_raw = target_feats
@@ -315,9 +327,7 @@ class ViTJEPA(nn.Module, Van):
                         ).permute(2, 0, 1)
                         writer.add_image(
                             f"{cam}/{frame}/pca",
-                            normalize_img(
-                                pca
-                            ),
+                            normalize_img(pca),
                             global_step=global_step,
                         )
 

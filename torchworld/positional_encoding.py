@@ -18,11 +18,14 @@ def sin_cos_enc(
         raise ValueError(f"dim must be a multiple of 2, got {dim}")
 
     position = torch.arange(seq_len, dtype=dtype, device=device).unsqueeze(1)
-    div_term = torch.exp(torch.arange(0, dim, 2, dtype=dtype, device=device) * (-math.log(10000.0) / dim))
+    div_term = torch.exp(
+        torch.arange(0, dim, 2, dtype=dtype, device=device) * (-math.log(10000.0) / dim)
+    )
     pe = torch.zeros(seq_len, dim, dtype=dtype, device=device)
     pe[:, 0::2] = torch.sin(position * div_term)
     pe[:, 1::2] = torch.cos(position * div_term)
     return pe
+
 
 def apply_sin_cos_enc1d(x: torch.Tensor) -> torch.Tensor:
     """
@@ -92,9 +95,12 @@ class LearnedPositionalEncodingSeq(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         bs, seq_len, ch = x.shape
 
-        assert seq_len <= self.max_seq_len, f"got sequence longer than max_seq_len {x.shape} {self.max_seq_len}"
+        assert (
+            seq_len <= self.max_seq_len
+        ), f"got sequence longer than max_seq_len {x.shape} {self.max_seq_len}"
 
         return x + self.embedding.weight[None, :seq_len, :]
+
 
 class LearnedPositionalEncoding1d(nn.Module):
     def __init__(self, max_seq_len: int, dim: int) -> None:
@@ -106,9 +112,12 @@ class LearnedPositionalEncoding1d(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         bs, ch, seq_len = x.shape
 
-        assert seq_len <= self.max_seq_len, f"got sequence longer than max_seq_len {x.shape} {self.max_seq_len}"
+        assert (
+            seq_len <= self.max_seq_len
+        ), f"got sequence longer than max_seq_len {x.shape} {self.max_seq_len}"
 
         return x + self.embedding.weight[None, :, :seq_len]
+
 
 class LearnedPositionalEncoding2d(nn.Module):
     def __init__(self, shape: Tuple[int, int], dim: int) -> None:
@@ -118,5 +127,8 @@ class LearnedPositionalEncoding2d(nn.Module):
         self.w_embedding = nn.Embedding(dim, shape[1])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.h_embedding.weight[None, :, :, None] + self.w_embedding.weight[None, :, None, :]
-
+        return (
+            x
+            + self.h_embedding.weight[None, :, :, None]
+            + self.w_embedding.weight[None, :, None, :]
+        )

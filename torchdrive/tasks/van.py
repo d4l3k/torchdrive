@@ -1,5 +1,6 @@
-from typing import Tuple
 from abc import ABC
+from typing import Tuple
+
 
 class Van(ABC):
     def should_log(self, global_step: int, BS: int) -> Tuple[bool, bool]:

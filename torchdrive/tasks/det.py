@@ -9,10 +9,6 @@ import torch
 import torch.nn.functional as F
 import torchmetrics
 from torch import nn
-from torchvision.utils import draw_bounding_boxes
-from torchworld.models.deformable_transformer import collect_sampling_locations
-
-from torchworld.transforms.img import normalize_img
 
 from torchdrive.data import Batch
 from torchdrive.losses import generalized_box_iou
@@ -26,6 +22,10 @@ from torchdrive.transforms.bboxes import (
     decode_bboxes3d,
     points_to_bboxes2d,
 )
+from torchvision.utils import draw_bounding_boxes
+from torchworld.models.deformable_transformer import collect_sampling_locations
+
+from torchworld.transforms.img import normalize_img
 
 # TARGET_SIZES - class: (l, w, h)
 TARGET_SIZES: Dict[int, Tuple[float, float, float]] = {

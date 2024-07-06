@@ -7,12 +7,12 @@ from torchdrive.debug import assert_not_nan
 from torchworld.positional_encoding import (
     apply_sin_cos_enc1d,
     apply_sin_cos_enc2d,
+    LearnedPositionalEncoding1d,
+    LearnedPositionalEncoding2d,
+    LearnedPositionalEncodingSeq,
     sequence_encoding,
     sin_cos_enc,
     sin_cos_enc2d,
-    LearnedPositionalEncodingSeq,
-    LearnedPositionalEncoding1d,
-    LearnedPositionalEncoding2d,
 )
 
 
@@ -55,4 +55,3 @@ class TestPositionalEncoding(unittest.TestCase):
         m = LearnedPositionalEncoding2d((2, 3), 5)
         out = m(torch.rand(2, 5, 2, 3))
         self.assertEqual(out.shape, (2, 5, 2, 3))
-

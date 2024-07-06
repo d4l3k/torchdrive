@@ -17,9 +17,9 @@ from PIL import Image
 from pytorch3d.transforms import quaternion_to_matrix
 from strenum import StrEnum
 from torch.utils.data import DataLoader, Dataset as TorchDataset
-from tqdm import tqdm
 
 from torchdrive.datasets.dataset import Dataset, Datasets
+from tqdm import tqdm
 
 Tensor = torch.Tensor
 
@@ -231,9 +231,9 @@ class TimestampMatcher:
     ) -> None:
         self.cam_samples = cam_samples
         self.epsilon = int(epsilon.total_seconds() * 1e6)
-        timestamp_index: Dict[
-            int, Dict[str, Tuple[SampleData, int]]
-        ] = calculate_timestamp_index(cam_samples)
+        timestamp_index: Dict[int, Dict[str, Tuple[SampleData, int]]] = (
+            calculate_timestamp_index(cam_samples)
+        )
         sorted_timestamps: List[int] = sorted(timestamp_index.keys())
         self.nearest_data_within_epsilon: Dict[
             int, Tuple[SampleData, Dict[str, int]]
@@ -267,6 +267,7 @@ class ConcatDataset(TorchDataset[T_co]):
     Args:
         datasets (sequence): List of datasets to be concatenated
     """
+
     datasets: List[TorchDataset[T_co]]
     cumulative_sizes: List[int]
 

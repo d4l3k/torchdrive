@@ -6,16 +6,10 @@ from dataclasses import replace
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
-import torch.nn.functional as F
-
-from torchworld.structures.grid import Grid3d
-from torchworld.transforms.img import render_color
-from torchworld.transforms.mask import random_block_mask
-
-from torchdrive.tasks.van import Van
 from torchdrive.amp import autocast
 from torchdrive.autograd import (
     autograd_pause,
@@ -26,7 +20,13 @@ from torchdrive.autograd import (
 from torchdrive.data import Batch
 from torchdrive.models.bev_backbone import BEVBackbone
 from torchdrive.tasks.context import Context
+
+from torchdrive.tasks.van import Van
 from torchdrive.transforms.batch import BatchTransform, Identity
+
+from torchworld.structures.grid import Grid3d
+from torchworld.transforms.img import render_color
+from torchworld.transforms.mask import random_block_mask
 
 
 def _get_orig_mod(m: nn.Module) -> nn.Module:
@@ -169,7 +169,9 @@ class BEVTaskVan(Van, torch.nn.Module):
 
                 # use gradient checkpointing to save memory
                 feats = [
-                    torch.utils.checkpoint.checkpoint(encoder, frame_inp, use_reentrant=False)
+                    torch.utils.checkpoint.checkpoint(
+                        encoder, frame_inp, use_reentrant=False
+                    )
                     for frame_inp in inp
                 ]
                 num_frames = self.num_encode_frames
@@ -180,7 +182,7 @@ class BEVTaskVan(Van, torch.nn.Module):
                     num_blocks=8,
                 )
                 # TODO: support data normal masks
-                #to_mask = torch.bitwise_and(to_mask, F.interpolate(batch.mask[cam], to_mask.shape) > 0.5)
+                # to_mask = torch.bitwise_and(to_mask, F.interpolate(batch.mask[cam], to_mask.shape) > 0.5)
 
                 if log_img and writer:
                     writer.add_image(

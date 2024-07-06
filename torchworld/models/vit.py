@@ -4,6 +4,7 @@ import torch
 from torch import nn
 from torchvision.models import vit_b_16, ViT_B_16_Weights
 
+
 class MaskViT(nn.Module):
     def __init__(
         self,
@@ -50,5 +51,7 @@ class MaskViT(nn.Module):
         # embedding dimension
         x = x.permute(0, 2, 1)
 
-        x = self.encoder.encoder.ln(self.encoder.encoder.layers(self.encoder.encoder.dropout(x)))
+        x = self.encoder.encoder.ln(
+            self.encoder.encoder.layers(self.encoder.encoder.dropout(x))
+        )
         return self.project(x)
