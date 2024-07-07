@@ -164,6 +164,14 @@ class XEmbedding(nn.Module):
 
         self.embedding = nn.Parameter(torch.empty(shape, dim).normal_(std=0.02))
 
+    def _calculate_index(self, pos: torch.Tensor) -> torch.Tensor:
+        dx = (self.shape - 1) // 2
+        x = (pos * dx / self.scale + dx).long()
+
+        x = x.clamp(min=0, max=self.shape - 1)
+
+        return x
+
     def forward(self, pos: torch.Tensor):
         """
         Args:
@@ -173,12 +181,14 @@ class XEmbedding(nn.Module):
             the embedding of the position (..., dim)
         """
 
-        dx = (self.shape - 1) // 2
-        x = (pos * dx / self.scale + dx).long()
-
-        x = x.clamp(min=0, max=self.shape - 1)
-
+        x = self._calculate_index(pos)
         return self.embedding[x]
+
+    def _decode_ll(self, input: torch.Tensor) -> torch.Tensor:
+        # (bs, seq_len, dim) @ (x, dim) -> (bs, seq_len, x)
+        similarity = torch.einsum("bsd,xd->bsx", input, self.embedding)
+
+        return similarity
 
     def decode(self, input: torch.Tensor) -> torch.Tensor:
         """
@@ -191,14 +201,33 @@ class XEmbedding(nn.Module):
             the position (bs, seq_len)
         """
 
-        # (bs, seq_len, dim) @ (x, dim) -> (bs, seq_len, x)
-        similarity = torch.einsum("bsd,xd->bsx", input, self.embedding)
+        similarity = self._decode_ll(input)
 
         x = similarity.argmax(dim=-1)
 
         dx = (self.shape - 1) // 2
         x = (x.float() - dx) * self.scale / dx
         return x
+
+    def ae_loss(self, input: torch.Tensor) -> torch.Tensor:
+        """
+        Compute the autoencoder loss for the embedding.
+
+        Args:
+            input: input embedding to decode (bs, seq_len, dim)
+
+        Returns:
+            the position (bs, seq_len)
+        """
+
+        embedding = self(input)
+
+        similarity = self._decode_ll(embedding)
+        target = self._calculate_index(input)
+
+        print(similarity.shape, target.shape)
+
+        return F.cross_entropy(similarity.flatten(0, -2), target.flatten())
 
 
 class XYLinearEmbedding(nn.Module):
@@ -228,6 +257,11 @@ class XYLinearEmbedding(nn.Module):
         y = self.y.decode(input[..., self.dim :])
         return torch.stack([x, y], dim=-1)
 
+    def ae_loss(self, input: torch.Tensor) -> torch.Tensor:
+        x = self.x.ae_loss(input[..., 0])
+        y = self.y.ae_loss(input[..., 1])
+        return x + y
+
 
 class DiffTraj(nn.Module, Van):
     """
@@ -243,6 +277,8 @@ class DiffTraj(nn.Module, Van):
         dropout: float = 0.1,
         num_layers: int = 24,
         num_heads: int = 16,
+        num_encode_frames: int = 1,
+        num_frames: int = 1,
     ):
         super().__init__()
 
@@ -263,9 +299,9 @@ class DiffTraj(nn.Module, Van):
         )
 
         # embedding
-        #
-        self.xy_embedding = XYEmbedding(
-            shape=(128, 128),
+        # 2*100m/512 == 0.39 meters
+        self.xy_embedding = XYLinearEmbedding(
+            shape=(512, 512),
             scale=100,  # 100 meters
             dim=dim,
         )
@@ -371,5 +407,74 @@ class DiffTraj(nn.Module, Van):
         noise = torch.randn(sample_image.shape)
         timesteps = torch.LongTensor([50])
         noisy_image = noise_scheduler.add_noise(sample_image, noise, timesteps)
+
+        BS = len(batch.distances)
+        device = bev.device
+
+        world_to_car, mask, lengths = batch.long_cam_T
+        car_to_world = torch.zeros_like(world_to_car)
+        car_to_world[mask] = world_to_car[mask].inverse()
+
+        assert mask.int().sum() == lengths.sum(), (mask, lengths)
+
+        zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
+        zero_coord[:, -1] = 1
+
+        positions = torch.matmul(car_to_world, zero_coord.T).squeeze(-1)
+        positions /= positions[..., -1:] + 1e-8  # perspective warp
+        positions = positions[..., :2].permute(0, 2, 1)
+
+        # downsample to 1/6 the frame rate (i.e. 12fps to 2fpss)
+        downsample = self.downsample
+
+        # used for direction bucket
+        final_pos = positions[torch.arange(BS), :, (lengths - 1)]
+        # expand to one per downsample path
+        final_pos = final_pos.unsqueeze(1).expand(-1, downsample, -1).flatten(0, 1)
+
+        assert batch.frame_time.size(1) >= downsample
+        start_time = batch.frame_time[:, :downsample].flatten(0, 1)
+
+        # crop positions and mask to be multiple of downsample so we can run
+        # multiple downsampled paths in parallel
+        pos_len = positions.size(-1)
+        pos_len = min(pos_len // downsample, self.max_seq_len + 1)
+
+        positions = positions[..., : pos_len * downsample]
+        mask = mask[..., : pos_len * downsample]
+
+        positions = (
+            unflatten_strided(positions, downsample).permute(0, 2, 1, 3).flatten(0, 1)
+        )
+        mask = unflatten_strided(mask, downsample).flatten(0, 1)
+        assert positions.shape, (BS * downsample, 2, pos_len)
+        assert mask.shape, (BS * downsample, pos_len)
+
+        bev = bev.unsqueeze(1).expand(-1, downsample, -1, -1, -1).flatten(0, 1)
+
+        start_pos = positions[:, :, 0]
+        velocity = positions[:, :, 1] - positions[:, :, 0]
+        velocity = torch.linalg.vector_norm(velocity, dim=-1)
+
+        static_features = torch.cat(
+            (start_pos, final_pos, velocity, start_time.unsqueeze(1)), dim=1
+        )
+
+        lengths = mask.sum(dim=-1)
+
+        # if we need to be aligned to size 8
+        # pos_len = pos_len - (pos_len % 8) + 1
+        num_elements = mask.float().sum()
+
+        assert mask.int().sum() == lengths.sum(), (mask, lengths)
+
+        assert pos_len > 1, "pos length too short"
+
+        if ctx.log_text:
+            ctx.add_scalar("paths/seq_len", pos_len)
+            ctx.add_scalar("paths/num_elements", num_elements)
+
+        posmax = positions.abs().amax()
+        assert posmax < 1000, positions
 
         return losses

@@ -61,6 +61,16 @@ class TestDiffTraj(unittest.TestCase):
         self.assertEqual(positions.shape, (1, 5, 2))
         torch.testing.assert_close(positions, input)
 
+        loss = traj.ae_loss(input)
+        self.assertEqual(
+            loss.shape,
+            (),
+        )
+
+        loss.backward()
+        for param in traj.parameters():
+            self.assertIsNotNone(param.grad)
+
     def test_x_embedding(self):
         torch.manual_seed(0)
 
@@ -82,3 +92,13 @@ class TestDiffTraj(unittest.TestCase):
         positions = traj.decode(output)
         self.assertEqual(positions.shape, (1, 3))
         torch.testing.assert_close(positions, input)
+
+        loss = traj.ae_loss(input)
+        self.assertEqual(
+            loss.shape,
+            (),
+        )
+
+        loss.backward()
+        for param in traj.parameters():
+            self.assertIsNotNone(param.grad)
