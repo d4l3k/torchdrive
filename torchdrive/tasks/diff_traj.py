@@ -1,3 +1,4 @@
+import os.path
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
@@ -6,6 +7,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 from diffusers import EulerDiscreteScheduler
+from safetensors.torch import load_model
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from torchdrive.amp import autocast
@@ -309,12 +311,27 @@ class XYLinearEmbedding(nn.Module):
 
 
 class XYMLPEncoder(nn.Module):
-    def __init__(self, dim: int, max_dist: float, dropout: float = 0.1) -> None:
+    def __init__(
+        self, dim: int, max_dist: float, dropout: float = 0.1, pretrained: bool = False
+    ) -> None:
         super().__init__()
 
         self.embedding = XYEncoder(num_buckets=dim // 2, max_dist=max_dist)
         self.encoder = MLP(dim, dim, dim, num_layers=3, dropout=dropout)
         self.decoder = MLP(dim, dim, dim, num_layers=3, dropout=dropout)
+
+        if pretrained:
+            path = os.path.join(
+                os.path.dirname(__file__),
+                "../../data/xy_mlp_vae.safetensors",
+            )
+            print(f"loading {path}")
+            load_model(self, path)
+
+            for param in self.embedding.parameters():
+                param.requires_grad = False
+            for param in self.encoder.parameters():
+                param.requires_grad = False
 
     def forward(self, xy: torch.Tensor) -> torch.Tensor:
         """
@@ -381,7 +398,7 @@ class DiffTraj(nn.Module, Van):
         )
 
         # embedding
-        self.xy_embedding = XYMLPEncoder(dim=dim, max_dist=128)
+        self.xy_embedding = XYMLPEncoder(dim=dim, max_dist=128, pretrained=True)
 
         self.denoiser = Denoiser(
             max_seq_len=256,
@@ -615,9 +632,9 @@ class DiffTraj(nn.Module, Van):
         noise_loss = noise_loss[mask]
         losses["diffusion"] = noise_loss.mean()
 
-        losses["ae/with_noise"] = self.xy_embedding.loss(traj_embed_noise, positions)[
-            mask
-        ].mean()
+        losses["ae/with_noise"] = (
+            self.xy_embedding.loss(traj_embed_noise, positions)[mask].mean() * 0.1
+        )
         losses["ae/ae"] = self.xy_embedding.loss(traj_embed, positions)[mask].mean()
 
         losses_backward(losses)

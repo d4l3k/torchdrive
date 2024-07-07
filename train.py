@@ -12,6 +12,7 @@ LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", str(LOCAL_RANK))
 
 import matplotlib
+import matplotlib.pyplot as plt
 import torch
 import torch.distributed as dist
 import torchinfo
@@ -34,6 +35,9 @@ from torchdrive.tasks.bev import BEVTaskVan
 from torchdrive.train_config import create_parser, TrainConfig
 from tqdm import tqdm
 
+plt.rcParams["lines.linewidth"] = 1
+plt.rcParams["figure.figsize"] = (10, 10)
+plt.rcParams["figure.autolayout"] = True
 matplotlib.use("agg")
 
 parser: argparse.ArgumentParser = create_parser()
