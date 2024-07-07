@@ -314,7 +314,7 @@ class DiffTraj(nn.Module, Van):
         num_heads: int = 16,
         num_encode_frames: int = 1,
         num_frames: int = 1,
-        num_inference_timesteps: int = 20,
+        num_inference_timesteps: int = 50,
         num_train_timesteps: int = 1000,
     ):
         super().__init__()
@@ -372,12 +372,12 @@ class DiffTraj(nn.Module, Van):
             {
                 "name": "encoders",
                 "params": list(self.encoders.parameters()),
-                "lr": lr / len(self.encoders),
+                "lr": lr / 10,
             },
             {
                 "name": "static_features",
                 "params": list(self.static_features_encoder.parameters()),
-                "lr": lr,
+                "lr": lr / 10,
             },
             {
                 "name": "denoiser",
@@ -387,7 +387,7 @@ class DiffTraj(nn.Module, Van):
             {
                 "name": "xy_embedding",
                 "params": list(self.xy_embedding.parameters()),
-                "lr": lr,
+                "lr": lr / 10,
             },
         ]
 
@@ -503,11 +503,13 @@ class DiffTraj(nn.Module, Van):
 
         # losses["xy_embedding/ae"] = self.xy_embedding(positions)
 
+        # calculate velocity between first two frames to allow model to understand current speed
+        # TODO: convert this to a categorical embedding
         velocity = positions[:, 1] - positions[:, 0]
         assert positions.size(-1) == 2
         velocity = torch.linalg.vector_norm(velocity, dim=-1, keepdim=True)
 
-        static_features = self.static_features_encoder(velocity)
+        static_features = self.static_features_encoder(velocity).unsqueeze(1)
 
         lengths = mask.sum(dim=-1)
         pos_len = lengths.amax()
@@ -553,6 +555,9 @@ class DiffTraj(nn.Module, Van):
         traj_embed_noise = self.noise_scheduler.add_noise(traj_embed, noise, timesteps)
 
         with autocast():
+            # add static feature info to all condition keys to avoid noise
+            input_tokens = input_tokens + static_features
+
             pred_noise = self.denoiser(traj_embed_noise, input_tokens)
 
         noise_loss = F.mse_loss(pred_noise, noise, reduction="none")
