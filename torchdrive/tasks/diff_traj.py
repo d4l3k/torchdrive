@@ -420,7 +420,6 @@ class DiffTraj(nn.Module, Van):
             cam_feats = cam_feats.unflatten(0, feats.shape[:2])
 
             if writer is not None and log_img:
-                print(cam_feats.shape)
                 writer.add_image(
                     f"{cam}/pca",
                     render_color(cam_feats[0, 0]),
@@ -473,8 +472,16 @@ class DiffTraj(nn.Module, Van):
         num_elements = mask.float().sum()
 
         if writer and log_text:
-            writer.add_scalar("paths/seq_len", pos_len)
-            writer.add_scalar("paths/num_elements", num_elements)
+            writer.add_scalar(
+                "paths/seq_len",
+                pos_len,
+                global_step=global_step,
+            )
+            writer.add_scalar(
+                "paths/num_elements",
+                num_elements,
+                global_step=global_step,
+            )
 
         posmax = positions.abs().amax()
         assert posmax < 1000, positions
@@ -509,7 +516,11 @@ class DiffTraj(nn.Module, Van):
 
             fig.legend()
             plt.gca().set_aspect("equal")
-            writer.add_figure("paths/target", fig)
+            writer.add_figure(
+                "paths/target",
+                fig,
+                global_step=global_step,
+            )
 
         losses_backward(losses)
 
