@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 from torch import nn
@@ -11,12 +11,13 @@ class MaskViT(nn.Module):
         attention_dropout: float,
         cam_shape: Tuple[int, int],
         dim: int,
+        weights: Optional[object] = ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1,
     ) -> None:
         super().__init__()
 
         self.cam_shape = cam_shape
         self.encoder = vit_b_16(
-            weights=ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1,
+            weights=weights,
             progress=True,
             attention_dropout=attention_dropout,
         )
@@ -29,6 +30,13 @@ class MaskViT(nn.Module):
             ).normal_(std=0.02)
         )
         self.project = nn.Linear(self.encoder.hidden_dim, dim)
+
+    def freeze_pretrained_weights(self) -> None:
+        for param in self.encoder.parameters():
+            # skip pos embedding since we overwrote it
+            if param is self.encoder.encoder.pos_embedding:
+                continue
+            param.requires_grad = False
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         # Reshape and permute the input tensor
@@ -43,6 +51,8 @@ class MaskViT(nn.Module):
         x = x + self.encoder.encoder.pos_embedding
 
         unmasked = x
+
+        print(x.shape, mask.shape)
 
         # (n, hidden_dim, n_h, n_w) -> (n, hidden_dim, mask.sum())
         x = x[:, :, mask]
