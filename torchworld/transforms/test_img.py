@@ -7,6 +7,7 @@ from torchworld.transforms.img import (
     normalize_img_cuda,
     normalize_mask,
     render_color,
+    render_pca,
 )
 
 
@@ -33,3 +34,7 @@ class TestDet(unittest.TestCase):
 
         out = normalize_mask(torch.rand(2, 3, 48, 64), torch.zeros(2, 1, 48, 64))
         self.assertEqual(out.shape, (2, 3, 48, 64))
+
+    def test_render_pca(self) -> None:
+        out = render_pca(torch.rand(48, 64, 16))
+        self.assertEqual(out.shape, (3, 48, 64))

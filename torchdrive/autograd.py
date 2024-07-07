@@ -3,7 +3,14 @@ from contextlib import contextmanager
 from typing import cast, Generator, List, Optional, overload, Tuple, TypeVar, Union
 
 import torch
+from torch import nn
 from torch.utils.tensorboard import SummaryWriter
+
+
+def freeze(module: nn.Module) -> nn.Module:
+    for param in module.parameters():
+        param.requires_grad = False
+    return module
 
 
 def autograd_pause(tensor: torch.Tensor) -> torch.Tensor:

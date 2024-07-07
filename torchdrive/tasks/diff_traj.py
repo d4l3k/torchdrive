@@ -1,28 +1,33 @@
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
+
 import torch
 import torch.nn.functional as F
-
 from diffusers import DDPMScheduler
 from torch import nn
-from torch.optim.swa_utils import AveragedModel
 from torch.utils.tensorboard import SummaryWriter
-
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context, register_log_grad_norm
 from torchdrive.data import Batch
 from torchdrive.losses import losses_backward
 from torchdrive.tasks.van import Van
+
+from torchdrive.transforms.batch import NormalizeCarPosition
 from torchtune.modules import RotaryPositionalEmbeddings
 from torchworld.models.vit import MaskViT
-from torchworld.transforms.img import normalize_img, normalize_mask, render_color
+from torchworld.transforms.img import (
+    normalize_img,
+    normalize_mask,
+    render_color,
+    render_pca,
+)
 from torchworld.transforms.mask import random_block_mask, true_mask
-from torchworld.transforms.pca import structured_pca
 
 
-class Decoder(nn.Module):
-    """Transformer decoder model for 1d sequences"""
+class Denoiser(nn.Module):
+    """Transformer denoising model for 1d sequences"""
 
     def __init__(
         self,
@@ -34,7 +39,6 @@ class Decoder(nn.Module):
         attention_dropout: float,
     ):
         super().__init__()
-        self.cam_shape = cam_shape
         self.dim = dim
         self.num_heads = num_heads
         self.positional_embedding = RotaryPositionalEmbeddings(
@@ -44,7 +48,7 @@ class Decoder(nn.Module):
         layers: OrderedDict[str, nn.Module] = OrderedDict()
         for i in range(num_layers):
             layers[f"encoder_layer_{i}"] = nn.TransformerDecoderLayer(
-                d_model=hidden_dim,
+                d_model=dim,
                 nhead=num_heads,
                 dim_feedforward=mlp_dim,
                 dropout=attention_dropout,
@@ -67,9 +71,9 @@ class Decoder(nn.Module):
 
         # apply rotary embeddings
         # RoPE applies to each head separately
-        x = self.positional_embedding(
-            x.unflatten(-1, (self.num_heads, self.dim // self.num_heads))
-        ).flatten(-1)
+        x = x.unflatten(-1, (self.num_heads, self.dim // self.num_heads))
+        x = self.positional_embedding(x)
+        x = x.flatten(-2, -1)
 
         for layer in self.layers:
             x = layer(x, condition)
@@ -306,14 +310,24 @@ class DiffTraj(nn.Module, Van):
             dim=dim,
         )
 
-        self.decoder = Decoder(
-            max_seq_len=20,
+        self.denoiser = Denoiser(
+            max_seq_len=256,
             num_layers=num_layers,
             num_heads=num_heads,
             dim=dim,
             mlp_dim=dim_feedforward,
             attention_dropout=dropout,
         )
+
+        self.static_features_encoder = nn.Sequential(
+            nn.Linear(1, dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(dim, dim),
+        )
+
+        self.noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
+
+        self.batch_transform = NormalizeCarPosition(start_frame=0)
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
         return [
@@ -323,8 +337,18 @@ class DiffTraj(nn.Module, Van):
                 "lr": lr / len(self.encoders),
             },
             {
-                "name": "decoder",
-                "params": list(self.backbone.parameters()),
+                "name": "static_features",
+                "params": list(self.static_features_encoder.parameters()),
+                "lr": lr,
+            },
+            {
+                "name": "denoiser",
+                "params": list(self.denoiser.parameters()),
+                "lr": lr,
+            },
+            {
+                "name": "xy_embedding",
+                "params": list(self.xy_embedding.parameters()),
                 "lr": lr,
             },
         ]
@@ -336,15 +360,17 @@ class DiffTraj(nn.Module, Van):
         writer: Optional[SummaryWriter] = None,
         output: str = "out",
     ) -> Dict[str, torch.Tensor]:
-        self.ema_encoders.update_parameters(self.encoders)
+        batch = self.batch_transform(batch)
+
+        losses = {}
 
         BS = len(batch.distances)
+        device = batch.device()
+
         log_img, log_text = self.should_log(global_step, BS)
 
         # for size, device only
-        empty_mask = torch.empty(
-            self.feat_shape, device=self.encode_time_embedding.device
-        )
+        empty_mask = torch.empty(self.feat_shape, device=device)
 
         all_feats = []
 
@@ -359,16 +385,17 @@ class DiffTraj(nn.Module, Van):
 
             if writer is not None and log_text:
                 writer.add_scalar(
-                    f"mask/{cam}/count",
+                    f"{cam}/count",
                     mask.long().sum(),
                     global_step=global_step,
                 )
             if writer is not None and log_img:
                 writer.add_image(
-                    f"mask/{cam}/mask",
+                    f"{cam}/mask",
                     render_color(mask),
                     global_step=global_step,
                 )
+
             with autocast():
                 # checkpoint encoders to save memory
                 encoder = self.encoders[cam]
@@ -391,9 +418,14 @@ class DiffTraj(nn.Module, Van):
 
             # (n, seq_len, hidden_dim) -> (bs, num_encode_frames, seq_len, hidden_dim)
             cam_feats = cam_feats.unflatten(0, feats.shape[:2])
-            cam_feats += (
-                self.encode_time_embedding
-            )  # broadcast across batch and seq len
+
+            if writer is not None and log_img:
+                print(cam_feats.shape)
+                writer.add_image(
+                    f"{cam}/pca",
+                    render_color(cam_feats[0, 0]),
+                    global_step=global_step,
+                )
 
             # flatten time
             # (bs, num_encode_frames, seq_len, hidden_dim) -> (bs, num_encode_frames * seq_len, hidden_dim)
@@ -402,14 +434,6 @@ class DiffTraj(nn.Module, Van):
             all_feats.append(cam_feats)
 
         input_tokens = torch.cat(all_feats, dim=1)
-
-        noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
-        noise = torch.randn(sample_image.shape)
-        timesteps = torch.LongTensor([50])
-        noisy_image = noise_scheduler.add_noise(sample_image, noise, timesteps)
-
-        BS = len(batch.distances)
-        device = bev.device
 
         world_to_car, mask, lengths = batch.long_cam_T
         car_to_world = torch.zeros_like(world_to_car)
@@ -422,59 +446,71 @@ class DiffTraj(nn.Module, Van):
 
         positions = torch.matmul(car_to_world, zero_coord.T).squeeze(-1)
         positions /= positions[..., -1:] + 1e-8  # perspective warp
-        positions = positions[..., :2].permute(0, 2, 1)
+        positions = positions[..., :2]
 
-        # downsample to 1/6 the frame rate (i.e. 12fps to 2fpss)
-        downsample = self.downsample
+        losses["xy_embedding/ae"] = self.xy_embedding(positions)
 
-        # used for direction bucket
-        final_pos = positions[torch.arange(BS), :, (lengths - 1)]
-        # expand to one per downsample path
-        final_pos = final_pos.unsqueeze(1).expand(-1, downsample, -1).flatten(0, 1)
+        velocity = positions[:, 1] - positions[:, 0]
+        assert positions.size(-1) == 2
+        velocity = torch.linalg.vector_norm(velocity, dim=-1, keepdim=True)
 
-        assert batch.frame_time.size(1) >= downsample
-        start_time = batch.frame_time[:, :downsample].flatten(0, 1)
-
-        # crop positions and mask to be multiple of downsample so we can run
-        # multiple downsampled paths in parallel
-        pos_len = positions.size(-1)
-        pos_len = min(pos_len // downsample, self.max_seq_len + 1)
-
-        positions = positions[..., : pos_len * downsample]
-        mask = mask[..., : pos_len * downsample]
-
-        positions = (
-            unflatten_strided(positions, downsample).permute(0, 2, 1, 3).flatten(0, 1)
-        )
-        mask = unflatten_strided(mask, downsample).flatten(0, 1)
-        assert positions.shape, (BS * downsample, 2, pos_len)
-        assert mask.shape, (BS * downsample, pos_len)
-
-        bev = bev.unsqueeze(1).expand(-1, downsample, -1, -1, -1).flatten(0, 1)
-
-        start_pos = positions[:, :, 0]
-        velocity = positions[:, :, 1] - positions[:, :, 0]
-        velocity = torch.linalg.vector_norm(velocity, dim=-1)
-
-        static_features = torch.cat(
-            (start_pos, final_pos, velocity, start_time.unsqueeze(1)), dim=1
-        )
+        static_features = self.static_features_encoder(velocity)
 
         lengths = mask.sum(dim=-1)
+        pos_len = lengths.amax()
 
-        # if we need to be aligned to size 8
-        # pos_len = pos_len - (pos_len % 8) + 1
+        # we need to be aligned to size 8
+        align = 8
+        if positions.size(1) % align != 0:
+            pad = align - positions.size(1) % align
+            mask = F.pad(mask, (0, pad), value=True)
+            positions = F.pad(positions, (0, 0, 0, pad), value=0)
+
+        assert positions.size(1) % align == 0
+        assert mask.size(1) % align == 0
+        assert positions.size(1) == mask.size(1)
+
         num_elements = mask.float().sum()
 
-        assert mask.int().sum() == lengths.sum(), (mask, lengths)
-
-        assert pos_len > 1, "pos length too short"
-
-        if ctx.log_text:
-            ctx.add_scalar("paths/seq_len", pos_len)
-            ctx.add_scalar("paths/num_elements", num_elements)
+        if writer and log_text:
+            writer.add_scalar("paths/seq_len", pos_len)
+            writer.add_scalar("paths/num_elements", num_elements)
 
         posmax = positions.abs().amax()
         assert posmax < 1000, positions
+
+        traj_embed = self.xy_embedding(positions)
+        # (bs, seq_len, dim) -> (bs, dim, seq_len)
+        traj_embed = traj_embed
+
+        noise = torch.randn(traj_embed.shape, device=traj_embed.device)
+        timesteps = torch.randint(
+            0,
+            self.noise_scheduler.config.num_train_timesteps,
+            (BS,),
+            device=traj_embed.device,
+            dtype=torch.int64,
+        )
+        traj_embed = self.noise_scheduler.add_noise(traj_embed, noise, timesteps)
+
+        with autocast():
+            pred_noise = self.denoiser(traj_embed, input_tokens)
+
+        noise_loss = F.mse_loss(pred_noise, noise, reduction="none")
+        noise_loss = noise_loss[mask]
+        losses["diffusion"] = noise_loss.mean()
+
+        if writer and log_img:
+            # calculate cross_attn_weights
+            with torch.no_grad():
+                fig = plt.figure()
+                target = positions[0].detach().cpu()
+                plt.plot(target[..., 0], target[..., 1], label="target")
+
+            fig.legend()
+            plt.gca().set_aspect("equal")
+            writer.add_figure("paths/target", fig)
+
+        losses_backward(losses)
 
         return losses

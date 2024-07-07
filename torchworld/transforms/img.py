@@ -3,6 +3,8 @@ from typing import Optional
 import torch
 from matplotlib import cm
 
+from torchworld.transforms.pca import structured_pca
+
 
 @torch.no_grad()
 def normalize_img_cuda(src: torch.Tensor) -> torch.Tensor:
@@ -87,3 +89,12 @@ def render_color(
     if len(mapped.shape) != 3:
         print(mapped.shape)
     return mapped.permute(2, 0, 1).cpu()
+
+
+def render_pca(embed: torch.Tensor) -> torch.Tensor:
+    """
+    PCA on the tensor embedding and return it as a color picture.
+    """
+
+    data = structured_pca(embed).permute(2, 0, 1)
+    return normalize_img(data)

@@ -7,15 +7,12 @@ import torch
 from dataclasses_json import dataclass_json
 from torch import nn
 
+from torchdrive.autograd import freeze
+
 from torchdrive.datasets.dataset import Dataset, Datasets
 from torchdrive.tasks.bev import BEVTask, BEVTaskVan
+from torchdrive.tasks.diff_traj import DiffTraj
 from torchdrive.tasks.vit_jepa import ViTJEPA
-
-
-def freeze(module: nn.Module) -> nn.Module:
-    for param in module.parameters():
-        param.requires_grad = False
-    return module
 
 
 @dataclass
@@ -71,7 +68,8 @@ class DatasetConfig:
 
             dataset = AutoLabeler(dataset, path=self.autolabel_path)
 
-        assert set(dataset.cameras) == set(self.cameras)
+        for cam in self.cameras:
+            assert cam in dataset.cameras, "invalid camera"
         return dataset
 
 
@@ -316,6 +314,28 @@ class ViTJEPATrainConfig(DatasetConfig, OptimizerConfig):
             cam_shape=self.cam_shape,
             num_frames=self.num_frames,
         ).to(device)
+
+
+@dataclass_json
+@dataclass
+class DiffTrajTrainConfig(DatasetConfig, OptimizerConfig):
+    num_encode_frames: int
+
+    def create_model(
+        self,
+        device: torch.device,
+        compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
+    ) -> DiffTraj:
+        model = DiffTraj(
+            cameras=self.cameras,
+            num_encode_frames=self.num_encode_frames,
+            cam_shape=self.cam_shape,
+            num_frames=self.num_frames,
+        ).to(device)
+
+        freeze(model.denoiser.layers)
+
+        return model
 
 
 class _ConfigAction(argparse.Action):

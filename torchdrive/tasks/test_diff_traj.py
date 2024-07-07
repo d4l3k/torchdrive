@@ -1,7 +1,15 @@
 import unittest
+from unittest.mock import MagicMock, patch
 
 import torch
-from torchdrive.tasks.diff_traj import XEmbedding, XYEmbedding, XYLinearEmbedding
+from torchdrive.data import Batch, dummy_batch
+
+from torchdrive.tasks.diff_traj import (
+    DiffTraj,
+    XEmbedding,
+    XYEmbedding,
+    XYLinearEmbedding,
+)
 
 
 class TestDiffTraj(unittest.TestCase):
@@ -102,3 +110,19 @@ class TestDiffTraj(unittest.TestCase):
         loss.backward()
         for param in traj.parameters():
             self.assertIsNotNone(param.grad)
+
+    def test_diff_traj(self):
+        torch.manual_seed(0)
+
+        m = DiffTraj(
+            cameras=["left"],
+            dim=32,
+            dim_feedforward=8,
+            num_layers=2,
+            num_heads=1,
+            cam_shape=(48, 64),
+        )
+
+        batch = dummy_batch()
+        writer = MagicMock()
+        losses = m(batch, global_step=0, writer=writer)

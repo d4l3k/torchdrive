@@ -143,7 +143,7 @@ for group in params:
         flat_params.add(p)
 
 for name, p in model.named_parameters():
-    assert p in flat_params, name
+    assert p in flat_params, f"param_opts doesn't include {name}"
 
 ddp_params: Set[nn.Parameter] = set(ddp_model.parameters())
 for name, p in ddp_model.named_parameters():
