@@ -52,8 +52,6 @@ class MaskViT(nn.Module):
 
         unmasked = x
 
-        print(x.shape, mask.shape)
-
         # (n, hidden_dim, n_h, n_w) -> (n, hidden_dim, mask.sum())
         x = x[:, :, mask]
 

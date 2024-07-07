@@ -1,11 +1,12 @@
+import random
 import unittest
 from unittest.mock import MagicMock, patch
 
 import torch
 from torchdrive.data import Batch, dummy_batch
-
 from torchdrive.tasks.diff_traj import (
     DiffTraj,
+    square_mask,
     XEmbedding,
     XYEmbedding,
     XYLinearEmbedding,
@@ -114,6 +115,7 @@ class TestDiffTraj(unittest.TestCase):
 
     def test_diff_traj(self):
         torch.manual_seed(0)
+        random.seed(0)
 
         m = DiffTraj(
             cameras=["left"],
@@ -158,3 +160,18 @@ class TestDiffTraj(unittest.TestCase):
         loss.sum().backward()
         for param in m.parameters():
             self.assertIsNotNone(param.grad)
+
+    def test_square_mask(self):
+        input = torch.tensor(
+            [
+                [True, True],
+                [True, False],
+            ]
+        )
+        target = torch.tensor(
+            [[[True, True], [True, True]], [[True, False], [False, True]]]
+        )
+
+        output = square_mask(input, num_heads=3)
+        self.assertEqual(output.shape, (6, 2, 2))
+        torch.testing.assert_close(output[:2], target)

@@ -5,3 +5,4 @@ scheduler=local_cwd
 [component:dist.ddp]
 j=1x2
 script=train.py
+env=PYTHONBREAKPOINT=IPython.core.debugger.set_trace

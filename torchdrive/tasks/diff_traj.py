@@ -11,6 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context, register_log_grad_norm
 from torchdrive.data import Batch
+from torchdrive.debug import assert_not_nan, is_nan
 from torchdrive.losses import losses_backward
 from torchdrive.models.mlp import MLP
 from torchdrive.models.path import XYEncoder
@@ -25,6 +26,37 @@ from torchworld.transforms.img import (
     render_pca,
 )
 from torchworld.transforms.mask import random_block_mask, true_mask
+
+
+def square_mask(mask: torch.Tensor, num_heads: int) -> torch.Tensor:
+    """
+    Create a squared mask from a sequence mask.
+
+    Arguments:
+        mask: the sequence mask (bs, seq_len)
+        num_heads: the number of heads
+
+    Returns:
+        the squared mask (bs*num_heads, seq_len, seq_len)
+    """
+
+    bs, seq_len = mask.shape
+
+    # (bs, seq_len) -> (bs, 1, seq_len)
+    x = mask.unsqueeze(1)
+    # (bs, 1, seq_len) -> (bs, seq_len, seq_len)
+    x = x.expand(-1, seq_len, seq_len)
+
+    # (bs, seq_len) -> (bs, seq_len, 1)
+    y = mask.unsqueeze(2)
+    # (bs, seq_len, 1) -> (bs, seq_len, seq_len)
+    y = y.expand(-1, seq_len, seq_len)
+
+    mask = torch.logical_and(x, y).repeat(num_heads, 1, 1)
+
+    diagonal = torch.arange(seq_len, device=mask.device)
+    mask[:, diagonal, diagonal] = True
+    return mask
 
 
 class Denoiser(nn.Module):
@@ -58,14 +90,20 @@ class Denoiser(nn.Module):
             )
         self.layers = nn.Sequential(layers)
 
-    def forward(self, input: torch.Tensor, condition: torch.Tensor):
+    def forward(
+        self, input: torch.Tensor, input_mask: torch.Tensor, condition: torch.Tensor
+    ):
+        torch._assert(
+            input_mask.dim() == 2,
+            f"Expected (batch_size, seq_length) got {input_mask.shape}",
+        )
         torch._assert(
             input.dim() == 3,
             f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}",
         )
         torch._assert(
             condition.dim() == 3,
-            f"Expected (batch_size, seq_length, hidden_dim) got {input.shape}",
+            f"Expected (batch_size, seq_length, hidden_dim) got {condition.shape}",
         )
 
         x = input
@@ -76,8 +114,12 @@ class Denoiser(nn.Module):
         x = self.positional_embedding(x)
         x = x.flatten(-2, -1)
 
-        for layer in self.layers:
-            x = layer(x, condition)
+        attn_mask = square_mask(input_mask, num_heads=self.num_heads)
+        # True values are ignored so need to flip the mask
+        attn_mask = torch.logical_not(attn_mask)
+
+        for i, layer in enumerate(self.layers):
+            x = layer(tgt=x, tgt_mask=attn_mask, memory=condition)
 
         return x
 
@@ -501,8 +543,6 @@ class DiffTraj(nn.Module, Van):
         positions /= positions[..., -1:] + 1e-8  # perspective warp
         positions = positions[..., :2]
 
-        # losses["xy_embedding/ae"] = self.xy_embedding(positions)
-
         # calculate velocity between first two frames to allow model to understand current speed
         # TODO: convert this to a categorical embedding
         velocity = positions[:, 1] - positions[:, 0]
@@ -512,14 +552,25 @@ class DiffTraj(nn.Module, Van):
         static_features = self.static_features_encoder(velocity).unsqueeze(1)
 
         lengths = mask.sum(dim=-1)
-        pos_len = lengths.amax()
+        min_len = lengths.amin()
+        assert min_len > 0, "got example with zero sequence length"
+
+        # truncate to shortest sequence
+        # pos_len = lengths.amin()
+        # if pos_len % align != 0:
+        #    pos_len -= pos_len % align
+        # assert pos_len >= 8
+        # positions = positions[:, :pos_len]
+        # mask = mask[:, :pos_len]
 
         # we need to be aligned to size 8
+        # pad length
         align = 8
         if positions.size(1) % align != 0:
             pad = align - positions.size(1) % align
             mask = F.pad(mask, (0, pad), value=True)
             positions = F.pad(positions, (0, 0, 0, pad), value=0)
+        pos_len = positions.size(1)
 
         assert positions.size(1) % align == 0
         assert mask.size(1) % align == 0
@@ -529,7 +580,7 @@ class DiffTraj(nn.Module, Van):
 
         if writer and log_text:
             writer.add_scalar(
-                "paths/seq_len",
+                "paths/pos_len",
                 pos_len,
                 global_step=global_step,
             )
@@ -558,16 +609,16 @@ class DiffTraj(nn.Module, Van):
             # add static feature info to all condition keys to avoid noise
             input_tokens = input_tokens + static_features
 
-            pred_noise = self.denoiser(traj_embed_noise, input_tokens)
+            pred_noise = self.denoiser(traj_embed_noise, mask, input_tokens)
 
         noise_loss = F.mse_loss(pred_noise, noise, reduction="none")
         noise_loss = noise_loss[mask]
         losses["diffusion"] = noise_loss.mean()
 
-        losses["ae/with_noise"] = self.xy_embedding.loss(
-            traj_embed_noise, positions
-        ).mean()
-        losses["ae/ae"] = self.xy_embedding.loss(traj_embed, positions).mean()
+        losses["ae/with_noise"] = self.xy_embedding.loss(traj_embed_noise, positions)[
+            mask
+        ].mean()
+        losses["ae/ae"] = self.xy_embedding.loss(traj_embed, positions)[mask].mean()
 
         losses_backward(losses)
 
@@ -579,6 +630,8 @@ class DiffTraj(nn.Module, Van):
                 # generate prediction
                 self.train()
 
+                pred_len = mask[0].sum()
+
                 pred_traj = torch.randn_like(noise[:1])
                 self.eval_noise_scheduler.set_timesteps(self.num_inference_timesteps)
                 for timestep in self.eval_noise_scheduler.timesteps:
@@ -586,7 +639,7 @@ class DiffTraj(nn.Module, Van):
                         pred_traj = self.eval_noise_scheduler.scale_model_input(
                             pred_traj, timestep
                         )
-                        noise = self.denoiser(pred_traj, input_tokens[:1])
+                        noise = self.denoiser(pred_traj, mask[:1], input_tokens[:1])
                     pred_traj = self.eval_noise_scheduler.step(
                         noise,
                         timestep,
@@ -594,25 +647,33 @@ class DiffTraj(nn.Module, Van):
                         generator=torch.Generator(device=device).manual_seed(0),
                     ).prev_sample
 
-                pred_positions = self.xy_embedding.decode(pred_traj)[0].cpu()
+                pred_positions = self.xy_embedding.decode(pred_traj)[0, :pred_len].cpu()
                 plt.plot(pred_positions[..., 0], pred_positions[..., 1], label="pred")
 
                 noise_positions = self.xy_embedding.decode(traj_embed_noise[:1])[
-                    0
+                    0,
+                    :pred_len,
                 ].cpu()
                 plt.plot(
                     noise_positions[..., 0], noise_positions[..., 1], label="with_noise"
                 )
 
-                pos_positions = self.xy_embedding.decode(traj_embed[:1])[0].cpu()
+                pos_positions = self.xy_embedding.decode(traj_embed[:1])[
+                    0, :pred_len
+                ].cpu()
                 plt.plot(pos_positions[..., 0], noise_positions[..., 1], label="ae")
 
-                target = positions[0].detach().cpu()
+                target = positions[0, :pred_len].detach().cpu()
                 plt.plot(target[..., 0], target[..., 1], label="target")
 
                 writer.add_scalar(
                     "paths/pred_mae",
                     F.l1_loss(pred_positions, target).item(),
+                    global_step=global_step,
+                )
+                writer.add_scalar(
+                    "paths/pred_len",
+                    pred_len,
                     global_step=global_step,
                 )
 

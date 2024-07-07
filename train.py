@@ -60,7 +60,7 @@ else:
     device = torch.device("cpu")
 
 torch.set_float32_matmul_precision("high")
-sdpa_kernel(SDPBackend.FLASH_ATTENTION).__enter__()  # force flash attention
+# sdpa_kernel(SDPBackend.FLASH_ATTENTION).__enter__()  # force flash attention
 
 BS: int = config.batch_size
 NUM_EPOCHS: int = config.epochs
