@@ -333,7 +333,8 @@ class DiffTrajTrainConfig(DatasetConfig, OptimizerConfig):
             num_frames=self.num_frames,
         ).to(device)
 
-        freeze(model.denoiser.layers)
+        # for cam_encoder in model.encoders.values():
+        #    freeze(cam_encoder.encoder)
 
         return model
 
