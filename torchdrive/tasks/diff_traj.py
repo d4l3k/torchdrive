@@ -230,8 +230,6 @@ class XEmbedding(nn.Module):
         similarity = self._decode_ll(embedding)
         target = self._calculate_index(input)
 
-        print(similarity.shape, target.shape)
-
         return F.cross_entropy(similarity.flatten(0, -2), target.flatten())
 
 
@@ -297,7 +295,6 @@ class XYMLPEncoder(nn.Module):
         predicted = predicted.permute(0, 2, 1)
         target = target.permute(0, 2, 1)
         emb = self.decoder(predicted)
-        print(predicted.shape, target.shape, emb.shape)
         return self.embedding.loss(emb, target)
 
 
@@ -359,8 +356,13 @@ class DiffTraj(nn.Module, Van):
             nn.Linear(dim, dim),
         )
 
-        self.noise_scheduler = EulerDiscreteScheduler(num_train_timesteps=1000)
-        self.eval_noise_scheduler = EulerDiscreteScheduler(num_train_timesteps=1000)
+        self.noise_scheduler = EulerDiscreteScheduler(
+            num_train_timesteps=num_train_timesteps
+        )
+        self.noise_scheduler.set_timesteps(num_train_timesteps)
+        self.eval_noise_scheduler = EulerDiscreteScheduler(
+            num_train_timesteps=num_train_timesteps
+        )
         self.eval_noise_scheduler.set_timesteps(self.num_inference_timesteps)
 
         self.batch_transform = NormalizeCarPosition(start_frame=0)
@@ -388,6 +390,17 @@ class DiffTraj(nn.Module, Van):
                 "lr": lr,
             },
         ]
+
+    def should_log(self, global_step: int, BS: int) -> Tuple[bool, bool]:
+        log_text_interval = 1000 // BS
+        # log_text_interval = 1
+        # It's important to scale the less frequent interval off the more
+        # frequent one to avoid divisor issues.
+        log_img_interval = log_text_interval * 10
+        log_img = (global_step % log_img_interval) == 0
+        log_text = (global_step % log_text_interval) == 0
+
+        return log_img, log_text
 
     def forward(
         self,
@@ -528,8 +541,6 @@ class DiffTraj(nn.Module, Van):
         assert posmax < 1000, positions
 
         traj_embed = self.xy_embedding(positions)
-        # (bs, seq_len, dim) -> (bs, dim, seq_len)
-        traj_embed = traj_embed
 
         noise = torch.randn(traj_embed.shape, device=traj_embed.device)
         timesteps = torch.randint(
@@ -548,9 +559,10 @@ class DiffTraj(nn.Module, Van):
         noise_loss = noise_loss[mask]
         losses["diffusion"] = noise_loss.mean()
 
-        print(traj_embed_noise.shape, positions.shape)
-        losses["ae/with_noise"] = self.xy_embedding.loss(traj_embed_noise, positions)
-        losses["ae/with_pos"] = self.xy_embedding.loss(traj_embed, positions)
+        losses["ae/with_noise"] = self.xy_embedding.loss(
+            traj_embed_noise, positions
+        ).mean()
+        losses["ae/ae"] = self.xy_embedding.loss(traj_embed, positions).mean()
 
         losses_backward(losses)
 
@@ -562,15 +574,15 @@ class DiffTraj(nn.Module, Van):
                 # generate prediction
                 self.train()
 
-                self.noise_scheduler.set_timesteps(self.num_inference_timesteps)
                 pred_traj = torch.randn_like(noise[:1])
+                self.eval_noise_scheduler.set_timesteps(self.num_inference_timesteps)
                 for timestep in self.eval_noise_scheduler.timesteps:
                     with autocast():
-                        pred_traj = self.noise_scheduler.scale_model_input(
+                        pred_traj = self.eval_noise_scheduler.scale_model_input(
                             pred_traj, timestep
                         )
                         noise = self.denoiser(pred_traj, input_tokens[:1])
-                    pred_traj = self.noise_scheduler.step(
+                    pred_traj = self.eval_noise_scheduler.step(
                         noise,
                         timestep,
                         pred_traj,
@@ -579,6 +591,16 @@ class DiffTraj(nn.Module, Van):
 
                 pred_positions = self.xy_embedding.decode(pred_traj)[0].cpu()
                 plt.plot(pred_positions[..., 0], pred_positions[..., 1], label="pred")
+
+                noise_positions = self.xy_embedding.decode(traj_embed_noise[:1])[
+                    0
+                ].cpu()
+                plt.plot(
+                    noise_positions[..., 0], noise_positions[..., 1], label="with_noise"
+                )
+
+                pos_positions = self.xy_embedding.decode(traj_embed[:1])[0].cpu()
+                plt.plot(pos_positions[..., 0], noise_positions[..., 1], label="ae")
 
                 target = positions[0].detach().cpu()
                 plt.plot(target[..., 0], target[..., 1], label="target")
