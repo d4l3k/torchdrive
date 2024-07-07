@@ -9,6 +9,7 @@ from torchdrive.tasks.diff_traj import (
     XEmbedding,
     XYEmbedding,
     XYLinearEmbedding,
+    XYMLPEncoder,
 )
 
 
@@ -121,8 +122,39 @@ class TestDiffTraj(unittest.TestCase):
             num_layers=2,
             num_heads=1,
             cam_shape=(48, 64),
+            num_inference_timesteps=2,
         )
 
         batch = dummy_batch()
         writer = MagicMock()
         losses = m(batch, global_step=0, writer=writer)
+
+    def test_xy_mlp_encoder(self):
+        torch.manual_seed(0)
+
+        m = XYMLPEncoder(
+            dim=32,
+            max_dist=1.0,
+        )
+
+        input = torch.tensor(
+            [
+                (0.0, 0.0),
+                (1.0, 0.0),
+                (0.0, 1.0),
+                (-1.0, 0.0),
+                (0.0, -1.0),
+            ]
+        ).unsqueeze(0)
+
+        out = m(input)
+        self.assertEqual(out.shape, (1, 5, 32))
+
+        decoded = m.decode(out)
+        self.assertEqual(decoded.shape, (1, 5, 2))
+
+        loss = m.loss(out, input)
+        self.assertEqual(loss.shape, (1, 5))
+        loss.sum().backward()
+        for param in m.parameters():
+            self.assertIsNotNone(param.grad)

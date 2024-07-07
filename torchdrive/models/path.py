@@ -53,6 +53,16 @@ class XYEncoder(nn.Module):
         y = F.one_hot(y, self.num_buckets).float()
         return torch.cat((x, y), dim=2).permute(0, 2, 1)
 
+    def forward(self, xy: torch.Tensor) -> torch.Tensor:
+        """
+        Encodes the xy coordinates into one hot encoding.
+
+        Returns
+        -------
+        xy: [bs, 2, seq_len]
+        """
+        return self.encode_one_hot(xy)
+
     def decode(self, xy: torch.Tensor) -> torch.Tensor:
         """
         Decodes from logit/probabilities one hot encoding.

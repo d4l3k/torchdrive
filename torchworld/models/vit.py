@@ -42,6 +42,8 @@ class MaskViT(nn.Module):
 
         x = x + self.encoder.encoder.pos_embedding
 
+        unmasked = x
+
         # (n, hidden_dim, n_h, n_w) -> (n, hidden_dim, mask.sum())
         x = x[:, :, mask]
 
@@ -54,4 +56,4 @@ class MaskViT(nn.Module):
         x = self.encoder.encoder.ln(
             self.encoder.encoder.layers(self.encoder.encoder.dropout(x))
         )
-        return self.project(x)
+        return unmasked, self.project(x)
