@@ -10,7 +10,7 @@ CONFIG = DiffTrajTrainConfig(
     num_encode_frames=1,
     cam_shape=(480, 640),
     # optimizer settings
-    epochs=20,
+    epochs=200,
     lr=1e-4,
     grad_clip=1.0,
     step_size=1000,

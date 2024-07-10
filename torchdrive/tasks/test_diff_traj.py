@@ -11,6 +11,7 @@ from torchdrive.tasks.diff_traj import (
     XYEmbedding,
     XYLinearEmbedding,
     XYMLPEncoder,
+    XYSineMLPEncoder,
 )
 
 
@@ -137,6 +138,36 @@ class TestDiffTraj(unittest.TestCase):
         m = XYMLPEncoder(
             dim=32,
             max_dist=1.0,
+        )
+
+        input = torch.tensor(
+            [
+                (0.0, 0.0),
+                (1.0, 0.0),
+                (0.0, 1.0),
+                (-1.0, 0.0),
+                (0.0, -1.0),
+            ]
+        ).unsqueeze(0)
+
+        out = m(input)
+        self.assertEqual(out.shape, (1, 5, 32))
+
+        decoded = m.decode(out)
+        self.assertEqual(decoded.shape, (1, 5, 2))
+
+        loss = m.loss(out, input)
+        self.assertEqual(loss.shape, (1, 5))
+        loss.sum().backward()
+        for param in m.parameters():
+            self.assertIsNotNone(param.grad)
+
+    def test_xy_sine_mlp_encoder(self):
+        torch.manual_seed(0)
+
+        m = XYSineMLPEncoder(
+            dim=32,
+            max_dist=128.0,
         )
 
         input = torch.tensor(
