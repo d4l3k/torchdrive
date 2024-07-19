@@ -2,6 +2,7 @@ import unittest
 from dataclasses import fields, replace
 
 import torch
+from torchvision.transforms import v2
 
 from torchdrive.data import Batch, dummy_batch
 from torchdrive.transforms.batch import (
@@ -12,6 +13,7 @@ from torchdrive.transforms.batch import (
     NormalizeCarPosition,
     RandomRotation,
     RandomTranslation,
+    ImageTransform,
 )
 
 
@@ -92,3 +94,12 @@ class TestBatchTransforms(unittest.TestCase):
         new_pos = out.cam_T[:, 1].matmul(zero)
         new_pos /= new_pos[:, 3:4]  # normalize w
         torch.testing.assert_close(new_pos, zero)
+
+    def test_image_transform(self) -> None:
+        transform = ImageTransform(
+            v2.RandomHorizontalFlip(),
+            v2.RandomVerticalFlip(),
+        )
+        batch = dummy_batch()
+        out = transform(batch)
+        assert_dimensions_same(batch, out)

@@ -89,7 +89,7 @@ else:
     writer = None
 
 
-dataset: Dataset = config.create_dataset(smoke=args.smoke)
+dataset, test_dataset = config.create_dataset(smoke=args.smoke)
 
 if RANK == 0:
     # pyre-fixme[6]: len
@@ -254,6 +254,27 @@ dataloader = DataLoader[Batch](
     sampler=sampler,
 )
 collator = TransferCollator(dataloader, batch_size=config.batch_size, device=device)
+
+if test_dataset is not None:
+    test_sampler: DistributedSampler[Dataset] = DistributedSampler(
+        test_dataset,
+        num_replicas=WORLD_SIZE,
+        rank=RANK,
+        shuffle=True,
+        drop_last=True,
+        seed=binascii.crc32((args.load or args.output).encode("utf-8")) + global_step,
+    )
+    test_dataloader = DataLoader[Batch](
+        dataset,
+        batch_size=None,
+        num_workers=config.num_workers,
+        # drop_last=True,
+        # collate_fn=nonstrict_collate,
+        prefetch_factor=1,
+        pin_memory=True,
+        sampler=sampler,
+    )
+    test_collator = TransferCollator(dataloader, batch_size=config.batch_size, device=device)
 
 
 meaned_losses: Dict[str, torchmetrics.aggregation.MeanMetric] = defaultdict(

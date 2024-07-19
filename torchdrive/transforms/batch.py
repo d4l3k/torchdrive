@@ -6,6 +6,7 @@ import torch
 
 from torchdrive.data import Batch
 from torchdrive.transforms.mat import random_translation, random_z_rotation
+from torchvision.transforms import v2
 
 
 class BatchTransform(ABC):
@@ -140,3 +141,18 @@ class RandomTranslation(BatchTransform):
             cam_T=cam_T,
             long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
         )
+
+class ImageTransform(BatchTransform):
+    """
+    ImageTransform applies a random z rotation around the origin to the car
+    position transform.
+    """
+
+    def __init__(self, *transform: v2.Transform) -> None:
+        self.transform = v2.Compose(transform)
+
+    def __call__(self, batch: Batch) -> Batch:
+        new_color = {}
+        for key, color in batch.color.items():
+            new_color[key] = self.transform(color)
+        return replace(batch, color=new_color)

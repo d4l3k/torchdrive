@@ -11,6 +11,7 @@ from diffusers import EulerDiscreteScheduler
 from safetensors.torch import load_model
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
+from torchvision.transforms import v2
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context, register_log_grad_norm
 from torchdrive.data import Batch
@@ -20,7 +21,11 @@ from torchdrive.models.mlp import MLP
 from torchdrive.models.path import XYEncoder
 from torchdrive.tasks.van import Van
 from torchdrive.tasks.context import Context
-from torchdrive.transforms.batch import NormalizeCarPosition
+from torchdrive.transforms.batch import (
+    NormalizeCarPosition,
+    ImageTransform,
+    Compose,
+)
 from torchtune.modules import RotaryPositionalEmbeddings
 from torchworld.models.vit import MaskViT
 from torchworld.transforms.img import (
@@ -767,7 +772,13 @@ class DiffTraj(nn.Module, Van):
         self.eval_noise_scheduler.set_timesteps(self.num_inference_timesteps)
         """
 
-        self.batch_transform = NormalizeCarPosition(start_frame=0)
+        self.batch_transform = Compose(
+            NormalizeCarPosition(start_frame=0),
+            ImageTransform(
+                v2.RandomRotation(15),
+                v2.RandomErasing(),
+            ),
+        )
 
     def param_opts(self, lr: float) -> List[Dict[str, object]]:
         """
@@ -844,6 +855,7 @@ class DiffTraj(nn.Module, Van):
             output=output,
             start_frame=0,
             weights=1,
+            scaler=None,
         )
 
         for cam in self.cameras:
@@ -852,7 +864,6 @@ class DiffTraj(nn.Module, Van):
                 ctx.add_image(
                     f"{cam}/color",
                     normalize_img(feats[0, 0]),
-                    global_step=global_step,
                 )
 
         """
@@ -877,13 +888,11 @@ class DiffTraj(nn.Module, Van):
                 ctx.add_scalar(
                     f"{cam}/count",
                     mask.long().sum(),
-                    global_step=global_step,
                 )
             if writer is not None and log_img:
                 ctx.add_image(
                     f"{cam}/mask",
                     render_color(mask),
-                    global_step=global_step,
                 )
 
             with autocast():
@@ -901,12 +910,10 @@ class DiffTraj(nn.Module, Van):
                 ctx.add_image(
                     f"{cam}/color",
                     normalize_img(feats[0, 0]),
-                    global_step=global_step,
                 )
                 ctx.add_image(
                     f"{cam}/pca",
                     render_pca(unmasked[0].permute(1, 2, 0)),
-                    global_step=global_step,
                 )
 
             if writer is not None and log_text:
@@ -915,7 +922,6 @@ class DiffTraj(nn.Module, Van):
                     writer=writer,
                     key="gradnorm/cam-encoder",
                     tag=cam,
-                    global_step=global_step,
                 )
 
             # (n, seq_len, hidden_dim) -> (bs, num_encode_frames, seq_len, hidden_dim)
@@ -988,12 +994,10 @@ class DiffTraj(nn.Module, Van):
             ctx.add_scalar(
                 "paths/pos_len",
                 pos_len,
-                global_step=global_step,
             )
             ctx.add_scalar(
                 "paths/num_elements",
                 num_elements,
-                global_step=global_step,
             )
 
         posmax = positions.abs().amax()
@@ -1022,7 +1026,6 @@ class DiffTraj(nn.Module, Van):
                     "embed_with_noise": torch.linalg.vector_norm(traj_embed_noise, dim=-1).mean().cpu(),
                     "noise": torch.linalg.vector_norm(noise, dim=-1).mean().cpu(),
                 },
-                global_step=global_step,
             )
         """
 
@@ -1064,7 +1067,6 @@ class DiffTraj(nn.Module, Van):
             # ctx.add_scalar(
             #    "ae/ae",
             #    ae_loss.mean().cpu(),
-            #    global_step=global_step,
             # )
 
             size = min(pred_traj.size(1), positions.size(1))
@@ -1075,7 +1077,6 @@ class DiffTraj(nn.Module, Van):
                 .mean()
                 .cpu()
                 .item(),
-                global_step=global_step,
             )
 
         if self.training:
@@ -1137,7 +1138,6 @@ class DiffTraj(nn.Module, Van):
                 ctx.add_scalar(
                     "paths/pred_len",
                     pred_len,
-                    global_step=global_step,
                 )
 
                 self.eval()
@@ -1147,7 +1147,6 @@ class DiffTraj(nn.Module, Van):
             ctx.add_figure(
                 "paths/target",
                 fig,
-                global_step=global_step,
             )
 
         return losses
