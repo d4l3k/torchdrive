@@ -132,6 +132,15 @@ class TestDiffTraj(unittest.TestCase):
         writer = MagicMock()
         losses = m(batch, global_step=0, writer=writer)
 
+        param_opts = m.param_opts(1)
+        all_params = set()
+        for group in param_opts:
+            for param in group["params"]:
+                all_params.add(param)
+
+        for name, param in m.named_parameters():
+            self.assertIn(param, all_params, name)
+
     def test_xy_mlp_encoder(self):
         torch.manual_seed(0)
 

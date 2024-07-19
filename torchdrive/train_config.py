@@ -24,14 +24,16 @@ class DatasetConfig:
 
     # dataset only params
     dataset: Datasets
-    dataset_path: str
+    train_dataset_path: str
+    test_dataset_path: str
     mask_path: str
     batch_size: int
     num_workers: int
     autolabel_path: str
     autolabel: bool
 
-    def create_dataset(self, smoke: bool = False) -> Dataset:
+    def create_dataset(self, smoke: bool = False) -> Tuple[Dataset, Optional[Dataset]]:
+        test_dataset = None
         if self.dataset == Datasets.RICE:
             from torchdrive.datasets.rice import MultiCamDataset
 
@@ -50,8 +52,14 @@ class DatasetConfig:
             from torchdrive.datasets.nuscenes_dataset import NuscenesDataset
 
             dataset = NuscenesDataset(
-                data_dir=self.dataset_path,
+                data_dir=self.train_dataset_path,
                 version="v1.0-mini" if smoke else "v1.0-trainval",
+                lidar=False,
+                num_frames=self.num_frames,
+            )
+            test_dataset = NuscenesDataset(
+                data_dir=self.train_dataset_path,
+                version="v1.0-mini" if smoke else "v1.0-test",
                 lidar=False,
                 num_frames=self.num_frames,
             )
@@ -67,10 +75,13 @@ class DatasetConfig:
             from torchdrive.datasets.autolabeler import AutoLabeler
 
             dataset = AutoLabeler(dataset, path=self.autolabel_path)
+            if test_dataset is not None:
+                test_dataset = AutoLabeler(test_dataset, path=self.autolabel_path)
 
         for cam in self.cameras:
             assert cam in dataset.cameras, "invalid camera"
-        return dataset
+
+        return dataset, test_dataset
 
 
 @dataclass
@@ -333,8 +344,8 @@ class DiffTrajTrainConfig(DatasetConfig, OptimizerConfig):
             num_frames=self.num_frames,
         ).to(device)
 
-        for cam_encoder in model.encoders.values():
-            cam_encoder.freeze_pretrained_weights()
+        #for cam_encoder in model.encoders.values():
+        #    cam_encoder.freeze_pretrained_weights()
 
         return model
 
