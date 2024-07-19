@@ -24,8 +24,7 @@ class DatasetConfig:
 
     # dataset only params
     dataset: Datasets
-    train_dataset_path: str
-    test_dataset_path: str
+    dataset_path: str
     mask_path: str
     batch_size: int
     num_workers: int
@@ -52,13 +51,13 @@ class DatasetConfig:
             from torchdrive.datasets.nuscenes_dataset import NuscenesDataset
 
             dataset = NuscenesDataset(
-                data_dir=self.train_dataset_path,
+                data_dir=self.dataset_path,
                 version="v1.0-mini" if smoke else "v1.0-trainval",
                 lidar=False,
                 num_frames=self.num_frames,
             )
             test_dataset = NuscenesDataset(
-                data_dir=self.train_dataset_path,
+                data_dir=self.dataset_path,
                 version="v1.0-mini" if smoke else "v1.0-test",
                 lidar=False,
                 num_frames=self.num_frames,

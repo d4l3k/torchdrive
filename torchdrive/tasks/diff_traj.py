@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from diffusers import EulerDiscreteScheduler
 from safetensors.torch import load_model
 from torch import nn
+from torchvision.transforms.functional import InterpolationMode
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms import v2
 from torchdrive.amp import autocast
@@ -621,7 +622,7 @@ class XYSineMLPEncoder(nn.Module):
 
 
 class ConvNextPathPred(nn.Module):
-    def __init__(self, dim: int = 256, max_seq_len: int = 18, pool_size: int = 4):
+    def __init__(self, dim: int = 256, max_seq_len: int = 18, pool_size: int = 4, num_traj: int = 6, dropout: float = 0.1):
         super().__init__()
 
         from torchvision.models.convnext import convnext_base, ConvNeXt_Base_Weights
@@ -630,7 +631,7 @@ class ConvNextPathPred(nn.Module):
         self.max_seq_len = max_seq_len
         # [x, y, log_std1, log_std2, rho]
         self.traj_size = 5
-        self.num_traj = 5
+        self.num_traj = num_traj
 
         self.encoder = convnext_base(
             weights=ConvNeXt_Base_Weights.IMAGENET1K_V1,
@@ -641,14 +642,17 @@ class ConvNextPathPred(nn.Module):
         self.static_features_encoder = nn.Sequential(
             nn.Linear(1, dim),
             nn.ReLU(inplace=True),
+            nn.Dropout(p=dropout),
             nn.Linear(dim, dim),
         )
 
         self.decoder = nn.Sequential(
             nn.Linear(enc_dim * pool_size * pool_size + dim, max_seq_len * dim),
             nn.ReLU(inplace=True),
+            nn.Dropout(p=dropout),
             nn.Linear(max_seq_len * dim, max_seq_len * dim),
             nn.ReLU(inplace=True),
+            nn.Dropout(p=dropout),
             nn.Linear(max_seq_len * dim, max_seq_len * self.num_traj * self.traj_size + self.num_traj),
         )
 
@@ -775,7 +779,7 @@ class DiffTraj(nn.Module, Van):
         self.batch_transform = Compose(
             NormalizeCarPosition(start_frame=0),
             ImageTransform(
-                v2.RandomRotation(15),
+                v2.RandomRotation(15, InterpolationMode.BILINEAR),
                 v2.RandomErasing(),
             ),
         )
@@ -854,7 +858,7 @@ class DiffTraj(nn.Module, Van):
             writer=writer,
             output=output,
             start_frame=0,
-            weights=1,
+            weights=None,
             scaler=None,
         )
 
@@ -1088,7 +1092,6 @@ class DiffTraj(nn.Module, Van):
                 fig = plt.figure()
 
                 # generate prediction
-                self.train()
 
                 """
                 pred_traj = torch.randn_like(noise[:1]) / self.noise_scale
@@ -1139,8 +1142,6 @@ class DiffTraj(nn.Module, Van):
                     "paths/pred_len",
                     pred_len,
                 )
-
-                self.eval()
 
             fig.legend()
             plt.gca().set_aspect("equal")
