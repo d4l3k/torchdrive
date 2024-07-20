@@ -1,7 +1,7 @@
+import math
 import os.path
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
-import math
 
 import matplotlib.pyplot as plt
 
@@ -10,9 +10,7 @@ import torch.nn.functional as F
 from diffusers import EulerDiscreteScheduler
 from safetensors.torch import load_model
 from torch import nn
-from torchvision.transforms.functional import InterpolationMode
 from torch.utils.tensorboard import SummaryWriter
-from torchvision.transforms import v2
 from torchdrive.amp import autocast
 from torchdrive.autograd import autograd_context, register_log_grad_norm
 from torchdrive.data import Batch
@@ -20,14 +18,13 @@ from torchdrive.debug import assert_not_nan, is_nan
 from torchdrive.losses import losses_backward
 from torchdrive.models.mlp import MLP
 from torchdrive.models.path import XYEncoder
-from torchdrive.tasks.van import Van
+from torchdrive.models.transformer import transformer_init
 from torchdrive.tasks.context import Context
-from torchdrive.transforms.batch import (
-    NormalizeCarPosition,
-    ImageTransform,
-    Compose,
-)
+from torchdrive.tasks.van import Van
+from torchdrive.transforms.batch import Compose, ImageTransform, NormalizeCarPosition
 from torchtune.modules import RotaryPositionalEmbeddings
+from torchvision.transforms import v2
+from torchvision.transforms.functional import InterpolationMode
 from torchworld.models.vit import MaskViT
 from torchworld.transforms.img import (
     normalize_img,
@@ -36,7 +33,6 @@ from torchworld.transforms.img import (
     render_pca,
 )
 from torchworld.transforms.mask import random_block_mask, true_mask
-from torchdrive.models.transformer import transformer_init
 
 
 def square_mask(mask: torch.Tensor, num_heads: int) -> torch.Tensor:
@@ -622,7 +618,14 @@ class XYSineMLPEncoder(nn.Module):
 
 
 class ConvNextPathPred(nn.Module):
-    def __init__(self, dim: int = 256, max_seq_len: int = 18, pool_size: int = 4, num_traj: int = 6, dropout: float = 0.1):
+    def __init__(
+        self,
+        dim: int = 256,
+        max_seq_len: int = 18,
+        pool_size: int = 4,
+        num_traj: int = 6,
+        dropout: float = 0.1,
+    ):
         super().__init__()
 
         from torchvision.models.convnext import convnext_base, ConvNeXt_Base_Weights
@@ -653,15 +656,18 @@ class ConvNextPathPred(nn.Module):
             nn.Linear(max_seq_len * dim, max_seq_len * dim),
             nn.ReLU(inplace=True),
             nn.Dropout(p=dropout),
-            nn.Linear(max_seq_len * dim, max_seq_len * self.num_traj * self.traj_size + self.num_traj),
+            nn.Linear(
+                max_seq_len * dim,
+                max_seq_len * self.num_traj * self.traj_size + self.num_traj,
+            ),
         )
 
     def forward(
-        self, 
-        static_features: torch.Tensor, 
+        self,
+        static_features: torch.Tensor,
         color: torch.Tensor,
         target: torch.Tensor,
-        mask: torch.Tensor
+        mask: torch.Tensor,
     ) -> torch.Tensor:
         # take first frame
         with autocast():
@@ -677,10 +683,12 @@ class ConvNextPathPred(nn.Module):
 
         embed = self.decoder(combined)
 
-        traj_classes = embed[:, :self.num_traj]
- 
-        pred_traj = embed[:, self.num_traj:]
-        pred_traj = pred_traj.unflatten(1, (self.num_traj, self.max_seq_len, self.traj_size))
+        traj_classes = embed[:, : self.num_traj]
+
+        pred_traj = embed[:, self.num_traj :]
+        pred_traj = pred_traj.unflatten(
+            1, (self.num_traj, self.max_seq_len, self.traj_size)
+        )
 
         length = min(self.max_seq_len, target.shape[1])
 
@@ -688,13 +696,18 @@ class ConvNextPathPred(nn.Module):
         target = target[:, :length]
         mask = mask[:, :length]
 
-        traj_loss, nearest_mode, nearest_trajs = nll_loss_gmm_direct(pred_traj, target, mask)
+        traj_loss, nearest_mode, nearest_trajs = nll_loss_gmm_direct(
+            pred_traj, target, mask
+        )
 
-        class_loss = F.cross_entropy(traj_classes, nearest_mode)
+        class_loss = F.cross_entropy(traj_classes, nearest_mode, reduction="none")
+
+        assert traj_loss.numel() > 1
+        assert class_loss.numel() > 1
 
         losses = {
-            "paths/best": traj_loss.mean(),
-            "paths/class": class_loss.mean(),
+            "paths/best": traj_loss,
+            "paths/class": class_loss,
         }
 
         return losses, nearest_trajs[..., :2], pred_traj
@@ -858,7 +871,7 @@ class DiffTraj(nn.Module, Van):
             writer=writer,
             output=output,
             start_frame=0,
-            weights=None,
+            weights=batch.weight,
             scaler=None,
         )
 
@@ -1055,7 +1068,9 @@ class DiffTraj(nn.Module, Van):
         # pred_loss, pred_traj, all_pred_traj = self.xy_embedding.loss(pred_embed, positions, mask)
 
         cam = self.cameras[0]
-        pred_losses, pred_traj, all_pred_traj = self.model(velocity, batch.color[cam], positions, mask)
+        pred_losses, pred_traj, all_pred_traj = self.model(
+            velocity, batch.color[cam], positions, mask
+        )
         losses.update(pred_losses)
 
         pred_len = min(pred_traj.size(1), mask[0].sum().item())
@@ -1077,7 +1092,9 @@ class DiffTraj(nn.Module, Van):
 
             ctx.add_scalar(
                 "paths/pred_mae",
-                F.l1_loss(pred_traj[:, :size], positions[:, :size], reduction="none")[mask[:, :size]]
+                F.l1_loss(pred_traj[:, :size], positions[:, :size], reduction="none")[
+                    mask[:, :size]
+                ]
                 .mean()
                 .cpu()
                 .item(),

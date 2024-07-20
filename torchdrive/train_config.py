@@ -45,6 +45,13 @@ class DatasetConfig:
                 # 3 encode frames, 3 decode frames, overlap last frame
                 nframes_per_point=self.num_frames,
             )
+        elif self.dataset == Datasets.EXPORTED:
+            from torchdrive.datasets.exported import ExportedDataset
+
+            dataset = ExportedDataset(
+                path=self.dataset_path,
+                cameras=self.cameras,
+            )
         elif self.dataset == Datasets.NUSCENES:
             from torchdrive.datasets.nuscenes_dataset import NuscenesDataset
 

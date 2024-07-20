@@ -230,7 +230,8 @@ class Batch:
         with open(path, "rb") as f:
             buf = f.read()
 
-        buf = zstd.uncompress(buf)
+        if path.endswith(".zst"):
+            buf = zstd.uncompress(buf)
         buffer = io.BytesIO(buf)
         data = torch.load(buffer, weights_only=True)
 
@@ -349,6 +350,7 @@ _COLLATE_FIELDS: Mapping[str, Callable[[object], object]] = {
     "lidar": _collate_lidar,
     "token": _collate_token,
     "sem_seg": _collate_optional,
+    "lidar_T": _collate_optional,
     "det": _collate_det,
 }
 
@@ -367,14 +369,17 @@ def collate(
             raise RuntimeError(f"not enough data in batch, BS={BS}")
         return None
 
-    return Batch(
-        **{
-            field.name: _COLLATE_FIELDS.get(field.name, default_collate)(
+    kwargs = {}
+    for field in fields(Batch):
+        try:
+            kwargs[field.name] = _COLLATE_FIELDS.get(field.name, default_collate)(
                 [getattr(b, field.name) for b in batch]
             )
-            for field in fields(Batch)
-        }
-    )
+        except Exception as e:
+            print(f"failed to collate {field.name}: {e}")
+            raise
+
+    return Batch(**kwargs)
 
 
 def nonstrict_collate(batch: List[Optional[Batch]]) -> Optional[Batch]:

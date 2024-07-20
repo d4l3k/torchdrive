@@ -16,6 +16,7 @@ class Datasets(StrEnum):
     RICE = "rice"
     NUSCENES = "nuscenes"
     DUMMY = "dummy"
+    EXPORTED = "exported"
 
 
 class Dataset(TorchDataset, ABC):
