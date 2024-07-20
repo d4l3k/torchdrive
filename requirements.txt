@@ -33,3 +33,5 @@ pandas
 pythreejs
 lintrunner
 lintrunner-adapters
+torchtune
+diffusers

@@ -18,6 +18,7 @@ import torch
 from av.filter import Graph
 from PIL import Image
 from torch import Tensor
+from tqdm import tqdm
 
 from torchdrive.data import Batch
 from torchdrive.datasets.dataset import Dataset, Datasets
@@ -41,6 +42,8 @@ def compute_bin(v: float, bins: List[int]) -> int:
 
 
 def bin_weights(bins: Dict[int, int]) -> Dict[int, float]:
+    assert len(bins) > 0, "got empty list of bins"
+
     mean = sum(bins.values()) / len(bins)
     return {k: mean / v for k, v in bins.items()}
 
@@ -120,6 +123,7 @@ class MultiCamDataset(Dataset):
         "rightrepeater": ["backup", "rightpillar"],
         "backup": ["leftrepeater", "rightrepeater"],
     }
+    cameras: List[str] = list(CAMERA_OVERLAP)
 
     def __init__(
         self,
@@ -140,12 +144,16 @@ class MultiCamDataset(Dataset):
         self.nframes_per_point = nframes_per_point
         self.dtype = dtype
 
+        for cam in cameras:
+            assert cam in self.CAMERA_OVERLAP, f"unknown camera {cam}"
         self.cameras = cameras
 
         self.per_path_frame_count: Dict[str, int] = {}
 
         root = os.path.dirname(index_file)
         indexes = glob.glob(os.path.join(root, "*", "info_noradar.json"))
+
+        assert len(indexes) > 0
 
         self.path_heading_bin: Dict[str, int] = {}
         self.speed_bins: Dict[int, int] = defaultdict(lambda: 0)
@@ -157,7 +165,7 @@ class MultiCamDataset(Dataset):
             DROP_LAST_N += 30
         MIN_DIST_M = 10
 
-        for path in indexes:
+        for path in tqdm(indexes, "indexing"):
             path = os.path.dirname(path)
             infos = self._get_raw_infos(path, 0, -1)
             if infos is None or len(infos) == 0:
@@ -167,7 +175,8 @@ class MultiCamDataset(Dataset):
                 for camera in self.cameras:
                     _, _, offsets, _ = self._load_offsets(path, camera)
                     frame_counts.append(len(offsets))
-            except FileNotFoundError:
+            except FileNotFoundError as e:
+                print(e)
                 continue
             frame_count = min(frame_counts)
             infos = infos[:frame_count]
@@ -428,6 +437,9 @@ class MultiCamDataset(Dataset):
             print(e)
         except av.error.MemoryError as e:
             print(e)
+        except Exception as e:
+            print(e)
+            raise
 
     def _get_alignment(self, path: str) -> Dict[str, int]:
         path = os.path.join(path, "alignment.json")
@@ -552,17 +564,19 @@ class MultiCamDataset(Dataset):
             Ks[label] = K
             # out["inv_K", label] = K.pinverse()
             Ts[label] = T
-            colors[label] = torch.stack(color).to(self.dtype)
+
+            frame_colors = torch.stack(color).to(self.dtype)
+            if self.transform is not None:
+                frame_colors = self.transform(frame_colors)
+            colors[label] = frame_colors
             masks[label] = mask.to(self.dtype)
 
         for camera in self.cameras:
             load(camera, frames)
 
         path_base = os.path.basename(path)
-        # pyre-fixme[10]: Name `frame` is used but not defined.
-        tokens = [f"{path_base}_{frame}" for i in frames]
+        tokens = [f"{path_base}_{i}" for i in frames]
 
-        # pyre-fixme[20]: Argument `lidar_T` expected.
         return Batch(
             weight=torch.tensor(self.heading_weights[self.path_heading_bin[path]]),
             K=Ks,
@@ -575,4 +589,5 @@ class MultiCamDataset(Dataset):
             frame_T=frame_T,
             frame_time=frame_time,
             token=[tokens],
+            lidar_T=None,
         )

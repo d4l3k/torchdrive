@@ -44,8 +44,6 @@ class DatasetConfig:
                 cam_shape=self.cam_shape,
                 # 3 encode frames, 3 decode frames, overlap last frame
                 nframes_per_point=self.num_frames,
-                # pyre-fixme[16]: `TrainConfig` has no attribute `limit_size`.
-                limit_size=self.limit_size,
             )
         elif self.dataset == Datasets.NUSCENES:
             from torchdrive.datasets.nuscenes_dataset import NuscenesDataset

@@ -1,5 +1,7 @@
 import unittest
 from dataclasses import replace
+import tempfile
+import os.path
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -162,3 +164,14 @@ class TestData(unittest.TestCase):
         self.assertEqual(mask.shape, (2, 1, 48, 64))
         torch.testing.assert_allclose(img.time, batch.frame_time[:, 1])
         self.assertFalse(img.camera.in_ndc())
+
+    def test_save_load(self) -> None:
+        batch = dummy_batch()
+
+        with tempfile.TemporaryDirectory("torchdrive-test_data") as path:
+            file_path = os.path.join(path, "file.pt.zstd")
+            batch.save(file_path)
+
+            out = Batch.load(file_path)
+
+        self.assertIsNotNone(out)

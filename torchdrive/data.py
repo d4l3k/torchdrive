@@ -1,7 +1,8 @@
 import random
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, asdict
+import io
 from typing import (
     Callable,
     Dict,
@@ -15,6 +16,7 @@ from typing import (
     Union,
 )
 
+import zstd
 import torch
 from torch.utils.data import DataLoader, default_collate
 
@@ -23,7 +25,6 @@ from torchworld.structures.grid import GridImage
 from torchworld.structures.points import Points
 
 from torchdrive.render.raymarcher import CustomPerspectiveCameras
-
 
 @dataclass(frozen=True)
 class Batch:
@@ -206,6 +207,33 @@ class Batch:
         [batch_size, 4, 4]
         """
         return self.car_to_world(0).matmul(self.lidar_T)
+
+    def save(self, path: str, compress_level: int = 3, threads: int = 1) -> None:
+        """
+        Saves the batch to the specified path.
+        """
+        data = asdict(self)
+
+        buffer = io.BytesIO()
+        torch.save(data, buffer)
+        buffer.seek(0)
+        buf = buffer.read()
+        buf = zstd.compress(buf, compress_level, threads)
+
+        with open(path, "wb") as f:
+            f.write(buf)
+
+    @classmethod
+    def load(cls, path: str) -> None:
+        with open(path, "rb") as f:
+            buf = f.read()
+
+        buf = zstd.uncompress(buf)
+        buffer = io.BytesIO(buf)
+        data = torch.load(buffer, weights_only=True)
+
+        return cls(**data)
+
 
 
 def _rand_det_target() -> torch.Tensor:
