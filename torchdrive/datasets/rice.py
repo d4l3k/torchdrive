@@ -18,12 +18,12 @@ import torch
 from av.filter import Graph
 from PIL import Image
 from torch import Tensor
-from tqdm import tqdm
 
 from torchdrive.data import Batch
 from torchdrive.datasets.dataset import Dataset, Datasets
 from torchdrive.transforms.mat import transformation_from_parameters
 from torchvision import transforms
+from tqdm import tqdm
 
 av.logging.set_level(logging.DEBUG)  # pyre-fixme
 

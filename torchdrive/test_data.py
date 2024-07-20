@@ -1,7 +1,7 @@
+import os.path
+import tempfile
 import unittest
 from dataclasses import replace
-import tempfile
-import os.path
 
 import torch
 from torch.utils.data import DataLoader, Dataset

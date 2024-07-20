@@ -1,8 +1,8 @@
+import io
 import random
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import dataclass, fields, asdict
-import io
+from dataclasses import asdict, dataclass, fields
 from typing import (
     Callable,
     Dict,
@@ -16,8 +16,9 @@ from typing import (
     Union,
 )
 
-import zstd
 import torch
+
+import zstd
 from torch.utils.data import DataLoader, default_collate
 
 from torchworld.structures.cameras import CamerasBase
@@ -25,6 +26,7 @@ from torchworld.structures.grid import GridImage
 from torchworld.structures.points import Points
 
 from torchdrive.render.raymarcher import CustomPerspectiveCameras
+
 
 @dataclass(frozen=True)
 class Batch:
@@ -233,7 +235,6 @@ class Batch:
         data = torch.load(buffer, weights_only=True)
 
         return cls(**data)
-
 
 
 def _rand_det_target() -> torch.Tensor:

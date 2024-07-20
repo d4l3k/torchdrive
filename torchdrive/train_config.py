@@ -341,7 +341,7 @@ class DiffTrajTrainConfig(DatasetConfig, OptimizerConfig):
             num_frames=self.num_frames,
         ).to(device)
 
-        #for cam_encoder in model.encoders.values():
+        # for cam_encoder in model.encoders.values():
         #    cam_encoder.freeze_pretrained_weights()
 
         return model

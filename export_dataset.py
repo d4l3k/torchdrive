@@ -1,8 +1,9 @@
 import argparse
+import dataclasses
 import os
 from multiprocessing.pool import ThreadPool
 from typing import Dict
-import dataclasses
+
 import zstd
 
 from tqdm import tqdm
@@ -18,13 +19,13 @@ import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from torchvision.utils import save_image
-from torchvision.transforms import v2
 
 from torchdrive.data import Batch, TransferCollator
 from torchdrive.datasets.autolabeler import AutoLabeler, LabelType, save_tensors
 from torchdrive.datasets.dataset import Dataset
 from torchdrive.train_config import create_parser, TrainConfig
+from torchvision.transforms import v2
+from torchvision.utils import save_image
 from torchworld.transforms.img import normalize_img
 
 # pyre-fixme[5]: Global expression must be annotated.
@@ -56,14 +57,13 @@ torch.set_float32_matmul_precision("high")
 
 dataset, _ = config.create_dataset(smoke=args.smoke)
 
+
 def transform_img(t: torch.Tensor):
     t = normalize_img(t)
     t.clamp_(min=0.0, max=1.0)
 
-    return [
-        v2.functional.to_pil_image(frame)
-        for frame in t
-    ]
+    return [v2.functional.to_pil_image(frame) for frame in t]
+
 
 dataset.transform = transform_img
 
@@ -93,15 +93,17 @@ pool = ThreadPool(args.num_workers or 4)
 # pyre-fixme[5]: Global expression must be annotated.
 handles = []
 
+
 def run(f, *args):
     handles.append(pool.apply_async(f, args))
+
 
 output_path = os.path.join(args.output, config.dataset)
 index_path = os.path.join(output_path, "index.txt")
 
 os.makedirs(output_path, exist_ok=True)
 
-#with open(index_path, "wta") as index_file:
+# with open(index_path, "wta") as index_file:
 for batch in tqdm(dataloader, "export"):
     if batch is None:
         continue
@@ -110,8 +112,8 @@ for batch in tqdm(dataloader, "export"):
     assert len(token) > 5
     token_path = os.path.join(output_path, f"{token}.pt")
 
-    #index_file.write(token+"\n")
-    #index_file.flush()
+    # index_file.write(token+"\n")
+    # index_file.flush()
     if os.path.exists(token_path):
         continue
 
@@ -123,8 +125,12 @@ for batch in tqdm(dataloader, "export"):
                 run(lambda path, frame: frame.save(path), frame_path, frame)
 
     # clear color data
-    batch = dataclasses.replace(batch, color = None)
-    run(lambda path, batch: torch.save(dataclasses.asdict(batch), path), token_path, batch)
+    batch = dataclasses.replace(batch, color=None)
+    run(
+        lambda path, batch: torch.save(dataclasses.asdict(batch), path),
+        token_path,
+        batch,
+    )
 
     while len(handles) > args.num_workers * 2:
         handles.pop(0).get()
