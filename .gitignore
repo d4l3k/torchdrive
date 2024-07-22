@@ -138,3 +138,4 @@ export/
 *.trt
 *.npy
 *.onnx
+*.png

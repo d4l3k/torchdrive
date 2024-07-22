@@ -5,6 +5,8 @@ import torch
 import torch.nn.functional as F
 
 from omegaconf import ListConfig, OmegaConf
+from torchvision.transforms.functional import to_pil_image
+from torchworld.transforms.img import normalize_img
 
 from vwm.sample_utils import (
     do_sample,
@@ -30,6 +32,18 @@ class VistaSampler:
         cond_aug: float = 0.0,
         render_size: Tuple[int, int] = (320, 576),
     ) -> None:
+        """
+        Args:
+            config_path: path to the config file
+            ckpt_path: path to the checkpoint file
+            device: device to run inference on
+            steps: number of diffusion steps
+            cfg_scale: scale of the config
+            num_frames: number of frames to generate
+                NOTE Vista is trained at 10hz and Nuscenes is 12hz
+            cond_aug: augmentation strength (extra noise)
+            render_size: size of the image passed into Vista
+        """
         config_path = os.path.expanduser(config_path)
         ckpt_path = os.path.expanduser(ckpt_path)
 
@@ -73,10 +87,21 @@ class VistaSampler:
         h, w = cond_img.shape[2:]
 
         assert trajectory.size(-1) == 2
-        trajectory = trajectory.squeeze(0)[1:5].flatten()
+        # downsample to 4 frames or 2 seconds
+        trajectory = trajectory.squeeze(0)[1:5]
+        # switch axis so y+ is forward, and x+ is right
+        trajectory = torch.stack([-trajectory[:, 1], trajectory[:, 0]], dim=-1)
+        trajectory = trajectory.flatten()
         assert trajectory.shape == (8,)
 
         cond_img = F.interpolate(cond_img, size=self.render_size, mode="bilinear")
+
+        amin, amax = cond_img.aminmax()
+        center = (amax + amin) / 2
+        dist = (amax - amin) / 2
+
+        # recenter to (-1, 1)
+        cond_img = (cond_img - center) / dist
 
         unique_keys = set([x.input_key for x in self.model.conditioner.embedders])
 
@@ -99,7 +124,6 @@ class VistaSampler:
         ]
 
         images = cond_img.expand(self.num_frames, -1, -1, -1)
-        print(images.shape, cond_img.shape, value_dict["trajectory"].shape)
 
         out = do_sample(
             images,
@@ -112,6 +136,13 @@ class VistaSampler:
             initial_cond_indices=[0],  # only condition on first frame
         )
         samples, samples_z, inputs = out
+
+        out_min, out_max = samples.aminmax()
+        out_center = (out_max + out_min) / 2
+        out_dist = (out_max - out_min) / 2
+
+        # restore original range
+        samples = (samples - out_center) / out_dist * dist + center
 
         return F.interpolate(samples, (h, w), mode="bilinear")
 
@@ -136,8 +167,13 @@ if __name__ == "__main__":
     trajectory = trajectory[:, ::6, ::2]
     cond_img = batch.color["CAM_FRONT"][:1, 0]
 
+    print(trajectory)
+
     sampler = VistaSampler(device=device)
     out = sampler.generate(cond_img, trajectory)
     print(out.shape)
     assert out.shape == (10, 3, 480, 640)
-    print(out)
+
+    for i, img in enumerate(out):
+        img = to_pil_image(normalize_img(img))
+        img.save(f"vista_{i}.png")

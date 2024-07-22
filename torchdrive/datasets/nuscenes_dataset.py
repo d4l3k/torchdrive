@@ -147,12 +147,16 @@ class SampleData(TypedDict):
 
 
 def normalize01(tensor: Tensor) -> Tensor:
-    return transforms.functional.normalize(
-        tensor,
-        [0.3504, 0.4324, 0.2892],
-        [0.0863, 0.1097, 0.0764],
-        inplace=True,
-    )
+    """
+    rearange to -1 to 1
+    """
+    return tensor * 2.0 - 1.0
+    # return transforms.functional.normalize(
+    #    tensor,
+    #    [0.3504, 0.4324, 0.2892],
+    #    [0.0863, 0.1097, 0.0764],
+    #    inplace=True,
+    # )
 
 
 class CamTypes(StrEnum):
