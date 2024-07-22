@@ -954,16 +954,7 @@ class DiffTraj(nn.Module, Van):
         """
 
         world_to_car, mask, lengths = batch.long_cam_T
-        car_to_world = torch.zeros_like(world_to_car)
-        car_to_world[mask] = world_to_car[mask].inverse()
-
-        assert mask.int().sum() == lengths.sum(), (mask, lengths)
-
-        zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
-        zero_coord[:, -1] = 1
-
-        positions = torch.matmul(car_to_world, zero_coord.T).squeeze(-1)
-        positions /= positions[..., -1:] + 1e-8  # perspective warp
+        positions = batch.positions()
         positions = positions[..., :2]
 
         # calculate velocity between first two frames to allow model to understand current speed
@@ -986,9 +977,9 @@ class DiffTraj(nn.Module, Van):
         # positions = positions[:, :pos_len]
         # mask = mask[:, :pos_len]
 
-        # approximately 0.5 fps since video is 15fps
-        positions = positions[:, ::7]
-        mask = mask[:, ::7]
+        # approximately 0.5 fps since video is 12hz
+        positions = positions[:, ::6]
+        mask = mask[:, ::6]
 
         """
         # we need to be aligned to size 8

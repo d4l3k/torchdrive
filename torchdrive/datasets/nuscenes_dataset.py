@@ -571,6 +571,8 @@ class NuscenesDataset(Dataset):
         version: str = "v1.0-trainval",
         lidar: bool = False,
     ) -> None:
+        data_dir = os.path.expanduser(data_dir)
+
         self.data_dir = data_dir
         self.version = version
         self.nusc = NuScenes(version=version, dataroot=data_dir, verbose=True)

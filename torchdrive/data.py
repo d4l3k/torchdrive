@@ -220,8 +220,8 @@ class Batch:
         torch.save(data, buffer)
         buffer.seek(0)
         buf = buffer.read()
-        buf = zstd.compress(buf, compress_level, threads)
-
+        if path.endswith(".zst") or path.endswith(".zstd"):
+            buf = zstd.compress(buf, compress_level, threads)
         with open(path, "wb") as f:
             f.write(buf)
 
@@ -230,12 +230,37 @@ class Batch:
         with open(path, "rb") as f:
             buf = f.read()
 
-        if path.endswith(".zst"):
+        if path.endswith(".zst") or path.endswith(".zstd"):
             buf = zstd.uncompress(buf)
         buffer = io.BytesIO(buf)
         data = torch.load(buffer, weights_only=True)
 
         return cls(**data)
+
+    def positions(self) -> torch.Tensor:
+        """
+        Returns the XY positions of the batch.
+
+        You likely want to normalize the batch first.
+
+        Returns:
+            tensor [bs, long_cam_T, 2]
+        """
+        device = self.device()
+
+        world_to_car, mask, lengths = self.long_cam_T
+        car_to_world = torch.zeros_like(world_to_car)
+        car_to_world[mask] = world_to_car[mask].inverse()
+
+        assert mask.int().sum() == lengths.sum(), (mask, lengths)
+
+        zero_coord = torch.zeros(1, 4, device=device, dtype=torch.float)
+        zero_coord[:, -1] = 1
+
+        positions = torch.matmul(car_to_world, zero_coord.T).squeeze(-1)
+        positions /= positions[..., -1:] + 1e-8  # perspective warp
+
+        return positions[..., :3]
 
 
 def _rand_det_target() -> torch.Tensor:

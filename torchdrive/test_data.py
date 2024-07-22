@@ -169,9 +169,26 @@ class TestData(unittest.TestCase):
         batch = dummy_batch()
 
         with tempfile.TemporaryDirectory("torchdrive-test_data") as path:
-            file_path = os.path.join(path, "file.pt.zstd")
+            file_path = os.path.join(path, "file.pt")
             batch.save(file_path)
 
             out = Batch.load(file_path)
 
         self.assertIsNotNone(out)
+
+    def test_save_load_zstd(self) -> None:
+        batch = dummy_batch()
+
+        with tempfile.TemporaryDirectory("torchdrive-test_data") as path:
+            file_path = os.path.join(path, "file.pt.zst")
+            batch.save(file_path)
+
+            out = Batch.load(file_path)
+
+        self.assertIsNotNone(out)
+
+    def test_positions(self) -> None:
+        batch = dummy_batch()
+        positions = batch.positions()
+        world_to_car, _, _ = batch.long_cam_T
+        self.assertEqual(positions.shape, (*world_to_car.shape[:2], 3))
