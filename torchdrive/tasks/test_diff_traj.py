@@ -12,6 +12,7 @@ from torchdrive.tasks.diff_traj import (
     XYLinearEmbedding,
     XYMLPEncoder,
     XYSineMLPEncoder,
+    compute_dream_pos,
 )
 
 
@@ -215,3 +216,15 @@ class TestDiffTraj(unittest.TestCase):
         output = square_mask(input, num_heads=3)
         self.assertEqual(output.shape, (6, 2, 2))
         torch.testing.assert_close(output[:2], target)
+
+    def test_compute_dream_pos(self):
+
+        positions = torch.rand(2, 18, 2)
+        mask = torch.ones(2, 18)
+        pred_traj = torch.rand(2, 18, 2)
+
+        dream_target, dream_mask, dream_positions, dream_pred = compute_dream_pos(positions, mask, pred_traj)
+        self.assertEqual(dream_target.shape, (2, 16, 2))
+        self.assertEqual(dream_mask.shape, (2, 16))
+        self.assertEqual(dream_positions.shape, (2, 16, 2))
+        self.assertEqual(dream_pred.shape, (2, 16, 2))

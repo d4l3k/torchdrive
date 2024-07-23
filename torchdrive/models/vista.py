@@ -1,5 +1,6 @@
 import os.path
 from typing import Tuple
+import time
 
 import torch
 import torch.nn.functional as F
@@ -51,9 +52,13 @@ class VistaSampler:
         self.num_frames = num_frames
         self.render_size = render_size
 
+        start = time.perf_counter()
+
         config = OmegaConf.load(config_path)
         model = load_model_from_config(config, ckpt_path)
         self.model = model.bfloat16().to(device).eval()
+
+        print(f"loaded vista in {time.perf_counter() - start:.2f}s")
 
         guider = "VanillaCFG"
         self.sampler = init_sampling(
