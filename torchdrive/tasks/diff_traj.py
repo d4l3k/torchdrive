@@ -751,8 +751,15 @@ class DiffTraj(nn.Module, Van):
 
         self.model = ConvNextPathPred()
 
+        # dream parameters
+        self.dream_steps = 1
+        self.vista_fps = 10
+        self.steps_per_second = 2
         if not test:
-            self.vista = VistaSampler()
+            vista_frames = (
+                1 + self.vista_fps * self.dream_steps // self.steps_per_second
+            )
+            self.vista = VistaSampler(steps=25, num_frames=vista_frames)
 
         self.batch_transform = Compose(
             NormalizeCarPosition(start_frame=0),
@@ -904,7 +911,7 @@ class DiffTraj(nn.Module, Van):
             positions[:, :pred_traj_len],
             mask[:, :pred_traj_len],
             pred_traj[:, :pred_traj_len],
-            step=2,
+            step=self.dream_steps,
         )
 
         dream_losses, dream_traj, all_dream_traj = self.model(
