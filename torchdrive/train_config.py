@@ -61,12 +61,15 @@ class DatasetConfig:
                 lidar=False,
                 num_frames=self.num_frames,
             )
-            test_dataset = NuscenesDataset(
-                data_dir=self.dataset_path,
-                version="v1.0-mini" if smoke else "v1.0-test",
-                lidar=False,
-                num_frames=self.num_frames,
-            )
+            if smoke:
+                test_dataset = dataset
+            else:
+                test_dataset = NuscenesDataset(
+                    data_dir=self.dataset_path,
+                    version="v1.0-test",
+                    lidar=False,
+                    num_frames=self.num_frames,
+                )
         elif self.dataset == Datasets.DUMMY:
             from torchdrive.datasets.dummy import DummyDataset
 
@@ -128,6 +131,7 @@ class TrainConfig(DatasetConfig, OptimizerConfig):
         self,
         device: torch.device,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
+        test: bool = False,
     ) -> BEVTaskVan:
         from torchdrive.transforms.batch import (
             Compose,
@@ -340,12 +344,14 @@ class DiffTrajTrainConfig(DatasetConfig, OptimizerConfig):
         self,
         device: torch.device,
         compile_fn: Callable[[nn.Module], nn.Module] = lambda x: x,
+        test: bool = False,
     ) -> DiffTraj:
         model = DiffTraj(
             cameras=self.cameras,
             num_encode_frames=self.num_encode_frames,
             cam_shape=self.cam_shape,
             num_frames=self.num_frames,
+            test=test,
         ).to(device)
 
         # for cam_encoder in model.encoders.values():
@@ -432,6 +438,12 @@ def create_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="run with a smaller smoke test config",
+    )
+    parser.add_argument(
+        "--test",
+        default=False,
+        action="store_true",
+        help="compute the test set metrics",
     )
 
     parser.add_argument(

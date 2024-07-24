@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import torch
 from torchdrive.data import Batch, dummy_batch
 from torchdrive.tasks.diff_traj import (
+    compute_dream_pos,
     DiffTraj,
     square_mask,
     XEmbedding,
@@ -12,7 +13,6 @@ from torchdrive.tasks.diff_traj import (
     XYLinearEmbedding,
     XYMLPEncoder,
     XYSineMLPEncoder,
-    compute_dream_pos,
 )
 
 
@@ -223,7 +223,9 @@ class TestDiffTraj(unittest.TestCase):
         mask = torch.ones(2, 18)
         pred_traj = torch.rand(2, 18, 2)
 
-        dream_target, dream_mask, dream_positions, dream_pred = compute_dream_pos(positions, mask, pred_traj)
+        dream_target, dream_mask, dream_positions, dream_pred = compute_dream_pos(
+            positions, mask, pred_traj
+        )
         self.assertEqual(dream_target.shape, (2, 16, 2))
         self.assertEqual(dream_mask.shape, (2, 16))
         self.assertEqual(dream_positions.shape, (2, 16, 2))

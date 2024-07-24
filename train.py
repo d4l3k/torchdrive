@@ -90,10 +90,12 @@ else:
 
 
 dataset, test_dataset = config.create_dataset(smoke=args.smoke)
+if args.test:
+    dataset = test_dataset
 
 if RANK == 0:
     # pyre-fixme[6]: len
-    print(f"trainset size {len(dataset)}")
+    print(f"dataset size {len(dataset)}")
 
 if args.anomaly_detection:
     torch.set_anomaly_enabled(True)
@@ -122,7 +124,11 @@ if args.compile:
 
     compile_fn = compile_parent
 
-model: BEVTaskVan = config.create_model(device=device, compile_fn=compile_fn)
+model: BEVTaskVan = config.create_model(
+    device=device,
+    compile_fn=compile_fn,
+    test=args.test,
+)
 
 if False and WORLD_SIZE > 1:
     ddp_model: torch.nn.Module = DistributedDataParallel(
@@ -274,7 +280,9 @@ if test_dataset is not None:
         pin_memory=True,
         sampler=sampler,
     )
-    test_collator = TransferCollator(dataloader, batch_size=config.batch_size, device=device)
+    test_collator = TransferCollator(
+        dataloader, batch_size=config.batch_size, device=device
+    )
 
 
 meaned_losses: Dict[str, torchmetrics.aggregation.MeanMetric] = defaultdict(
@@ -296,8 +304,7 @@ else:
     prof = None
 
 
-@record
-def run():
+def train() -> None:
     global global_step
 
     for epoch in range(NUM_EPOCHS):
@@ -407,5 +414,33 @@ def run():
     save(epoch + 1)
 
 
+def test() -> None:
+    # only show progress on rank 0
+    batch_iter = tqdm(collator, desc=f"test") if LOCAL_RANK == 0 else collator
+
+    ddp_model.eval()
+
+    with torch.no_grad():
+        for global_step, batch in enumerate(batch_iter):
+            batch = cast(Optional[Batch], batch)
+            if batch is None:
+                print("empty batch")
+                continue
+
+            batch = batch.to(device)
+
+            log_img, log_text = model.should_log(global_step, BS)
+
+            ddp_model.test(batch, global_step, writer=writer)
+
+
+@record
+def main() -> None:
+    if args.test:
+        test()
+    else:
+        train()
+
+
 if __name__ == "__main__":
-    run()
+    main()

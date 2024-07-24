@@ -1,6 +1,6 @@
 import os.path
-from typing import Tuple
 import time
+from typing import Tuple
 
 import torch
 import torch.nn.functional as F
