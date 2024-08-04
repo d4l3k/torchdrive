@@ -7,6 +7,7 @@ from torchdrive.data import Batch, dummy_batch
 from torchdrive.tasks.diff_traj import (
     compute_dream_pos,
     DiffTraj,
+    random_traj,
     square_mask,
     XEmbedding,
     XYEmbedding,
@@ -218,7 +219,6 @@ class TestDiffTraj(unittest.TestCase):
         torch.testing.assert_close(output[:2], target)
 
     def test_compute_dream_pos(self):
-
         positions = torch.rand(2, 18, 2)
         mask = torch.ones(2, 18)
         pred_traj = torch.rand(2, 18, 2)
@@ -230,3 +230,10 @@ class TestDiffTraj(unittest.TestCase):
         self.assertEqual(dream_mask.shape, (2, 16))
         self.assertEqual(dream_positions.shape, (2, 16, 2))
         self.assertEqual(dream_pred.shape, (2, 16, 2))
+
+    def test_random_traj(self):
+        BS = 10
+        vel = torch.ones(BS, 1)
+        seq_len = 18
+        traj = random_traj(BS=BS, seq_len=seq_len, device="cpu", vel=vel)
+        self.assertEqual(traj.shape, (BS, seq_len, 2))

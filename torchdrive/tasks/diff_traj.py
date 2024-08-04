@@ -722,14 +722,24 @@ class ConvNextPathPred(nn.Module):
 def random_traj(
     BS: int, seq_len: int, device: object, vel: torch.Tensor
 ) -> torch.Tensor:
-    """Generates a random trajectory at the specified velocity."""
+    """Generates a random trajectory at the specified velocity.
+
+    Arguments:
+        BS: batch size
+        vel: [BS, 1]
+
+    Returns:
+        The random trajectory [BS, seq_len, 2]
+    """
 
     # scale from 0.5 to 1.5
-    speed = (torch.rand(BS, device=device) + 0.5) * vel
+    speed = (torch.rand(BS, device=device) + 0.5) * vel.squeeze(1)
 
-    angle = torch.rand(BS, device=device) * math.pi
-    x = torch.sin(angle) * torch.arange(seq_len, device=device) / 2 * speed
-    y = torch.cos(angle) * torch.arange(seq_len, device=device) / 2 * speed
+    angle = torch.rand(BS, 1, device=device) * math.pi
+    x = torch.arange(seq_len, device=device) / 2 * speed.unsqueeze(1)
+    x *= torch.sin(angle)
+    y = torch.arange(seq_len, device=device) / 2 * speed.unsqueeze(1)
+    y *= torch.cos(angle)
 
     traj = torch.stack([x, y], dim=-1)
     return traj
