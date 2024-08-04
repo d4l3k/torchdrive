@@ -504,7 +504,9 @@ def nll_loss_gmm_direct(
         log_std1 + log_std2 + 0.5 * torch.log(1 - rho**2)
     )  # (batch_size, num_timestamps)
     reg_gmm_exp = (0.5 * 1 / (1 - rho**2)) * (
-        (dx**2) / (std1**2) + (dy**2) / (std2**2) - 2 * rho * dx * dy / (std1 * std2)
+        (dx**2) / (std1**2)
+        + (dy**2) / (std2**2)
+        - 2 * rho * dx * dy / (std1 * std2)
     )  # (batch_size, num_timestamps)
 
     reg_loss = ((reg_gmm_log_coefficient + reg_gmm_exp) * gt_valid_mask).sum(dim=-1)
@@ -717,6 +719,22 @@ class ConvNextPathPred(nn.Module):
         return losses, nearest_trajs[..., :2], pred_traj
 
 
+def random_traj(
+    BS: int, seq_len: int, device: object, vel: torch.Tensor
+) -> torch.Tensor:
+    """Generates a random trajectory at the specified velocity."""
+
+    # scale from 0.5 to 1.5
+    speed = (torch.rand(BS, device=device) + 0.5) * vel
+
+    angle = torch.rand(BS, device=device) * math.pi
+    x = torch.sin(angle) * torch.arange(seq_len, device=device) / 2 * speed
+    y = torch.cos(angle) * torch.arange(seq_len, device=device) / 2 * speed
+
+    traj = torch.stack([x, y], dim=-1)
+    return traj
+
+
 class DiffTraj(nn.Module, Van):
     """
     A diffusion model for trajectory detection.
@@ -812,13 +830,15 @@ class DiffTraj(nn.Module, Van):
 
         # calculate velocity between first two frames to allow model to understand current speed
         # TODO: convert this to a categorical embedding
-        velocity = positions[:, 1] - positions[:, 0]
-        assert positions.size(-1) == 2
-        velocity = torch.linalg.vector_norm(velocity, dim=-1, keepdim=True)
 
         # approximately 0.5 fps since video is 12hz
         positions = positions[:, ::6]
         mask = mask[:, ::6]
+
+        # at 2 hz multiply by 2 to get true velocity
+        velocity = positions[:, 1] - positions[:, 0]
+        assert positions.size(-1) == 2
+        velocity = torch.linalg.vector_norm(velocity, dim=-1, keepdim=True) * 2
 
         return positions, mask, velocity
 
@@ -887,11 +907,14 @@ class DiffTraj(nn.Module, Van):
         losses.update(pred_losses)
 
         pred_len = min(pred_traj.size(1), mask[0].sum().item())
+        pred_traj_len = min(positions.size(1), pred_traj.size(1))
+
+        rand_traj = random_traj(BS, pred_traj_len, device=device, vel=velocity)
 
         dreamed_imgs = []
         for i in range(BS):
             cond_img = batch.color[cam][i : i + 1, 0]
-            cond_traj = pred_traj[i : i + 1]
+            cond_traj = rand_traj[i : i + 1]
 
             dreamed_img = self.vista.generate(cond_img, cond_traj)
             # add last img (frame 10 == 1s)
@@ -906,11 +929,10 @@ class DiffTraj(nn.Module, Van):
                 normalize_img(dream_img[0, 0]),
             )
 
-        pred_traj_len = min(positions.size(1), pred_traj.size(1))
         dream_target, dream_mask, dream_positions, dream_pred = compute_dream_pos(
             positions[:, :pred_traj_len],
             mask[:, :pred_traj_len],
-            pred_traj[:, :pred_traj_len],
+            rand_traj[:, :pred_traj_len],
             step=self.dream_steps,
         )
 
@@ -921,7 +943,6 @@ class DiffTraj(nn.Module, Van):
             losses[f"dream-{k}"] = v
 
         if writer and log_text:
-
             size = min(pred_traj.size(1), positions.size(1))
 
             ctx.add_scalar(
@@ -976,13 +997,11 @@ class DiffTraj(nn.Module, Van):
 
                 pred_positions = dream_pred[0, :pred_len].cpu()
                 plt.plot(
-                    pred_positions[..., 0], pred_positions[..., 1], label="og_pred"
+                    pred_positions[..., 0], pred_positions[..., 1], label="rand_traj"
                 )
 
                 pred_positions = dream_traj[0, :pred_len].cpu()
-                plt.plot(
-                    pred_positions[..., 0], pred_positions[..., 1], label="new_pred"
-                )
+                plt.plot(pred_positions[..., 0], pred_positions[..., 1], label="pred")
 
             fig.legend()
             plt.gca().set_aspect("equal")
