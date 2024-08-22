@@ -19,6 +19,7 @@ from torchdrive.data import Batch
 from torchdrive.debug import assert_not_nan, is_nan
 from torchdrive.losses import losses_backward
 from torchdrive.models.mlp import MLP
+from torchdrive.models.pose import posenet18
 from torchdrive.models.path import XYEncoder
 from torchdrive.models.transformer import transformer_init
 from torchdrive.models.vista import VistaSampler
@@ -779,14 +780,18 @@ class DiffTraj(nn.Module, Van):
 
         self.model = ConvNextPathPred()
 
+        self.pose = posenet18(num_images=2, output_channels=2)
+        self.frames_per_step = 6
+
         # dream parameters
         self.dream_steps = 1
         self.vista_fps = 10
         self.steps_per_second = 2
+        self.vista_frames_per_step = (
+            self.vista_fps * self.dream_steps // self.steps_per_second
+        )
         if not test:
-            vista_frames = (
-                1 + self.vista_fps * self.dream_steps // self.steps_per_second
-            )
+            vista_frames = 1 + self.vista_frames_per_step
             self.vista = VistaSampler(steps=25, num_frames=vista_frames)
 
         self.batch_transform = Compose(
@@ -806,6 +811,12 @@ class DiffTraj(nn.Module, Van):
             {
                 "name": "model",
                 "params": list(self.model.parameters()),
+                "lr": lr,
+                "weight_decay": 1e-4,
+            },
+            {
+                "name": "pose",
+                "params": list(self.pose.parameters()),
                 "lr": lr,
                 "weight_decay": 1e-4,
             },
@@ -842,8 +853,8 @@ class DiffTraj(nn.Module, Van):
         # TODO: convert this to a categorical embedding
 
         # approximately 0.5 fps since video is 12hz
-        positions = positions[:, ::6]
-        mask = mask[:, ::6]
+        positions = positions[:, :: self.frames_per_step]
+        mask = mask[:, :: self.frames_per_step]
 
         # at 2 hz multiply by 2 to get true velocity
         velocity = positions[:, 1] - positions[:, 0]
@@ -910,6 +921,7 @@ class DiffTraj(nn.Module, Van):
         posmax = positions.abs().amax()
         assert posmax < 100000, positions
 
+        # compute standard trajectory loss
         cam = self.cameras[0]
         pred_losses, pred_traj, all_pred_traj = self.model(
             velocity, batch.color[cam], positions, mask
@@ -919,9 +931,17 @@ class DiffTraj(nn.Module, Van):
         pred_len = min(pred_traj.size(1), mask[0].sum().item())
         pred_traj_len = min(positions.size(1), pred_traj.size(1))
 
+        # compute pose network loss
+        pose_input = batch.color[cam][:, :: self.frames_per_step]
+        poses = self.pose(pose_input)
+        poses_target = positions[:, 1]
+        losses["pose"] = F.mse_loss(poses, poses_target)
+
+        # dream image from random traj and use that
         rand_traj = random_traj(BS, pred_traj_len, device=device, vel=velocity)
 
         dreamed_imgs = []
+        dream_pose_imgs = []
         for i in range(BS):
             cond_img = batch.color[cam][i : i + 1, 0]
             cond_traj = rand_traj[i : i + 1]
@@ -929,9 +949,26 @@ class DiffTraj(nn.Module, Van):
             dreamed_img = self.vista.generate(cond_img, cond_traj)
             # add last img (frame 10 == 1s)
             dreamed_imgs.append(dreamed_img[-1])
+            dream_pose_imgs.append(dreamed_img[:: self.vista_frames_per_step])
 
         # [BS, 1, 3, H, W]
         dream_img = torch.stack(dreamed_imgs, dim=0).unsqueeze(1)
+
+        # [BS, 2, 3, H, W]
+        dream_pose_img = torch.stack(dream_pose_imgs, dim=0)
+        # disable grad for dream poses
+        with torch.no_grad():
+            # [BS, 2]
+            dream_poses = self.pose(dream_pose_img)
+        # [BS, 1, 2]
+        dream_poses = dream_poses.unsqueeze(1)
+
+        # [1, pred_traj_len, 1]
+        dream_traj = (
+            torch.arange(pred_traj_len, device=device).unsqueeze(0).unsqueeze(2)
+        )
+        # [BS, pred_traj_len, 2]
+        dream_traj = dream_traj * dream_poses
 
         if log_img:
             ctx.add_image(
@@ -942,7 +979,7 @@ class DiffTraj(nn.Module, Van):
         dream_target, dream_mask, dream_positions, dream_pred = compute_dream_pos(
             positions[:, :pred_traj_len],
             mask[:, :pred_traj_len],
-            rand_traj[:, :pred_traj_len],
+            dream_traj[:, :pred_traj_len],
             step=self.dream_steps,
         )
 
@@ -1077,7 +1114,12 @@ class DiffTraj(nn.Module, Van):
 
 
 def compute_dream_pos(
-    positions: torch.Tensor, mask: torch.Tensor, pred_traj: torch.Tensor, step: int = 2
+    positions: torch.Tensor,
+    mask: torch.Tensor,
+    pred_traj: torch.Tensor,
+    step: int,
+    clamp_dist: float = 0.1,
+    clamp_angle: float = math.pi / 2,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Compute a new ground truth trajectory for the dreamer to use as a loss.
@@ -1088,6 +1130,8 @@ def compute_dream_pos(
         mask: (B, T) mask for the ground truth trajectory
         pred_traj: (B, T, 2) the trajectory the dreamer is following
         step: pred_traj[:, step] is the new root position
+        clamp_dist: distance below which no rotation is applied
+        clamp_angle: maximum angle of rotation applied to the trajectory
     Returns:
         dream_target: (B, T-step, 2) the new ground truth trajectory in step coordinate frame
         dream_mask: (B, T-step) the new mask for the ground truth trajectory
@@ -1096,7 +1140,19 @@ def compute_dream_pos(
     """
     direction = pred_traj[:, step] - pred_traj[:, step - 1]
 
+    # (B, 2) -> (B,)
+    mag = torch.linalg.vector_norm(direction, dim=-1)
+
+    # (B,)
     angle = torch.atan2(direction[:, 1], direction[:, 0])
+
+    # clamp to avoid massive rotations due to numerical inaccuracies in small distances
+    angle[mag < clamp_dist] = 0.0
+
+    # clamp to avoid kinematically infeasible trajectories due to bad model
+    # output
+    angle = torch.clamp(angle, min=-clamp_angle, max=clamp_angle)
+
     rot = torch.stack(
         [
             torch.stack(

@@ -183,7 +183,6 @@ class FPN_fuse(nn.Module):
         )
 
     def forward(self, features: List[torch.Tensor]) -> torch.Tensor:
-
         features[1:] = [
             conv1x1(feature) for feature, conv1x1 in zip(features[1:], self.conv1x1)
         ]

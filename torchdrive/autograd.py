@@ -59,14 +59,16 @@ def autograd_resume(*tensors: torch.Tensor) -> None:
 
 @overload
 @contextmanager
-def autograd_context(tensor: torch.Tensor) -> Generator[torch.Tensor, None, None]: ...
+def autograd_context(tensor: torch.Tensor) -> Generator[torch.Tensor, None, None]:
+    ...
 
 
 @overload
 @contextmanager
 def autograd_context(
     tensor: torch.Tensor, *tensors: torch.Tensor
-) -> Generator[Tuple[torch.Tensor, ...], None, None]: ...
+) -> Generator[Tuple[torch.Tensor, ...], None, None]:
+    ...
 
 
 @contextmanager

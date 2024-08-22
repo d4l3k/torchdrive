@@ -34,7 +34,7 @@ def random_block_mask(
     for _ in range(num_blocks):
         x = torch.randint(w, tuple())
         y = torch.randint(h, tuple())
-        mask[max(y - mh // 2, 0) : y + mh // 2, max(x - mw // 2, 0) : x + mw // 2] = (
-            False
-        )
+        mask[
+            max(y - mh // 2, 0) : y + mh // 2, max(x - mw // 2, 0) : x + mw // 2
+        ] = False
     return mask

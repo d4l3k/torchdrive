@@ -224,7 +224,7 @@ class TestDiffTraj(unittest.TestCase):
         pred_traj = torch.rand(2, 18, 2)
 
         dream_target, dream_mask, dream_positions, dream_pred = compute_dream_pos(
-            positions, mask, pred_traj
+            positions, mask, pred_traj, step=2
         )
         self.assertEqual(dream_target.shape, (2, 16, 2))
         self.assertEqual(dream_mask.shape, (2, 16))

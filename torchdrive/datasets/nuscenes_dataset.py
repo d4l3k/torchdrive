@@ -235,9 +235,9 @@ class TimestampMatcher:
     ) -> None:
         self.cam_samples = cam_samples
         self.epsilon = int(epsilon.total_seconds() * 1e6)
-        timestamp_index: Dict[int, Dict[str, Tuple[SampleData, int]]] = (
-            calculate_timestamp_index(cam_samples)
-        )
+        timestamp_index: Dict[
+            int, Dict[str, Tuple[SampleData, int]]
+        ] = calculate_timestamp_index(cam_samples)
         sorted_timestamps: List[int] = sorted(timestamp_index.keys())
         self.nearest_data_within_epsilon: Dict[
             int, Tuple[SampleData, Dict[str, int]]

@@ -15,7 +15,8 @@ class BatchTransform(ABC):
     """
 
     @abstractmethod
-    def __call__(self, batch: Batch) -> Batch: ...
+    def __call__(self, batch: Batch) -> Batch:
+        ...
 
 
 class Identity(BatchTransform):
@@ -141,6 +142,7 @@ class RandomTranslation(BatchTransform):
             cam_T=cam_T,
             long_cam_T=(long_cam_T, long_cam_T_mask, long_cam_T_lengths),
         )
+
 
 class ImageTransform(BatchTransform):
     """

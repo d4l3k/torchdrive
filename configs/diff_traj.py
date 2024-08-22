@@ -6,7 +6,7 @@ CONFIG = DiffTrajTrainConfig(
     cameras=[
         "CAM_FRONT",
     ],
-    num_frames=1,
+    num_frames=7,
     num_encode_frames=1,
     cam_shape=(480, 640),
     # optimizer settings

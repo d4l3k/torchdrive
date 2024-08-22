@@ -236,7 +236,6 @@ class ViTJEPA(nn.Module, Van):
 
         # pause gradient on the input tokens so we can run backprop on each decoder camera separately
         with autograd_context(input_tokens) as input_tokens:
-
             losses = {}
 
             for cam in self.cameras:
